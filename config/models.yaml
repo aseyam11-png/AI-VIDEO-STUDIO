@@ -1,0 +1,69 @@
+# Candidate registry only. No model weights have been downloaded or benchmarked.
+# Pin exact repo commits, weight revisions, SHA-256 and license evidence before production.
+models:
+  executive_llm:
+    name: Qwen3.5-9B
+    source: https://ollama.com/library/qwen3.5
+    runtime: Ollama
+    role: Arabic-first planning and image-reference analysis
+    status: candidate
+    license_status: verify_exact_weights_revision
+    gpu_policy: cpu_first_or_scheduled_gpu_only
+
+  video_generation:
+    name: Wan2.2-TI2V-5B
+    source: https://github.com/Wan-Video/Wan2.2
+    runtime: ComfyUI
+    role: text/image-to-video shot generation
+    status: candidate_requires_benchmark
+    license_status: verify_exact_code_and_weight_artifacts
+    gpu_policy: exclusive_gpu_job
+    max_initial_shot_seconds: 10
+
+  segmentation:
+    name: SAM2
+    source: https://github.com/facebookresearch/sam2
+    role: video object segmentation and tracking
+    status: candidate
+    license_status: verify_exact_code_and_weights
+    gpu_policy: exclusive_gpu_job
+
+  grounding:
+    name: GroundingDINO
+    source: https://github.com/IDEA-Research/GroundingDINO
+    role: text-guided object detection
+    status: candidate
+    license_status: verify_exact_code_and_checkpoint
+    gpu_policy: exclusive_gpu_job
+
+  transcription:
+    name: WhisperX
+    source: https://github.com/m-bain/whisperX
+    role: multilingual transcription and alignment
+    status: candidate
+    license_status: verify_exact_release_and_model_artifacts
+    gpu_policy: cpu_or_scheduled_gpu
+
+  audio_cleanup:
+    name: DeepFilterNet
+    source: https://github.com/Rikorose/DeepFilterNet
+    role: speech noise suppression
+    status: candidate
+    license_status: verify_exact_release
+    gpu_policy: cpu_first
+
+  restoration:
+    name: Real-ESRGAN
+    source: https://github.com/xinntao/Real-ESRGAN
+    role: selected-frame super-resolution
+    status: optional
+    license_status: verify_code_and_weights
+    gpu_policy: exclusive_gpu_job
+
+  interpolation:
+    name: RIFE
+    source: https://github.com/hzwer/ECCV2022-RIFE
+    role: selected-shot frame interpolation
+    status: optional
+    license_status: verify_exact_release_and_weights
+    gpu_policy: exclusive_gpu_job
