@@ -192,8 +192,6 @@ def render_timeline(
         raise ValueError("Rendering requires a video source.")
 
     filters: list[str] = []
-    labels: list[str] = []
-    audio_labels: list[str] = []
     for index, clip in enumerate(clips):
         start = float(clip["start_seconds"])
         duration = float(clip["duration_seconds"])
@@ -205,13 +203,11 @@ def render_timeline(
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},"
             f"format=yuv420p[v{index}]"
         )
-        labels.append(f"[v{index}]")
         if has_audio:
             filters.append(
                 f"[0:a:0]atrim=start={start:.6f}:duration={duration:.6f},"
                 f"asetpts=PTS-STARTPTS,aresample=48000[a{index}]"
             )
-            audio_labels.append(f"[a{index}]")
 
     concat_inputs = "".join(
         f"[v{index}]" + (f"[a{index}]" if has_audio else "")
