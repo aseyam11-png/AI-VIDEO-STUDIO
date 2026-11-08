@@ -154,8 +154,13 @@ def normalize_payload(job_type: JobType, payload: dict[str, Any]) -> dict[str, A
             "DeepFilterNet is not configured. Set DEEPFILTER_SCRIPT and "
             "DEEPFILTER_MODEL_DIR to an installed script and existing checkpoint directory."
         )
-    if job_type in (_MODEL_QUEUE_TYPES - {JobType.MOTION_BLENDER}) and not settings.comfyui_base_url:
-        raise JobRequestError("COMFYUI_BASE_URL must be configured before submitting ComfyUI model jobs.")
+    if (
+        job_type in (_MODEL_QUEUE_TYPES - {JobType.MOTION_BLENDER})
+        and not settings.comfyui_base_url
+    ):
+        raise JobRequestError(
+            "COMFYUI_BASE_URL must be configured before submitting ComfyUI model jobs."
+        )
     if job_type == JobType.MOTION_BLENDER and not settings.blender_executable:
         raise JobRequestError(
             "BLENDER_EXECUTABLE must point to Blender inside the model worker environment."

@@ -82,7 +82,8 @@ def capabilities() -> dict:
         "external_model_apis_enabled": False,
         "note": (
             "Phase 2 adds specialist model adapters and an isolated model-job queue. Actual "
-            "inference requires private runtimes, reviewed workflow files and explicitly provisioned "
+            "inference requires private runtimes, reviewed workflow files and "
+            "explicitly provisioned "
             "weights; the application and CI never download model weights automatically."
         ),
     }

@@ -11,7 +11,6 @@ from app.media.audio import enhance_video_audio
 from app.media.speech import transcribe_local
 from app.media.storage import atomic_write_json, project_dir
 
-
 WORKFLOW_BY_JOB_TYPE = {
     "vision.detect": "groundingdino_detect_v1",
     "vision.track": "sam2_track_v1",
@@ -163,6 +162,7 @@ def execute_blender_job(
     )
     result["relative_path"] = destination.relative_to(project_dir(job["project_id"])).as_posix()
     result["download_url"] = (
-        f"/v1/projects/{job['project_id']}/jobs/{job['id']}/files/{quote(destination.name, safe='')}"
+        f"/v1/projects/{job['project_id']}/jobs/"
+        f"{job['id']}/files/{quote(destination.name, safe='')}"
     )
     return result

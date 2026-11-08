@@ -54,14 +54,20 @@ def enhance_video_audio(
     cancel_check: Callable[[], bool] | None = None,
 ) -> dict:
     """Use an explicitly provisioned DeepFilterNet script and model directory."""
-    script = Path(settings.deepfilter_script).expanduser().resolve() if settings.deepfilter_script else None
+    script = (
+        Path(settings.deepfilter_script).expanduser().resolve()
+        if settings.deepfilter_script
+        else None
+    )
     model_dir = (
         Path(settings.deepfilter_model_dir).expanduser().resolve()
         if settings.deepfilter_model_dir
         else None
     )
     if script is None or not script.is_file():
-        raise AudioEnhancementError("DEEPFILTER_SCRIPT must point to an installed DeepFilterNet enhance.py.")
+        raise AudioEnhancementError(
+            "DEEPFILTER_SCRIPT must point to an installed DeepFilterNet enhance.py."
+        )
     if model_dir is None or not model_dir.is_dir():
         raise AudioEnhancementError(
             "DEEPFILTER_MODEL_DIR must point to an existing local checkpoint directory. "

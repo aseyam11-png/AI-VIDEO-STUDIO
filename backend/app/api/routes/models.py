@@ -5,12 +5,12 @@ from urllib.parse import quote
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
+from app.core.config import settings
 from app.integrations.ollama import OllamaError
 from app.media.storage import project_dir
 from app.orchestration.graph import build_graph
 from app.schemas.models import DirectorPlanRequest, DirectorPlanResponse
 from app.services.jobs import JobNotFoundError, get_job
-from app.core.config import settings
 from app.services.model_capabilities import get_model_capabilities
 
 router = APIRouter(tags=["models"])

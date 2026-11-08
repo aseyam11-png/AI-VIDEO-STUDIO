@@ -86,6 +86,13 @@ def get_model_capabilities() -> dict:
     ollama = _ollama_status()
     workflows = comfyui.get("workflows", {})
 
+    def workflow_configured(workflow_id: str) -> bool:
+        return bool(
+            workflows.get(workflow_id, {}).get(
+                "required_nodes_and_model_choices_present"
+            )
+        )
+
     return {
         "phase": "2",
         "weight_policy": "No model weights are downloaded by application startup or CI.",
@@ -113,23 +120,17 @@ def get_model_capabilities() -> dict:
             "grounding-dino": {
                 "role": "Text-conditioned object detection",
                 "ready": False,
-                "workflow_configured": bool(
-                    workflows.get("groundingdino_detect_v1", {}).get("required_nodes_and_model_choices_present")
-                ),
+                "workflow_configured": workflow_configured("groundingdino_detect_v1"),
             },
             "sam2": {
                 "role": "Prompted segmentation and video tracking",
                 "ready": False,
-                "workflow_configured": bool(
-                    workflows.get("sam2_track_v1", {}).get("required_nodes_and_model_choices_present")
-                ),
+                "workflow_configured": workflow_configured("sam2_track_v1"),
             },
             "wan-2.2-ti2v-5b": {
                 "role": "Approved image/text-to-video shot generation",
                 "ready": False,
-                "workflow_configured": bool(
-                    workflows.get("wan22_ti2v_5b_v1", {}).get("required_nodes_and_model_choices_present")
-                ),
+                "workflow_configured": workflow_configured("wan22_ti2v_5b_v1"),
             },
             "deepfilternet": {
                 "role": "Speech denoising",
@@ -140,16 +141,12 @@ def get_model_capabilities() -> dict:
             "realesrgan": {
                 "role": "Selected-frame/image upscaling",
                 "ready": False,
-                "workflow_configured": bool(
-                    workflows.get("realesrgan_upscale_v1", {}).get("required_nodes_and_model_choices_present")
-                ),
+                "workflow_configured": workflow_configured("realesrgan_upscale_v1"),
             },
             "rife": {
                 "role": "Video frame interpolation",
                 "ready": False,
-                "workflow_configured": bool(
-                    workflows.get("rife_interpolate_v1", {}).get("required_nodes_and_model_choices_present")
-                ),
+                "workflow_configured": workflow_configured("rife_interpolate_v1"),
             },
             "blender": {
                 "role": "Deterministic motion graphics and compositing renders",

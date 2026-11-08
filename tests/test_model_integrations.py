@@ -4,8 +4,6 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from fastapi import HTTPException
-from fastapi.responses import FileResponse
 
 from app.api.routes import models as models_route
 from app.core.config import settings
@@ -20,6 +18,8 @@ from app.media.speech import transcribe_local
 from app.schemas.jobs import JobType
 from app.schemas.models import CreativePlan
 from app.services.jobs import JobRequestError, normalize_payload
+from fastapi import HTTPException
+from fastapi.responses import FileResponse
 
 
 def _workflow():

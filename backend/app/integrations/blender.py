@@ -30,18 +30,27 @@ def render_project_template(
         raise ValueError("Invalid Blender template identifier.")
     if frame_start < 1 or frame_end < frame_start or frame_end - frame_start > 9000:
         raise ValueError("Invalid Blender frame range.")
-    if width < 320 or width > 3840 or height < 240 or height > 2160 or fps not in {24, 25, 30, 50, 60}:
+    if (
+        width < 320
+        or width > 3840
+        or height < 240
+        or height > 2160
+        or fps not in {24, 25, 30, 50, 60}
+    ):
         raise ValueError("Invalid Blender output settings.")
 
     executable = settings.blender_executable or shutil.which("blender")
     if not executable:
-        raise BlenderError("BLENDER_EXECUTABLE is not configured and Blender was not found on PATH.")
+        raise BlenderError(
+            "BLENDER_EXECUTABLE is not configured and Blender was not found on PATH."
+        )
 
     root = project_dir(project_id).resolve()
     template = (root / "motion_templates" / f"{template_id}.blend").resolve()
     if not template.is_relative_to(root) or not template.is_file():
         raise BlenderError(
-            "The requested Blender template is not installed in this project's motion_templates directory."
+            "The requested Blender template is not installed in this project's "
+            "motion_templates directory."
         )
 
     script = Path(__file__).with_name("blender_render_script.py").resolve()
