@@ -551,15 +551,11 @@ def cancel_workflow(workflow_id: str) -> dict:
 
 def create_workflow_from_brief(request: WorkflowFromBriefRequest) -> dict:
     """Use Qwen to draft a plan, then persist a workflow that awaits explicit approval."""
-    try:
-        plan = generate_creative_plan(
-            request.brief,
-            target_duration_seconds=request.target_duration_seconds,
-            language=request.language,
-        )
-    except Exception as exc:
-        raise WorkflowRequestError(f"AI Director could not create a plan: {exc}") from exc
-
+    plan = generate_creative_plan(
+        request.brief,
+        target_duration_seconds=request.target_duration_seconds,
+        language=request.language,
+    )
     create_request = WorkflowCreateRequest(
         project_id=request.project_id,
         asset_id=request.asset_id,

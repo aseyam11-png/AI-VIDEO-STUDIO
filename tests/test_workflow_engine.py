@@ -1,0 +1,270 @@
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.api.routes import workflows as workflow_routes
+from app.core.config import settings
+from app.db.models import AssetRecord, OutboxRecord
+from app.db.session import session_scope
+from app.integrations.ollama import OllamaError
+from app.main import app
+from app.media.storage import create_project, ingest_file_stream, project_dir
+from app.schemas.models import CreativePlan
+from app.services import job_runner, workflow_engine
+from app.services.job_runner import run_job_attempt
+
+
+def _plan(duration: int = 15) -> CreativePlan:
+    return CreativePlan.model_validate(
+        {
+            "title": "إعلان سينمائي تجريبي",
+            "logline": "فيديو قصير يعرض المنتج بأسلوب سينمائي أنيق.",
+            "target_duration_seconds": duration,
+            "audience": "الجمهور المهتم بالمنتجات الراقية",
+            "visual_style": "سينمائي واقعي وإضاءة ناعمة",
+            "color_palette": ["أسود", "ذهبي"],
+            "audio_direction": "موسيقى هادئة مع مؤثرات دقيقة",
+            "scenes": [
+                {
+                    "index": 1,
+                    "duration_seconds": duration,
+                    "purpose": "تقديم المنتج",
+                    "visual_description": "لقطة قريبة واضحة للمنتج في خلفية أنيقة",
+                    "shot_type": "لقطة قريبة",
+                    "camera_movement": "حركة بطيئة للأمام",
+                    "narration": "",
+                    "on_screen_text": "التفاصيل تصنع الفرق",
+                    "sound_design": "موسيقى هادئة",
+                }
+            ],
+            "production_notes": [],
+        }
+    )
+
+
+def _project_asset(tmp_path, monkeypatch, *, filename: str, content: bytes):
+    monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
+    project = create_project(
+        {
+            "name": "Workflow acceptance",
+            "target_duration_seconds": 15,
+            "target_resolution": "640x360",
+            "target_fps": 24,
+            "language": "ar",
+            "brief": "اختبار مسار مونتاج عربي متكامل.",
+        }
+    )
+    asset, path = ingest_file_stream(
+        project["id"],
+        filename,
+        __import__("io").BytesIO(content),
+        max_bytes=1024 * 1024,
+    )
+    return project, asset, path
+
+
+def _make_video(path: Path, duration: int = 2) -> None:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        pytest.skip("FFmpeg is required for workflow render acceptance.")
+    command = [
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
+        "-f", "lavfi", "-i", f"testsrc2=size=320x240:rate=24:duration={duration}",
+        "-f", "lavfi", "-i", f"sine=frequency=440:sample_rate=48000:duration={duration}",
+        "-shortest", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac",
+        str(path),
+    ]
+    subprocess.run(command, check=True, capture_output=True, text=True, timeout=60)
+
+
+def test_from_arabic_brief_creates_reviewable_workflow_not_an_automatic_export(
+    tmp_path, monkeypatch
+):
+    project, asset, _ = _project_asset(
+        tmp_path, monkeypatch, filename="source.mp4", content=b"synthetic-video"
+    )
+    monkeypatch.setattr(
+        workflow_engine,
+        "generate_creative_plan",
+        lambda brief, *, target_duration_seconds, language: _plan(target_duration_seconds),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/v1/workflows/from-brief",
+        json={
+            "project_id": project["id"],
+            "asset_id": asset["id"],
+            "brief": "أنشئ مونتاجًا سينمائيًا قصيرًا لهذا الفيديو مع لقطات واضحة وانتقال سلس.",
+            "language": "ar",
+            "target_duration_seconds": 15,
+        },
+    )
+    assert response.status_code == 201, response.text
+    run = response.json()
+    assert run["status"] == "awaiting_approval"
+    assert run["approval_required"] is True
+    assert run["plan_model"] == settings.ollama_model
+    assert [step["tool_id"] for step in run["steps"]] == [
+        "media.proxy",
+        "media.scenes",
+        "media.timeline",
+        "media.render",
+    ]
+    with session_scope() as db:
+        outbox_count = db.query(OutboxRecord).count()
+    assert outbox_count == 0, "No worker job may run before the user approves the plan."
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg is required")
+def test_approved_workflow_runs_durable_steps_and_exports_mp4(tmp_path, monkeypatch):
+    fixture = tmp_path / "workflow-fixture.mp4"
+    _make_video(fixture, duration=2)
+    project, asset, _ = _project_asset(
+        tmp_path, monkeypatch, filename="source.mp4", content=fixture.read_bytes()
+    )
+    client = TestClient(app)
+    create = client.post(
+        "/v1/workflows",
+        json={
+            "project_id": project["id"],
+            "asset_id": asset["id"],
+            "brief": "اختبار إخراج فيديو من خطة عربية محفوظة.",
+            "language": "ar",
+            "creative_plan": _plan().model_dump(),
+        },
+    )
+    assert create.status_code == 201, create.text
+    workflow_id = create.json()["id"]
+
+    approved = client.post(f"/v1/workflows/{workflow_id}/approve")
+    assert approved.status_code == 202, approved.text
+    assert approved.json()["status"] == "queued"
+
+    for _ in range(6):
+        state = client.get(f"/v1/workflows/{workflow_id}").json()
+        if state["status"] in {"succeeded", "failed", "cancelled"}:
+            break
+        active = next(step for step in state["steps"] if step["status"] == "queued")
+        job_response = client.get(f"/v1/jobs/{active['job_id']}")
+        assert job_response.status_code == 200, job_response.text
+        job = job_response.json()
+        result = run_job_attempt(job["id"], job["dispatch_generation"])
+        assert result["status"] == "succeeded", result
+
+    final = client.get(f"/v1/workflows/{workflow_id}").json()
+    assert final["status"] == "succeeded", final
+    assert all(step["status"] == "succeeded" for step in final["steps"])
+    last_job_id = final["steps"][-1]["job_id"]
+    last_job = client.get(f"/v1/jobs/{last_job_id}").json()
+    download_url = last_job["result"]["download_url"]
+    export = client.get(download_url)
+    assert export.status_code == 200
+    assert export.headers["content-type"].startswith("video/mp4")
+    assert len(export.content) > 1024
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg is required")
+def test_generated_video_becomes_next_step_input_asset(tmp_path, monkeypatch):
+    fixture = tmp_path / "generated-fixture.mp4"
+    _make_video(fixture, duration=2)
+    project, image_asset, _ = _project_asset(
+        tmp_path, monkeypatch, filename="reference.png", content=b"fake-image-content"
+    )
+    monkeypatch.setattr(settings, "comfyui_base_url", "http://comfyui.test:8188")
+
+    def fake_comfyui(job, source, *, progress, cancel_check):
+        output_dir = project_dir(job["project_id"]) / "ai_outputs" / job["id"]
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output = output_dir / "generated.mp4"
+        shutil.copyfile(fixture, output)
+        return {
+            "outputs": [
+                {
+                    "saved_as": output.name,
+                    "metadata": {"streams": [{"codec_type": "video"}]},
+                }
+            ],
+            "files_directory": output_dir.relative_to(project_dir(job["project_id"])).as_posix(),
+        }
+
+    monkeypatch.setattr(job_runner, "execute_comfyui_job", fake_comfyui)
+    client = TestClient(app)
+    created = client.post(
+        "/v1/workflows",
+        json={
+            "project_id": project["id"],
+            "asset_id": image_asset["id"],
+            "brief": "أنشئ فيديو من صورة المنتج ثم حسّن الحركة قبل التصدير.",
+            "language": "ar",
+            "creative_plan": _plan().model_dump(),
+            "generate_video": True,
+            "interpolate_generated_video": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    workflow_id = created.json()["id"]
+    approved = client.post(f"/v1/workflows/{workflow_id}/approve")
+    assert approved.status_code == 202, approved.text
+
+    first = client.get(f"/v1/workflows/{workflow_id}").json()["steps"][0]
+    first_job = client.get(f"/v1/jobs/{first['job_id']}").json()
+    first_result = run_job_attempt(first_job["id"], first_job["dispatch_generation"])
+    assert first_result["status"] == "succeeded"
+
+    after_generation = client.get(f"/v1/workflows/{workflow_id}").json()
+    generation = after_generation["steps"][0]
+    interpolation = after_generation["steps"][1]
+    assert generation["status"] == "succeeded"
+    assert generation["result"]["output_asset_id"]
+    assert interpolation["asset_id"] == generation["result"]["output_asset_id"]
+    generated_asset = client.get(
+        f"/v1/projects/{project['id']}/assets/{interpolation['asset_id']}"
+    )
+    assert generated_asset.status_code == 200
+    assert generated_asset.json()["asset_type"] == "video"
+
+
+def test_workflow_approval_is_idempotent_and_cancel_stops_pending_steps(
+    tmp_path, monkeypatch
+):
+    project, asset, _ = _project_asset(
+        tmp_path, monkeypatch, filename="source.mp4", content=b"synthetic-video"
+    )
+    client = TestClient(app)
+    created = client.post(
+        "/v1/workflows",
+        json={
+            "project_id": project["id"],
+            "asset_id": asset["id"],
+            "brief": "اختبار إيقاف Workflow قبل بدء التنفيذ.",
+            "language": "ar",
+            "creative_plan": _plan().model_dump(),
+        },
+    )
+    assert created.status_code == 201, created.text
+    workflow_id = created.json()["id"]
+    cancelled = client.post(f"/v1/workflows/{workflow_id}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    assert all(step["status"] == "planned" for step in cancelled.json()["steps"])
+
+    create_again = client.post(
+        "/v1/workflows",
+        json={
+            "project_id": project["id"],
+            "asset_id": asset["id"],
+            "brief": "اختبار الموافقة المتكررة.",
+            "language": "ar",
+            "creative_plan": _plan().model_dump(),
+        },
+    )
+    assert create_again.status_code == 201
+    run_id = create_again.json()["id"]
+    first = client.post(f"/v1/workflows/{run_id}/approve")
+    second = client.post(f"/v1/workflows/{run_id}/approve")
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert first.json()["steps"][0]["job_id"] == second.json()["steps"][0]["job_id"]
