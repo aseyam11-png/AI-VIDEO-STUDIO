@@ -1,4 +1,4 @@
-from typing import Annotated, Literal, Union
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -48,6 +48,6 @@ class AsyncJobToolCall(BaseModel):
 
 
 ToolExecutionRequest = Annotated[
-    Union[DirectorPlanToolCall, AsyncJobToolCall],
+    DirectorPlanToolCall | AsyncJobToolCall,
     Field(discriminator="tool_id"),
 ]

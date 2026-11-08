@@ -1,4 +1,4 @@
-from typing import Any
+import typing
 
 from app.schemas.jobs import JobType
 from app.schemas.tools import DirectorPlanToolCall
@@ -6,7 +6,7 @@ from app.services.jobs import _OPTION_MODELS
 from app.services.model_capabilities import get_model_capabilities
 
 
-TOOL_SPECS: tuple[dict[str, Any], ...] = (
+TOOL_SPECS: tuple[dict[str, typing.Any], ...] = (
     {
         "tool_id": "director.plan",
         "name": "AI Director",
