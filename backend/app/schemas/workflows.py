@@ -42,7 +42,7 @@ class WorkflowFromBriefRequest(BaseModel):
     )
     brief: str = Field(min_length=20, max_length=12000)
     language: str = Field(default="ar", pattern=r"^(ar|en)$")
-    target_duration_seconds: int = Field(default=60, ge=15, le=300)
+    target_duration_seconds: int = Field(default=60, ge=1, le=300)
     transcribe_audio: bool = False
     enhance_audio: bool = False
     detection_prompt: str | None = Field(default=None, min_length=1, max_length=500)

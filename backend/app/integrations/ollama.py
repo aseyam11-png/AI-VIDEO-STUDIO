@@ -75,8 +75,8 @@ def generate_creative_plan(
         raise ValueError("A creative brief is required.")
     if language not in {"ar", "en"}:
         raise ValueError("Language must be ar or en.")
-    if not 15 <= target_duration_seconds <= 300:
-        raise ValueError("Target duration must be between 15 and 300 seconds.")
+    if not 1 <= target_duration_seconds <= 300:
+        raise ValueError("Target duration must be between 1 and 300 seconds.")
 
     available = installed_model_names()
     if settings.ollama_model not in available:

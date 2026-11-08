@@ -152,6 +152,11 @@ def _step_specs(
             raise WorkflowRequestError(
                 "An image workflow must explicitly enable video generation."
             )
+        if len(plan.scenes) != 1 or plan.target_duration_seconds > 10:
+            raise WorkflowRequestError(
+                "Image-to-video workflow v1 supports one shot of at most 10 seconds. "
+                "Use a video source for multi-scene projects."
+            )
         scene = plan.scenes[0]
         prompt = (
             f"{plan.logline}. Style: {plan.visual_style}. "
@@ -166,7 +171,7 @@ def _step_specs(
                     "negative_prompt": (
                         "low quality, flicker, distorted geometry, unreadable text"
                     ),
-                    "duration_seconds": min(10, max(1, scene.duration_seconds)),
+                    "duration_seconds": scene.duration_seconds,
                     "width": 832,
                     "height": 480,
                     "approved": True,

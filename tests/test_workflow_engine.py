@@ -200,7 +200,7 @@ def test_generated_video_becomes_next_step_input_asset(tmp_path, monkeypatch):
             "idempotency_key": "workflow-image-to-video-0001",
             "brief": "أنشئ فيديو من صورة المنتج ثم حسّن الحركة قبل التصدير.",
             "language": "ar",
-            "creative_plan": _plan().model_dump(),
+            "creative_plan": _plan(duration=5).model_dump(),
             "generate_video": True,
             "interpolate_generated_video": True,
         },

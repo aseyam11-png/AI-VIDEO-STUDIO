@@ -28,7 +28,7 @@ class CreativePlan(BaseModel):
 
     title: str = Field(min_length=2, max_length=160)
     logline: str = Field(min_length=5, max_length=500)
-    target_duration_seconds: int = Field(ge=15, le=300)
+    target_duration_seconds: int = Field(ge=1, le=300)
     audience: str = Field(min_length=2, max_length=300)
     visual_style: str = Field(min_length=3, max_length=500)
     color_palette: list[str] = Field(min_length=2, max_length=6)

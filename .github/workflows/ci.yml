@@ -39,6 +39,8 @@ jobs:
           cp .env.example .env
           docker compose config --quiet
           rm .env
+      - name: Validate NVIDIA Compose override syntax
+        run: docker compose -f compose.yaml -f compose.gpu.yaml config --quiet
       - name: Provision least-privilege database roles
         run: |
           psql "$BOOTSTRAP_DATABASE_URL" -v ON_ERROR_STOP=1 \
