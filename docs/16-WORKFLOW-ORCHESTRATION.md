@@ -97,7 +97,7 @@ Set OLLAMA_BASE_URL to http://ollama:11434 in the private .env file, then instal
 
 The selected Qwen 3.5 9B Q4_K_M registry artifact is approximately 6.6 GB (model metadata reports 8.95B parameters). Actual memory requirements exceed the artifact download size and depend on context size, concurrency and GPU offload. This Studio currently requests 8K context for director planning.
 
-For Ollama installed directly on Windows, do not start the Compose Ollama service. Set OLLAMA_BASE_URL to http://host.docker.internal:11434 instead. The API container must be recreated after changing .env.
+For Ollama installed directly on Windows, do not start the Compose Ollama service. Ollama binds to `127.0.0.1:11434` by default; a Docker container cannot reach that loopback listener through `host.docker.internal`. Set the Windows user environment variable `OLLAMA_HOST=0.0.0.0:11434`, quit and restart Ollama, then set `OLLAMA_BASE_URL=http://host.docker.internal:11434` in the Studio `.env` and recreate the API container. Keep Windows Firewall restricted to the local/Docker private network; do not expose Ollama's port to the public internet. Ollama's own documentation describes the default loopback binding and the `OLLAMA_HOST` override.
 
 Set OLLAMA_IMAGE to a tested image tag or digest for deployment; the latest tag in the example is a development convenience, not a production pin.
 
@@ -118,7 +118,7 @@ Windows Docker Desktop has a separate host-driver and WSL2 GPU path. If the Olla
 
 ComfyUI remains a separately installed runtime; the Studio repository does not invent a ComfyUI image, custom-node revisions, node IDs or checkpoints. The ComfyUI process must be able to read the same media workspace the Studio writes.
 
-For a Docker-hosted ComfyUI service, attach it to the private Studio network and mount the same MEDIA_HOST_PATH at /srv/video-studio/data. Start ComfyUI with an input directory rooted there. This allows the fixed project-scoped source paths sent by the adapter to resolve inside ComfyUI.
+For a Docker-hosted ComfyUI service, attach it to the private Studio network and mount the same `MEDIA_HOST_PATH` at `/srv/video-studio/data`. Start ComfyUI with an input directory rooted there. This allows the fixed project-scoped source paths sent by the adapter to resolve inside ComfyUI. When ComfyUI runs as a Windows host process, start it with `--listen 0.0.0.0`, set `COMFYUI_BASE_URL=http://host.docker.internal:8188`, and restrict the port using Windows Firewall just as for Ollama.
 
 For every supported workflow:
 
@@ -147,7 +147,7 @@ Linux:
     bash infra/scripts/model-runtime-preflight.sh
     RUN_ARABIC_INFERENCE_SMOKE_TEST=true bash infra/scripts/model-runtime-preflight.sh
 
-The scripts check host GPU visibility, Docker, Studio readiness, Ollama model presence and ComfyUI device reporting. They do not install software, download model weights or start GPU jobs.
+The scripts check Docker, Studio readiness, Ollama model presence and ComfyUI GPU device types (CUDA/ROCm/DirectML/Vulkan where exposed). NVIDIA hosts also report `nvidia-smi`; its absence is not treated as failure on AMD/non-NVIDIA hosts. The scripts do not install software, download model weights or start GPU jobs.
 
 ## Acceptance checklist
 

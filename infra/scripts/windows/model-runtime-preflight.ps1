@@ -1,7 +1,7 @@
 param(
     [string]$ApiBaseUrl = "http://127.0.0.1:8000",
     [string]$OllamaBaseUrl = "http://127.0.0.1:11434",
-    [string]$ComfyUIBaseUrl = "http://host.docker.internal:8188",
+    [string]$ComfyUIBaseUrl = "http://127.0.0.1:8188",
     [switch]$RunArabicInferenceSmokeTest
 )
 
@@ -19,8 +19,7 @@ if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
     nvidia-smi
     if ($LASTEXITCODE -ne 0) { $Failures.Add("nvidia-smi failed.") }
 } else {
-    Write-Warning "nvidia-smi is unavailable. NVIDIA GPU inference cannot be verified."
-    $Failures.Add("NVIDIA driver utility not found.")
+    Write-Warning "nvidia-smi is unavailable. This is normal on AMD/non-NVIDIA hosts; ComfyUI device inspection remains required."
 }
 
 Write-Section "Docker Engine"
@@ -71,9 +70,15 @@ try {
     try {
         $stats = Invoke-RestMethod -Uri "$ComfyUIBaseUrl/system_stats" -TimeoutSec 10
         $stats | ConvertTo-Json -Depth 8
-        if (@($stats.devices).Count -eq 0) {
-            Write-Warning "ComfyUI reports no devices. Check its CUDA/PyTorch runtime."
-            $Failures.Add("ComfyUI reports no compute device.")
+        $gpuDevices = @($stats.devices | Where-Object {
+            ([string]$_.type -match "(?i)cuda|hip|rocm|directml|vulkan") -or
+            ([string]$_.name -match "(?i)nvidia|amd|radeon|geforce|rtx")
+        })
+        if ($gpuDevices.Count -eq 0) {
+            Write-Warning "ComfyUI reports no recognizable GPU device. Check the installed PyTorch/backend."
+            $Failures.Add("ComfyUI reports no recognizable GPU device.")
+        } else {
+            $gpuDevices | ConvertTo-Json -Depth 6
         }
     } catch {
         Write-Warning "ComfyUI is not reachable at $ComfyUIBaseUrl."

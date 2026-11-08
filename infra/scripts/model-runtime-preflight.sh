@@ -14,7 +14,7 @@ section "GPU driver"
 if command -v nvidia-smi >/dev/null 2>&1; then
   nvidia-smi || fail "nvidia-smi failed"
 else
-  fail "nvidia-smi not found; NVIDIA GPU not verified"
+  echo "nvidia-smi is unavailable; this is normal on AMD/non-NVIDIA hosts."
 fi
 
 section "Docker"
@@ -37,7 +37,7 @@ fi
 section "ComfyUI"
 if stats="$(curl --fail --silent --show-error "$COMFYUI_BASE_URL/system_stats")"; then
   printf '%s\n' "$stats" | python -m json.tool
-  printf '%s' "$stats" | python -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("devices") else 1)' || fail "ComfyUI reports no compute device"
+  printf '%s' "$stats" | python -c 'import json,re,sys; ds=json.load(sys.stdin).get("devices",[]); rx=re.compile(r"cuda|hip|rocm|directml|vulkan|nvidia|amd|radeon|geforce|rtx",re.I); ok=any(rx.search(str(d.get("type",""))+" "+str(d.get("name",""))) for d in ds); sys.exit(0 if ok else 1)' || fail "ComfyUI reports no recognizable GPU device"
 else
   fail "ComfyUI is not reachable at $COMFYUI_BASE_URL"
 fi
