@@ -271,3 +271,57 @@ def test_workflow_approval_is_idempotent_and_cancel_stops_pending_steps(
     assert first.status_code == 202
     assert second.status_code == 202
     assert first.json()["steps"][0]["job_id"] == second.json()["steps"][0]["job_id"]
+
+
+
+def test_workflow_request_replays_same_idempotency_key_and_rejects_changed_body(
+    tmp_path, monkeypatch
+):
+    project, asset, _ = _project_asset(
+        tmp_path, monkeypatch, filename="source.mp4", content=b"synthetic-video"
+    )
+    client = TestClient(app)
+    payload = {
+        "project_id": project["id"],
+        "asset_id": asset["id"],
+        "idempotency_key": "workflow-idempotency-0001",
+        "brief": "اختبار منع إنشاء مسارات إنتاج مكررة.",
+        "language": "ar",
+        "creative_plan": _plan().model_dump(),
+    }
+    first = client.post("/v1/workflows", json=payload)
+    replay = client.post("/v1/workflows", json=payload)
+    assert first.status_code == 201, first.text
+    assert replay.status_code == 201, replay.text
+    assert replay.json()["id"] == first.json()["id"]
+
+    changed = {**payload, "brief": "وصف مختلف مع نفس مفتاح منع التكرار."}
+    conflict = client.post("/v1/workflows", json=changed)
+    assert conflict.status_code == 409, conflict.text
+
+
+def test_workflow_can_plan_grounding_dino_and_sam2_before_video_editing(
+    tmp_path, monkeypatch
+):
+    project, asset, _ = _project_asset(
+        tmp_path, monkeypatch, filename="source.mp4", content=b"synthetic-video"
+    )
+    client = TestClient(app)
+    payload = {
+        "project_id": project["id"],
+        "asset_id": asset["id"],
+        "idempotency_key": "workflow-vision-tools-0001",
+        "brief": "تتبع العنصر الرئيسي ثم جهز المشاهد للتصدير.",
+        "language": "ar",
+        "creative_plan": _plan().model_dump(),
+        "detection_prompt": "the main product",
+        "tracking_prompt": "the main product",
+    }
+    response = client.post("/v1/workflows", json=payload)
+    assert response.status_code == 201, response.text
+    assert [step["tool_id"] for step in response.json()["steps"][:4]] == [
+        "vision.detect",
+        "vision.track",
+        "media.proxy",
+        "media.scenes",
+    ]

@@ -111,6 +111,11 @@ def _step_specs(
     project: ProjectRecord,
 ) -> list[tuple[JobType, dict]]:
     plan = request.creative_plan
+    if request.upscale_output:
+        raise WorkflowRequestError(
+            "Real-ESRGAN is currently an image/selected-frame tool. "
+            "Video frame extraction and reassembly are not yet enabled in automatic workflows."
+        )
     fps = min(project.target_fps, 60)
     width, height = _resolution(project.target_resolution)
     steps: list[tuple[JobType, dict]] = []
@@ -170,8 +175,6 @@ def _step_specs(
         )
         if request.interpolate_generated_video:
             steps.append((JobType.VIDEO_INTERPOLATE, {"factor": 2}))
-        if request.upscale_output:
-            steps.append((JobType.VIDEO_UPSCALE, {"scale": 2}))
     elif asset_type == "video":
         if request.generate_video:
             raise WorkflowRequestError(

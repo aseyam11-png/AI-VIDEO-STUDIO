@@ -4,10 +4,10 @@
 
 The Workflow API turns a reviewed production plan into a durable sequence of Phase 1 jobs. Each run and each step is persisted in PostgreSQL. Job creation, job event, and transactional outbox row for the next step are committed in one database transaction.
 
-The first version supports these safe paths:
+The first version supports these safe paths. SAM 2 tracking can be inserted for video inputs when a tracking prompt is supplied. Real-ESRGAN remains callable through the unified tools API for images/selected frames; automatic video frame extraction and reassembly are deliberately not claimed yet.
 
 - Video asset: optional Grounding DINO detection, optional DeepFilterNet audio enhancement, optional WhisperX transcription, FFmpeg proxy, scene detection, OTIO timeline, FFmpeg MP4 export.
-- Image asset: optional Grounding DINO detection, approved Wan 2.2 TI2V 5B generation, optional RIFE interpolation, OTIO timeline, FFmpeg MP4 export.
+- Image asset: approved Wan 2.2 TI2V 5B generation and optional RIFE interpolation, followed by OTIO timeline and FFmpeg export. This is a short-shot path; full multi-scene Wan shot assembly is not included in workflow v1.
 
 Generated video output from Wan, RIFE, Real-ESRGAN video output, and DeepFilterNet's cleaned video is registered as a project Asset using a stable job-derived ID. The next workflow step receives that new asset ID. The engine does not rely on in-memory task return state for handoff.
 
@@ -27,7 +27,8 @@ A failure stops the run. Retrying the child job re-opens its workflow step. Canc
       "target_duration_seconds": 30,
       "transcribe_audio": false,
       "enhance_audio": false,
-      "generate_video": false
+      "generate_video": false,
+  "tracking_prompt": "the main product"
     }
 
 2. Inspect the Qwen plan and ordered steps in the response. The workflow status remains awaiting_approval. No Job or Outbox entry is created before approval.
@@ -127,3 +128,8 @@ The scripts check host GPU visibility, Docker, Studio readiness, Ollama model pr
 - [ ] OTIO/FFmpeg render exports an MP4 that downloads and passes ffprobe.
 
 GitHub CI can verify migrations, durable job chaining, mocked generated-Asset handoff, and CPU-based FFmpeg export. It cannot access the user's private Windows GPU, installed ComfyUI custom nodes, private checkpoints or local Ollama weights. Those hardware and real-inference checks must be run on the target host before production acceptance.
+
+
+### Idempotency
+
+Both workflow creation endpoints require a project-scoped `idempotency_key`. A replay with the same normalized request returns the existing workflow, including the original Qwen plan for `/from-brief`; reuse with a different request returns HTTP 409. This avoids calling Qwen twice when a client retries a request after a network timeout.

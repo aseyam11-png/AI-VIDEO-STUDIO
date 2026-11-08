@@ -204,6 +204,11 @@ def _execute_media_job(
                 ),
                 None,
             )
+            if job_type == JobType.VIDEO_UPSCALE.value and asset_type == "video" and video_output is None:
+                raise ValueError(
+                    "The configured Real-ESRGAN workflow did not return a video. "
+                    "Video output is required before a downstream timeline/export step."
+                )
             if video_output is not None:
                 generated_path = (
                     project_dir(project_id)
