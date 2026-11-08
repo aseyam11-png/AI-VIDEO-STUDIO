@@ -1,0 +1,23 @@
+profiles:
+  initial_24gb:
+    description: Single 24 GB NVIDIA GPU; exact SKU must be benchmarked before production.
+    max_parallel_heavy_gpu_jobs: 1
+    heavy_gpu_process_isolation: true
+    allow_llm_during_video_generation: cpu_only
+    generation:
+      initial_workflow: wan22_ti2v_5b_v1
+      shot_duration_seconds_max: 10
+      require_user_approval: true
+      max_retries_per_shot: 2
+      require_peak_vram_recording: true
+    safety_limits:
+      gpu_temperature_celsius_soft_limit: 82
+      gpu_temperature_celsius_hard_limit: 88
+      disk_free_gb_minimum_before_job: 20
+      host_ram_gb_recommended: 64
+      per_project_gpu_seconds_default: 7200
+      stop_when_budget_exceeded: true
+    notes:
+      - These are initial policy defaults, not measured performance claims.
+      - Temperature thresholds must be checked against the cloud host and device.
+      - Do not run Wan, SAM 2 and other heavy models concurrently on the initial profile.
