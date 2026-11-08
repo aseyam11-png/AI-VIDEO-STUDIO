@@ -20,7 +20,7 @@ tools:
     mode: deterministic
     approval: automatic
   - id: qwen_director
-    model: qwen3.5:9b
+    model: qwen3.5:9b-q4_K_M
     runtime: Ollama
     purpose: convert Arabic or English user brief into a typed creative plan
     executor: API

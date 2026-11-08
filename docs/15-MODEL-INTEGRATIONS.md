@@ -138,3 +138,16 @@ The Studio repository and CI images contain no model weights. At runtime, the in
 - Blender templates are project assets, not neural weights.
 
 The exact ComfyUI files are not pinned by this repository because they depend on the exported workflow node graph and the chosen compatible custom-node revisions. Do not mark a model ready until the workflow, checkpoint revision, license record and target-GPU benchmark have been recorded.
+
+
+## Unified AI Tool Gateway
+
+The integration branch exposes one discovery and dispatch contract:
+
+- `GET /v1/tools` returns the allowlisted tool catalog, per-tool payload schemas, execution queue and runtime-readiness notes.
+- `POST /v1/tools/execute` accepts a discriminated `tool_id`. `director.plan` returns a Qwen draft plan. All other registered operations are submitted as durable jobs through the existing Phase 1 job service.
+- Job status and event history remain available through `GET /v1/jobs/{job_id}` and `GET /v1/jobs/{job_id}/events`.
+- The gateway does not grant models shell access, arbitrary workflow IDs, arbitrary Blender scripts or unscoped filesystem access.
+- Idempotency, payload validation, queue isolation, retry and cancellation continue to be enforced by the existing job engine.
+
+This is the first unified invocation layer, not a claim that a multi-stage edit graph is already executing end-to-end. The current job model represents one operation per durable job; it does not yet persist parent/child dependencies or register one job's output as the next job's input asset. A later workflow-orchestration stage must add durable step dependencies and artifact lineage before advertising automatic model-to-model chaining. CI verifies the gateway contract and mocked adapters; real inference still requires the private runtimes, exported ComfyUI workflows, exact model weights and target-host smoke tests.
