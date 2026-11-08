@@ -7,13 +7,230 @@ on:
 jobs:
   python-checks:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: video_studio_ci
+          POSTGRES_USER: video_studio_bootstrap
+          POSTGRES_PASSWORD: ci-bootstrap-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U video_studio_bootstrap -d video_studio_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BOOTSTRAP_DATABASE_URL: postgresql://video_studio_bootstrap:ci-bootstrap-password@localhost:5432/video_studio_ci
+      DATABASE_URL: postgresql+psycopg://video_studio_migrator:ci-migrator-password@localhost:5432/video_studio_ci
+      RUNTIME_DATABASE_URL: postgresql://video_studio_runtime:ci-runtime-password@localhost:5432/video_studio_ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev,media]"
-      - run: ruff check backend tests
-      - run: pytest -q
+      - name: Validate Docker Compose configuration
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+          rm .env
+      - name: Provision least-privilege database roles
+        run: |
+          psql "$BOOTSTRAP_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            --set=migrator_user=video_studio_migrator \
+            --set=migrator_password=ci-migrator-password \
+            --set=runtime_user=video_studio_runtime \
+            --set=runtime_password=ci-runtime-password \
+            --set=database_name=video_studio_ci <<'SQL'
+          CREATE ROLE :"migrator_user" LOGIN PASSWORD :'migrator_password'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+          CREATE ROLE :"runtime_user" LOGIN PASSWORD :'runtime_password'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+          ALTER DATABASE :"database_name" OWNER TO :"migrator_user";
+          GRANT CONNECT ON DATABASE :"database_name" TO :"runtime_user";
+          ALTER SCHEMA public OWNER TO :"migrator_user";
+          GRANT USAGE ON SCHEMA public TO :"runtime_user";
+          ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_user" IN SCHEMA public
+            GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"runtime_user";
+          ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_user" IN SCHEMA public
+            GRANT USAGE, SELECT ON SEQUENCES TO :"runtime_user";
+          SQL
+      - name: Verify PostgreSQL migrations as migrator role
+        run: python -m alembic upgrade head
+      - name: Verify runtime database privileges
+        run: |
+          psql "$RUNTIME_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT version_num FROM alembic_version"
+          psql "$RUNTIME_DATABASE_URL" -v ON_ERROR_STOP=1 -c "BEGIN; INSERT INTO projects (id, name, target_duration_seconds, target_resolution, target_fps, language, brief, status, metadata_json, created_at, updated_at) VALUES ('00000000-0000-4000-8000-000000000001', 'Runtime permission check', 1, '640x360', 24, 'ar', 'CI', 'created', '{}'::json, NOW(), NOW()); ROLLBACK;"
+          if psql "$RUNTIME_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE TABLE public.runtime_ddl_must_fail (id integer)" 2>/dev/null; then
+            echo "Runtime role unexpectedly has DDL privileges."
+            exit 1
+          fi
+      - name: Verify FastAPI with restricted PostgreSQL runtime role
+        env:
+          DATABASE_URL: postgresql+psycopg://video_studio_runtime:ci-runtime-password@localhost:5432/video_studio_ci
+          MEDIA_ROOT: ${{ runner.temp }}/ai-video-studio-runtime-media
+        run: |
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+
+          from app.main import app
+
+          client = TestClient(app)
+          ready = client.get("/ready")
+          assert ready.status_code == 200, ready.text
+
+          created = client.post(
+              "/v1/projects",
+              json={
+                  "name": "Least privilege runtime test",
+                  "target_duration_seconds": 5,
+                  "target_resolution": "640x360",
+                  "target_fps": 24,
+                  "language": "ar",
+                  "brief": "Verify FastAPI writes using the restricted runtime role.",
+              },
+          )
+          assert created.status_code == 201, created.text
+          project_id = created.json()["id"]
+          fetched = client.get(f"/v1/projects/{project_id}")
+          assert fetched.status_code == 200, fetched.text
+          assert fetched.json()["id"] == project_id
+          print("FastAPI readiness, project create, and project read passed with runtime role.")
+          PY
+      - name: Verify code quality
+        run: ruff check backend tests
+      - name: Run test suite
+        run: pytest -q
+
+  compose-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install FFmpeg and curl
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg curl
+      - name: Create ephemeral test configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          replace_secret() {
+            local placeholder="$1"
+            local value
+            value="$(openssl rand -hex 32)"
+            sed -i "s/${placeholder}/${value}/" .env
+          }
+          replace_secret REPLACE_WITH_BOOTSTRAP_SECRET
+          replace_secret REPLACE_WITH_MIGRATOR_SECRET
+          replace_secret REPLACE_WITH_RUNTIME_SECRET
+          replace_secret REPLACE_WITH_VALKEY_SECRET
+          sed -i "s|MEDIA_HOST_PATH=./data|MEDIA_HOST_PATH=${RUNNER_TEMP}/studio-compose-media|" .env
+          mkdir -p "${RUNNER_TEMP}/studio-compose-media"
+          chmod 700 "${RUNNER_TEMP}/studio-compose-media"
+      - name: Build and start the complete Compose stack
+        run: docker compose up -d --build
+      - name: Wait for API readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in $(seq 1 90); do
+            if curl --fail --silent http://127.0.0.1:8000/ready >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" -ne 1 ]; then
+            docker compose ps
+            docker compose logs --no-color --tail=120
+            exit 1
+          fi
+      - name: Verify real API to Outbox to Valkey to Celery worker execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i testsrc2=size=320x240:rate=24:duration=2 \
+            -f lavfi -i sine=frequency=660:sample_rate=48000:duration=2 \
+            -shortest -c:v libx264 -pix_fmt yuv420p -c:a aac \
+            "${RUNNER_TEMP}/studio-compose-fixture.mp4"
+
+          project_response="$(curl --fail --silent --show-error \
+            -H 'Content-Type: application/json' \
+            -d '{"name":"Compose worker acceptance","target_duration_seconds":2,"target_resolution":"640x360","target_fps":24,"language":"ar","brief":"Verify real broker-backed CPU job execution."}' \
+            http://127.0.0.1:8000/v1/projects)"
+          project_id="$(python -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<< "$project_response")"
+
+          asset_response="$(curl --fail --silent --show-error \
+            -F "file=@${RUNNER_TEMP}/studio-compose-fixture.mp4;type=video/mp4" \
+            "http://127.0.0.1:8000/v1/projects/$project_id/assets")"
+          asset_id="$(python -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<< "$asset_response")"
+
+          submit_job() {
+            local job_type="$1"
+            local payload="$2"
+            local idempotency_key="$3"
+            local job_response
+            local job_id
+            local final_status=""
+            local job_state
+
+            job_response="$(curl --fail --silent --show-error \
+              -H 'Content-Type: application/json' \
+              -d "{\"project_id\":\"$project_id\",\"asset_id\":\"$asset_id\",\"job_type\":\"$job_type\",\"payload\":$payload,\"idempotency_key\":\"$idempotency_key\"}" \
+              http://127.0.0.1:8000/v1/jobs)"
+            job_id="$(python -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<< "$job_response")"
+
+            for attempt in $(seq 1 90); do
+              job_state="$(curl --fail --silent --show-error "http://127.0.0.1:8000/v1/jobs/$job_id")"
+              final_status="$(python -c 'import json,sys; print(json.load(sys.stdin)["status"])' <<< "$job_state")"
+              if [ "$final_status" = "succeeded" ]; then
+                break
+              fi
+              if [ "$final_status" = "failed" ] || [ "$final_status" = "cancelled" ]; then
+                echo "$job_state"
+                docker compose logs --no-color --tail=160 worker-cpu worker-control scheduler api
+                exit 1
+              fi
+              sleep 2
+            done
+
+            if [ "$final_status" != "succeeded" ]; then
+              echo "Job $job_type did not finish. Final state: $final_status"
+              docker compose logs --no-color --tail=160 worker-cpu worker-control scheduler api
+              exit 1
+            fi
+
+            events="$(curl --fail --silent --show-error "http://127.0.0.1:8000/v1/jobs/$job_id/events")"
+            python -c 'import json,sys; e=json.load(sys.stdin); kinds={x["event_type"] for x in e}; assert {"created","started","progress","succeeded"}.issubset(kinds), kinds; print("Broker-backed event lifecycle passed:", sorted(kinds))' <<< "$events"
+            echo "Completed broker-backed job: $job_type ($job_id)"
+          }
+
+          submit_job "media.proxy" '{"max_width":640,"fps":24}' "compose-proxy-acceptance-0001"
+          submit_job "media.scenes" '{"threshold":27.0,"min_scene_len":10}' "compose-scenes-acceptance-0001"
+          submit_job "media.timeline" '{"fps":24}' "compose-timeline-acceptance-0001"
+          submit_job "media.render" '{"width":640,"height":360,"fps":24,"crf":24}' "compose-render-acceptance-0001"
+
+          rendered_path="${RUNNER_TEMP}/studio-compose-rendered.mp4"
+          content_type="$(curl --fail --silent --show-error \
+            -o "$rendered_path" -w '%{content_type}' \
+            "http://127.0.0.1:8000/v1/projects/$project_id/assets/$asset_id/rendered")"
+          test "$content_type" = "video/mp4"
+          test -s "$rendered_path"
+          ffprobe -v error -show_entries format=duration -of csv=p=0 "$rendered_path"
+          echo "Full Compose acceptance passed: API -> PostgreSQL -> Outbox -> Valkey -> control worker -> CPU worker -> FFmpeg/PySceneDetect/OTIO -> MP4 download."
+      - name: Collect service logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=200
+      - name: Stop Compose stack and remove CI volumes
+        if: always()
+        run: docker compose down -v --remove-orphans

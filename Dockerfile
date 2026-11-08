@@ -7,7 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md alembic.ini ./
+COPY migrations ./migrations
 COPY backend ./backend
 RUN pip install --no-cache-dir ".[media]"
 EXPOSE 8000

@@ -4,7 +4,7 @@
 
 Describe a video in Arabic, provide source media and product references, approve a creative plan, then orchestrate analysis, selected AI generation, editing, motion graphics, audio processing, quality checks, and final export.
 
-> **Current state: Phase 0.5 media pipeline implementation.** The repository contains an initial deterministic media API and tests. It is not yet a complete video editor or production-ready service. Model weights are not included, WhisperX is optional, GPU inference is not enabled, and the web UI is not yet connected to the media API.
+> **Current state: Phase 1 implementation in a review branch.** Phase 0.5 media processing passed local acceptance on Windows. Phase 1 introduces database-backed metadata and durable background jobs; it is not yet merged to main or production-ready. No model weights are included, WhisperX is optional, GPU inference is not enabled, and the web UI is not yet connected to the API.
 
 ## Product scope
 
@@ -70,12 +70,37 @@ Download the preview:
 
 The current timeline renderer handles ordered cuts from **one source video**. It does not yet support multi-source editing, overlays, transitions, subtitles, motion graphics, or AI-generated shots. Those are later phases.
 
+## Phase 1 durable job API
+
+Submit a validated background media job:
+
+    POST /v1/jobs
+
+List and inspect jobs:
+
+    GET /v1/jobs?project_id={project_id}
+    GET /v1/jobs/{job_id}
+    GET /v1/jobs/{job_id}/events
+
+Request cancellation or retry an eligible job:
+
+    POST /v1/jobs/{job_id}/cancel
+    POST /v1/jobs/{job_id}/retry
+
+Supported initial types are `media.proxy`, `media.scenes`, `media.timeline`, and `media.render`. Payloads are allowlisted and validated by job type. Submit requests carry a project-scoped `idempotency_key`; repeating the same request returns the original job, while reusing the key with different request content returns HTTP 409. A partial unique database index also prevents concurrent active jobs of the same operation type on the same asset.
+
+Job rows, job events, and outbox messages are written in one database transaction. Celery workers consume messages via Valkey; PostgreSQL remains the authoritative source for status, progress checkpoints, attempts, heartbeats, results, and errors. Separate Celery `control` and `cpu` queues keep scheduling/recovery tasks away from media-processing workers. Delivery is at-least-once, with database generation checks fencing stale/duplicate deliveries. Progress is an honest stage checkpoint, not a fabricated percentage from FFmpeg.
+
+See [Phase 1 Job Engine](docs/14-PHASE-1-JOB-ENGINE.md) for lifecycle, reliability guarantees, migrations, legacy import, and run instructions.
+
 ## Key design decisions
 
-- PostgreSQL is planned as the durable source of truth in Phase 1. Phase 0.5 uses atomic JSON manifests on the persistent media volume.
-- Valkey/Redis is a broker/cache, not the only record of job state.
+- PostgreSQL is the durable source of truth when configured; SQLite under MEDIA_ROOT supports a single-process local development fallback. Alembic owns schema changes; application startup never creates tables automatically.
+- Phase 0.5 projects/assets are imported idempotently from JSON manifests using `python -m app.cli import-legacy-manifests`. Media bytes remain on the filesystem.
+- Valkey is a Celery transport, not the source of truth for job state or results.
+- The transactional outbox prevents the database-commit/message-publish gap; workers must still tolerate at-least-once delivery.
 - LangGraph checkpoints must be persisted and tested; in-memory checkpoints are not for production.
-- CPU and GPU tasks will use separate queues. The initial 24 GB profile permits one heavy GPU job at a time.
+- Phase 1 currently routes deterministic media jobs to the CPU queue. GPU queues and GPU scheduling are deferred until model workers are designed and benchmarked.
 - FFmpeg is the deterministic render engine. OpenTimelineIO is the timeline interchange model, not a renderer.
 - ComfyUI workflows will be reviewed, versioned templates. Agents may fill validated parameters only.
 - Product Identity Lock is a first-class future subsystem. Generated video can alter product details; logos and small markings require reference compositing or 3D assets and QA.
@@ -93,12 +118,15 @@ Requirements: Python 3.11, FFmpeg/FFprobe, and the media extra.
 5. Run uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000.
 6. Open http://127.0.0.1:8000/docs.
 
-Docker development:
+Docker development (Phase 1):
 
-1. Copy .env.example to .env and replace both placeholder secrets.
-2. Run docker compose config.
-3. Run docker compose up --build.
-4. Check http://127.0.0.1:8000/health.
+1. Copy .env.example to .env.
+2. Generate four independent URL-safe secrets for the PostgreSQL bootstrap, migration, runtime, and Valkey roles. Set MEDIA_HOST_PATH to a private host directory outside the Git checkout; for example, the existing Windows media directory.
+3. Run `docker compose up -d --build`. Compose starts PostgreSQL and Valkey, applies Alembic migrations, then starts the API, CPU media worker, control worker, and scheduler.
+4. Import existing Phase 0.5 manifests once with `docker compose exec api python -m app.cli import-legacy-manifests`. The importer is idempotent and does not move media bytes.
+5. Check `http://127.0.0.1:8000/health` and `http://127.0.0.1:8000/ready`.
+
+PostgreSQL and Valkey have no published host ports. The API is bound to localhost only. See [Phase 1 Job Engine](docs/14-PHASE-1-JOB-ENGINE.md) for API examples, local SQLite mode, backup and recovery.
 
 The API port is bound to localhost in Compose. Do not expose it publicly. On a cloud host, place access behind a private VPN and authentication before remote use.
 
@@ -118,12 +146,14 @@ WhisperX is not installed in the base image because it brings a large ML depende
 | OpenTimelineIO timeline generation | Implemented with media extra |
 | Simple cut-only FFmpeg preview render | Implemented for one source asset |
 | Automated media integration test | **Passed in GitHub Actions** |
-| PostgreSQL-backed job state | Planned; not yet wired |
-| Durable queue, GPU scheduler and isolated workers | Not implemented |
+| PostgreSQL-backed project/asset/job metadata | Implemented on Phase 1 branch; Alembic migration and legacy import added |
+| Durable job API, transactional outbox, Celery control + CPU workers and recovery | Implemented on Phase 1 branch; CI run 95 passed (29 tests + full Compose pipeline) |
+| GPU scheduler and isolated GPU workers | Not implemented |
 | LangGraph live LLM and agents | Placeholder only |
 | Wan/ComfyUI/SAM 2 production inference | Not installed or benchmarked |
 | Product Identity Lock | Design requirement; not implemented |
 | Arabic RTL web UI | Visual scaffold; not connected to API |
+| Phase 1 review / CI verification | CI run 95 passed on commit b88b7a8; PR #1 remains Draft and unmerged |
 | Production readiness | **Not ready** |
 
 ## Public repository notice
@@ -132,8 +162,8 @@ This repository is public. Keep it free of secrets and private media. A public r
 
 ## Latest verification
 
-GitHub Actions run 83 passed on 2026-11-08: Ruff succeeded and pytest reported 16 passed, including a synthetic FFmpeg end-to-end media test. This validates the CI Linux environment only; deployment on a GPU server and testing with user-supplied media remain outstanding.
+GitHub Actions run 89 passed on 2026-11-08: Ruff, Docker Compose configuration, PostgreSQL migration with a non-superuser migrator, runtime DML/DDL privilege checks, and pytest (29 passed, 2 warnings). This validates the CI Linux environment only; a full Compose lifecycle on Windows, user-media testing, authentication, production deployment, and GPU benchmarking remain outstanding. Phase 0.5 local Windows media acceptance was also completed manually.
 
 ## Next step
 
-Connect the Arabic UI to the project/media API and move synchronous media work to durable background jobs. Do not provision paid GPU time or download large generation weights until the exact hardware, artifact licenses, and benchmark budget are verified.
+Complete Phase 1 review and acceptance on its feature branch, then connect the Arabic UI to the durable job API. Do not provision paid GPU time or download large generation weights until the exact hardware, artifact licenses, and benchmark budget are verified.

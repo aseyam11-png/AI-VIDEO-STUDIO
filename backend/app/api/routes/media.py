@@ -20,6 +20,7 @@ from app.media.speech import SpeechDependencyError, transcribe_local
 from app.media.storage import (
     asset_dir,
     atomic_write_json,
+    delete_asset_record,
     get_asset,
     get_project,
     ingest_file_stream,
@@ -27,6 +28,7 @@ from app.media.storage import (
     media_root,
     project_dir,
     read_json,
+    update_asset_manifest,
 )
 
 router = APIRouter(prefix="/v1/projects/{project_id}", tags=["media"])
@@ -100,18 +102,22 @@ async def upload_asset(project_id: str, file: Annotated[UploadFile, File()]) -> 
             stream.get("codec_type") == "video" for stream in streams
         ):
             raise ValueError("Uploaded file does not contain a video stream.")
-        manifest["probe"] = metadata
-        manifest["status"] = "ready"
-        await run_in_threadpool(
-            atomic_write_json, asset_dir(project_id, manifest["id"]) / "asset.json", manifest
+        manifest = await run_in_threadpool(
+            update_asset_manifest,
+            project_id,
+            manifest["id"],
+            {"probe": metadata, "status": "ready"},
         )
         return manifest
     except (ValueError, MediaToolError) as exc:
         if "manifest" in locals():
+            await run_in_threadpool(delete_asset_record, project_id, manifest["id"])
             directory = asset_dir(project_id, manifest["id"])
-            for child in directory.glob("*"):
-                child.unlink(missing_ok=True)
-            directory.rmdir()
+            if directory.exists():
+                for child in directory.iterdir():
+                    if child.is_file():
+                        child.unlink(missing_ok=True)
+                directory.rmdir()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     finally:
         await file.close()
@@ -146,11 +152,7 @@ async def create_proxy_route(project_id: str, asset_id: str, payload: ProxyReque
         result = await run_in_threadpool(
             create_proxy, source, destination, max_width=payload.max_width, fps=payload.fps
         )
-        manifest = dict(asset)
-        manifest["proxy"] = result
-        await run_in_threadpool(
-            atomic_write_json, asset_dir(project_id, asset_id) / "asset.json", manifest
-        )
+        await run_in_threadpool(update_asset_manifest, project_id, asset_id, {"proxy": result})
         return result
     except (ValueError, MediaToolError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

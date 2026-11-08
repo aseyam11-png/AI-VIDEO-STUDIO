@@ -1,8 +1,16 @@
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import StrEnum
-from uuid import UUID, uuid4
+from typing import Any
+from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class JobType(StrEnum):
+    MEDIA_PROXY = "media.proxy"
+    MEDIA_SCENES = "media.scenes"
+    MEDIA_TIMELINE = "media.timeline"
+    MEDIA_RENDER = "media.render"
 
 
 class JobStatus(StrEnum):
@@ -10,21 +18,59 @@ class JobStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+    CANCEL_REQUESTED = "cancel_requested"
     CANCELLED = "cancelled"
-    NEEDS_APPROVAL = "needs_approval"
 
 
 class JobCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     project_id: UUID
-    job_type: str = Field(min_length=2, max_length=80)
-    payload: dict = Field(default_factory=dict)
-    idempotency_key: str = Field(min_length=8, max_length=160)
+    asset_id: UUID
+    job_type: JobType
+    payload: dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str = Field(min_length=8, max_length=160, pattern=r"^[A-Za-z0-9._:-]+$")
 
 
 class JobView(BaseModel):
-    id: UUID = Field(default_factory=uuid4)
+    id: UUID
     project_id: UUID
-    job_type: str
-    status: JobStatus = JobStatus.QUEUED
-    progress: float = Field(default=0, ge=0, le=100)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    asset_id: UUID | None
+    job_type: JobType
+    queue_name: str
+    status: JobStatus
+    progress: int = Field(ge=0, le=100)
+    progress_stage: str
+    progress_message: str
+    payload: dict[str, Any]
+    result: dict[str, Any] | None
+    error_code: str | None
+    error_message: str | None
+    attempt_count: int
+    max_attempts: int
+    retry_count: int
+    dispatch_generation: int
+    cancel_requested: bool
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    heartbeat_at: datetime | None
+    finished_at: datetime | None
+
+
+class JobEventView(BaseModel):
+    id: int
+    job_id: UUID
+    event_type: str
+    status: JobStatus
+    progress: int
+    message: str
+    details: dict[str, Any]
+    created_at: datetime
+
+
+class JobListView(BaseModel):
+    items: list[JobView]
+    limit: int
+    offset: int
+    total: int

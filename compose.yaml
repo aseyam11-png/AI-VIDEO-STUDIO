@@ -4,12 +4,17 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-video_studio}
-      POSTGRES_USER: ${POSTGRES_USER:-video_studio}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_USER: ${POSTGRES_BOOTSTRAP_USER:-video_studio_bootstrap}
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:?Set POSTGRES_BOOTSTRAP_PASSWORD in .env}
+      DATABASE_MIGRATOR_USER: ${DATABASE_MIGRATOR_USER:-video_studio_migrator}
+      DATABASE_MIGRATOR_PASSWORD: ${DATABASE_MIGRATOR_PASSWORD:?Set DATABASE_MIGRATOR_PASSWORD in .env}
+      DATABASE_RUNTIME_USER: ${DATABASE_RUNTIME_USER:-video_studio_runtime}
+      DATABASE_RUNTIME_PASSWORD: ${DATABASE_RUNTIME_PASSWORD:?Set DATABASE_RUNTIME_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./database-init/01-roles.sh:/docker-entrypoint-initdb.d/01-roles.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-video_studio} -d ${POSTGRES_DB:-video_studio}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_BOOTSTRAP_USER:-video_studio_bootstrap} -d ${POSTGRES_DB:-video_studio}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -30,40 +35,105 @@ services:
       retries: 10
     networks: [studio]
 
+  migrate:
+    build: .
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql+psycopg://${DATABASE_MIGRATOR_USER:-video_studio_migrator}:${DATABASE_MIGRATOR_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [studio]
+
   api:
     build: .
     restart: unless-stopped
-    env_file: .env
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-video_studio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-AI Video Studio}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MEDIA_ROOT: /srv/video-studio/data
+      MAX_UPLOAD_GB: ${MAX_UPLOAD_GB:-20}
+      DATABASE_URL: postgresql+psycopg://${DATABASE_RUNTIME_USER:-video_studio_runtime}:${DATABASE_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
       CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
-      CELERY_RESULT_BACKEND: redis://:${VALKEY_PASSWORD}@valkey:6379/1
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
-      postgres: {condition: service_healthy}
-      valkey: {condition: service_healthy}
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
     volumes:
-      - studio_data:/srv/video-studio/data
+      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
     networks: [studio]
 
   worker-cpu:
     build: .
     restart: unless-stopped
-    env_file: .env
-    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--queues=cpu"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-AI Video Studio}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MEDIA_ROOT: /srv/video-studio/data
+      MAX_UPLOAD_GB: ${MAX_UPLOAD_GB:-20}
+      DATABASE_URL: postgresql+psycopg://${DATABASE_RUNTIME_USER:-video_studio_runtime}:${DATABASE_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
+      CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+    command:
+      ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--queues=cpu", "--concurrency=1"]
     depends_on:
-      postgres: {condition: service_healthy}
-      valkey: {condition: service_healthy}
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
     volumes:
-      - studio_data:/srv/video-studio/data
+      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
     networks: [studio]
-    profiles: [workers]
+
+  worker-control:
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-AI Video Studio}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MEDIA_ROOT: /srv/video-studio/data
+      DATABASE_URL: postgresql+psycopg://${DATABASE_RUNTIME_USER:-video_studio_runtime}:${DATABASE_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
+      CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+    command:
+      ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--queues=control", "--concurrency=1"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    networks: [studio]
+
+  scheduler:
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-AI Video Studio}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MEDIA_ROOT: /srv/video-studio/data
+      DATABASE_URL: postgresql+psycopg://${DATABASE_RUNTIME_USER:-video_studio_runtime}:${DATABASE_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
+      CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+    command:
+      ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=INFO", "--schedule=/var/run/celery/celerybeat-schedule"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    volumes:
+      - celery_beat_data:/var/run/celery
+    networks: [studio]
 
 volumes:
   postgres_data:
   valkey_data:
-  studio_data:
+  celery_beat_data:
 
 networks:
   studio: {}
