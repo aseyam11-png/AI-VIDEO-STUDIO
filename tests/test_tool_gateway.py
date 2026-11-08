@@ -8,8 +8,8 @@ from app.services import tool_gateway
 from fastapi.testclient import TestClient
 
 
-def _project_with_asset(tmp_path, *, filename="source.mp4"):
-    settings.media_root = str(tmp_path / "media")
+def _project_with_asset(tmp_path, monkeypatch, *, filename="source.mp4"):
+    monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
     project = create_project(
         {
             "name": "Unified tools test",
@@ -53,7 +53,7 @@ def test_tool_catalog_exposes_a_single_dispatch_contract(monkeypatch):
 
 
 def test_unified_gateway_submits_durable_job_and_replays_idempotently(tmp_path, monkeypatch):
-    project, asset = _project_with_asset(tmp_path)
+    project, asset = _project_with_asset(tmp_path, monkeypatch)
     client = TestClient(app)
     payload = {
         "tool_id": "media.proxy",
@@ -115,7 +115,7 @@ def test_unified_gateway_rejects_unknown_tool_id():
 
 
 def test_grounding_dino_gateway_accepts_an_image_asset(tmp_path, monkeypatch):
-    project, asset = _project_with_asset(tmp_path, filename="reference.png")
+    project, asset = _project_with_asset(tmp_path, monkeypatch, filename="reference.png")
     monkeypatch.setattr(settings, "comfyui_base_url", "http://127.0.0.1:8188")
     client = TestClient(app)
 
