@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import BinaryIO
 from uuid import UUID, uuid4
 
+from sqlalchemy import select
+
 from app.core.config import settings
+from app.db.models import AssetRecord, ProjectRecord
+from app.db.session import session_scope
 
 
 class StorageError(RuntimeError):
@@ -67,26 +71,76 @@ def create_project(project_data: dict) -> dict:
     project_id = str(uuid4())
     directory = project_dir(project_id)
     directory.mkdir(parents=True, exist_ok=False)
+    now = datetime.now(timezone.utc)
     manifest = {
         "id": project_id,
         "status": "created",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now.isoformat(),
         **project_data,
     }
-    atomic_write_json(directory / "project.json", manifest)
+    try:
+        atomic_write_json(directory / "project.json", manifest)
+        with session_scope() as db:
+            db.add(
+                ProjectRecord(
+                    id=project_id,
+                    name=manifest["name"],
+                    target_duration_seconds=manifest["target_duration_seconds"],
+                    target_resolution=manifest.get("target_resolution", "1920x1080"),
+                    target_fps=manifest.get("target_fps", 30),
+                    language=manifest.get("language", "ar"),
+                    brief=manifest["brief"],
+                    status="created",
+                    metadata_json={},
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+    except Exception:
+        for child in directory.glob("*"):
+            child.unlink(missing_ok=True)
+        directory.rmdir()
+        raise
     return manifest
 
 
 def get_project(project_id: str) -> dict:
-    return read_json(project_dir(project_id) / "project.json")
+    safe_id = _uuid(project_id)
+    with session_scope() as db:
+        record = db.get(ProjectRecord, safe_id)
+        if record is not None:
+            return record.to_dict()
+    # Read-only compatibility for pre-Phase-1 manifests. Run the import command
+    # before using durable jobs with projects created before the database existed.
+    return read_json(project_dir(safe_id) / "project.json")
 
 
 def get_asset(project_id: str, asset_id: str) -> dict:
-    return read_json(asset_dir(project_id, asset_id) / "asset.json")
+    safe_project_id = _uuid(project_id)
+    safe_asset_id = _uuid(asset_id)
+    with session_scope() as db:
+        record = db.scalar(
+            select(AssetRecord).where(
+                AssetRecord.project_id == safe_project_id,
+                AssetRecord.id == safe_asset_id,
+            )
+        )
+        if record is not None:
+            return record.to_dict()
+    return read_json(asset_dir(safe_project_id, safe_asset_id) / "asset.json")
 
 
 def list_assets(project_id: str) -> list[dict]:
-    directory = project_dir(project_id) / "assets"
+    safe_project_id = _uuid(project_id)
+    with session_scope() as db:
+        records = db.scalars(
+            select(AssetRecord)
+            .where(AssetRecord.project_id == safe_project_id)
+            .order_by(AssetRecord.created_at, AssetRecord.id)
+        ).all()
+        if records:
+            return [record.to_dict() for record in records]
+    directory = project_dir(safe_project_id) / "assets"
     if not directory.exists():
         return []
     assets = []
@@ -98,6 +152,30 @@ def list_assets(project_id: str) -> list[dict]:
     return assets
 
 
+def update_asset_manifest(project_id: str, asset_id: str, updates: dict) -> dict:
+    safe_project_id = _uuid(project_id)
+    safe_asset_id = _uuid(asset_id)
+    directory = asset_dir(safe_project_id, safe_asset_id)
+    with session_scope() as db:
+        record = db.scalar(
+            select(AssetRecord).where(
+                AssetRecord.project_id == safe_project_id,
+                AssetRecord.id == safe_asset_id,
+            )
+        )
+        manifest = record.to_dict() if record is not None else read_json(directory / "asset.json")
+        manifest.update(updates)
+        if record is not None:
+            record.status = manifest.get("status", record.status)
+            core_keys = {
+                "id", "project_id", "asset_type", "original_filename", "stored_filename",
+                "relative_path", "size_bytes", "sha256", "status", "created_at", "updated_at",
+            }
+            record.metadata_json = {key: value for key, value in manifest.items() if key not in core_keys}
+    atomic_write_json(directory / "asset.json", manifest)
+    return manifest
+
+
 def ingest_file_stream(
     project_id: str,
     original_filename: str,
@@ -105,15 +183,16 @@ def ingest_file_stream(
     *,
     max_bytes: int,
 ) -> tuple[dict, Path]:
-    """Persist an already-open binary stream using an atomic temporary file."""
-    get_project(project_id)
+    """Persist media bytes outside the DB and durable asset metadata in the DB."""
+    safe_project_id = _uuid(project_id)
+    get_project(safe_project_id)
     suffix = Path(original_filename or "").suffix.lower()
     allowed = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".jpg", ".jpeg", ".png", ".webp"}
     if suffix not in allowed:
         raise ValueError(f"Unsupported media extension: {suffix or '(none)'}")
 
     identifier = str(uuid4())
-    directory = asset_dir(project_id, identifier)
+    directory = asset_dir(safe_project_id, identifier)
     directory.mkdir(parents=True, exist_ok=False)
     temporary = directory / f"source{suffix}.uploading"
     destination = directory / f"source{suffix}"
@@ -136,27 +215,49 @@ def ingest_file_stream(
         if size == 0:
             raise ValueError("Uploaded file is empty.")
         os.replace(temporary, destination)
+        asset_type = "image" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "video"
+        created_at = datetime.now(timezone.utc)
+        manifest = {
+            "id": identifier,
+            "project_id": safe_project_id,
+            "asset_type": asset_type,
+            "original_filename": Path(original_filename).name[:240],
+            "stored_filename": destination.name,
+            "relative_path": destination.relative_to(project_dir(safe_project_id)).as_posix(),
+            "size_bytes": size,
+            "sha256": digest.hexdigest(),
+            "created_at": created_at.isoformat(),
+            "status": "uploaded",
+        }
+        atomic_write_json(directory / "asset.json", manifest)
+        with session_scope() as db:
+            if db.get(ProjectRecord, safe_project_id) is None:
+                raise FileNotFoundError(
+                    "Project metadata is not migrated. Run the legacy manifest import command."
+                )
+            db.add(
+                AssetRecord(
+                    id=identifier,
+                    project_id=safe_project_id,
+                    asset_type=asset_type,
+                    original_filename=manifest["original_filename"],
+                    stored_filename=destination.name,
+                    relative_path=manifest["relative_path"],
+                    size_bytes=size,
+                    sha256=manifest["sha256"],
+                    status="uploaded",
+                    metadata_json={},
+                    created_at=created_at,
+                    updated_at=created_at,
+                )
+            )
+        return manifest, destination
     except Exception:
         temporary.unlink(missing_ok=True)
-        destination.unlink(missing_ok=True)
+        for child in directory.glob("*"):
+            child.unlink(missing_ok=True)
         try:
             directory.rmdir()
         except OSError:
             pass
         raise
-
-    asset_type = "image" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "video"
-    manifest = {
-        "id": identifier,
-        "project_id": _uuid(project_id),
-        "asset_type": asset_type,
-        "original_filename": Path(original_filename).name[:240],
-        "stored_filename": destination.name,
-        "relative_path": destination.relative_to(project_dir(project_id)).as_posix(),
-        "size_bytes": size,
-        "sha256": digest.hexdigest(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "status": "uploaded",
-    }
-    atomic_write_json(directory / "asset.json", manifest)
-    return manifest, destination
