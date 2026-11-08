@@ -147,7 +147,10 @@ def _readiness(spec: dict[str, Any], capabilities: dict[str, Any]) -> dict[str, 
         model = models.get("qwen3.5-9b-q4_K_M", {})
         present = bool(model.get("ready"))
         return {
-            "state": "model_present_smoke_test_required" if present else "runtime_or_model_unavailable",
+            "state": (
+                "model_present_smoke_test_required"
+                if present else "runtime_or_model_unavailable"
+            ),
             "configured": bool(model.get("configured")),
             "inference_verified": False,
         }
@@ -171,7 +174,10 @@ def _readiness(spec: dict[str, Any], capabilities: dict[str, Any]) -> dict[str, 
     if tool_id == "motion.blender":
         configured = bool(models.get("blender", {}).get("executable_configured"))
         return {
-            "state": "executable_configured_project_template_required" if configured else "not_configured",
+            "state": (
+                "executable_configured_project_template_required"
+                if configured else "not_configured"
+            ),
             "configured": configured,
             "inference_verified": False,
         }
@@ -243,6 +249,9 @@ def get_tool_catalog() -> dict[str, Any]:
             "idempotency_required": True,
             "user_approval_required_for": ["video.generate", "motion.blender"],
             "model_weights_downloaded_automatically": False,
-            "inference_verification": "A successful real job is required; CI adapter tests are not inference proof.",
+            "inference_verification": (
+                "A successful real job is required; "
+                "CI adapter tests are not inference proof."
+            ),
         },
     }
