@@ -25,8 +25,8 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
     broker_transport_options={"visibility_timeout": 10800},
     worker_max_tasks_per_child=50,
-    task_soft_time_limit=7500,
-    task_time_limit=7800,
+    task_soft_time_limit=7200,
+    task_time_limit=7500,
     task_routes={
         "studio.execute_job": {"queue": "cpu"},
         "studio.dispatch_outbox": {"queue": "control"},

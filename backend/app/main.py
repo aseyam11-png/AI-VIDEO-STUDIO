@@ -11,10 +11,10 @@ from app.db.session import get_engine
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.3.0",
+    version="0.4.0",
     description=(
-        "Phase 1 control plane: durable projects and assets, transactional job outbox, "
-        "Celery workers, and the Phase 0.5 deterministic media pipeline."
+        "Phase 2 adapters for local model runtimes and specialist media jobs over the durable "
+        "Phase 1 control plane."
     ),
 )
 app.include_router(api_router)
@@ -61,7 +61,7 @@ def readiness() -> dict:
 @app.get("/v1/system/capabilities", tags=["system"])
 def capabilities() -> dict:
     return {
-        "phase": "1",
+        "phase": "2",
         "media_ingestion": True,
         "ffprobe": True,
         "proxy_generation": True,
@@ -71,14 +71,18 @@ def capabilities() -> dict:
         "database_backed_projects_and_assets": True,
         "durable_job_api": True,
         "transactional_outbox": True,
-        "worker_execution": "Celery CPU queue; requires a running worker and scheduler",
+        "worker_execution": "Celery CPU and model queues; requires workers and scheduler",
+        "model_adapters": True,
+        "local_qwen_director": bool(settings.ollama_base_url),
+        "comfyui_workflow_runtime": bool(settings.comfyui_base_url),
         "database_migrations_required": True,
         "local_whisperx": "optional_not_installed_by_default",
         "gpu_worker_enabled": False,
         "video_generation_enabled": False,
         "external_model_apis_enabled": False,
         "note": (
-            "Phase 1 adds durable metadata and job orchestration. Model inference and GPU workers "
-            "are not enabled. Media binaries remain in the private MEDIA_ROOT volume."
+            "Phase 2 adds specialist model adapters and an isolated model-job queue. Actual "
+            "inference requires private runtimes, reviewed workflow files and explicitly provisioned "
+            "weights; the application and CI never download model weights automatically."
         ),
     }

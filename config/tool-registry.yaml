@@ -1,49 +1,89 @@
 tools:
   - id: ffprobe
     purpose: inspect source media metadata and streams
+    executor: CPU
     mode: deterministic
     approval: automatic
   - id: ffmpeg
-    purpose: create proxies, trim, concatenate, mix audio and render
+    purpose: create proxies, extract audio, remux audio, and render final exports
+    executor: CPU
     mode: deterministic
     approval: automatic_for_non_destructive_outputs
   - id: pyscenedetect
     purpose: detect candidate shot boundaries
+    executor: CPU
     mode: deterministic
     approval: automatic
-  - id: whisperx
-    purpose: transcribe and align speech
-    mode: model
-    approval: automatic_with_user_review_for_final_captions
-  - id: sam2
-    purpose: object segmentation and tracking
-    mode: model
-    approval: automatic
-  - id: groundingdino
-    purpose: text-guided object detection
-    mode: model
-    approval: automatic
-  - id: comfyui
-    purpose: run approved, versioned generation workflows
-    mode: model_workflow
-    approval: required_before_paid_gpu_generation
-  - id: blender
-    purpose: motion graphics and 3D compositing
-    mode: deterministic_project_engine
-    approval: required_before_final_render
   - id: opentimelineio
-    purpose: timeline representation and interchange
+    purpose: build editable timeline interchange files
+    executor: CPU
     mode: deterministic
     approval: automatic
-  - id: product_identity_lock
-    purpose: compare product references with generated shots and flag identity drift
-    mode: custom_algorithm
-    approval: required_for_scene_acceptance
+  - id: qwen_director
+    model: qwen3.5:9b
+    runtime: Ollama
+    purpose: convert Arabic or English user brief into a typed creative plan
+    executor: API
+    mode: local_llm
+    approval: plan_only_user_approval_before_execution
+  - id: whisperx
+    purpose: transcribe and optionally align speech
+    executor: CPU
+    mode: speech_model
+    approval: user_review_before_final_captions
+  - id: deepfilternet
+    purpose: denoise source speech and create a separate enhanced export
+    executor: CPU
+    mode: audio_model
+    approval: explicit_job
+  - id: groundingdino
+    workflow_id: groundingdino_detect_v1
+    runtime: ComfyUI
+    purpose: detect objects from text prompts
+    executor: MODEL
+    mode: allowlisted_workflow
+    approval: explicit_job
+  - id: sam2
+    workflow_id: sam2_track_v1
+    runtime: ComfyUI
+    purpose: segment and track selected objects
+    executor: MODEL
+    mode: allowlisted_workflow
+    approval: explicit_job
+  - id: wan22_ti2v_5b
+    workflow_id: wan22_ti2v_5b_v1
+    runtime: ComfyUI
+    purpose: generate a short video shot from a prompt and image reference
+    executor: MODEL
+    mode: allowlisted_workflow
+    approval: required_before_generation
+  - id: realesrgan
+    workflow_id: realesrgan_upscale_v1
+    runtime: ComfyUI
+    purpose: upscale selected still images or frames
+    executor: MODEL
+    mode: allowlisted_workflow
+    approval: explicit_job
+  - id: rife
+    workflow_id: rife_interpolate_v1
+    runtime: ComfyUI
+    purpose: interpolate selected video frames
+    executor: MODEL
+    mode: allowlisted_workflow
+    approval: explicit_job
+  - id: blender
+    purpose: render reviewed motion graphics and compositing templates
+    executor: MODEL
+    mode: deterministic_project_template
+    approval: required_before_render
 
 security:
   deny_shell_access_to_agents: true
+  deny_arbitrary_comfyui_workflows: true
+  deny_arbitrary_blender_scripts: true
   deny_public_model_ports: true
-  deny_external_uploads_without_approval: true
+  deny_external_media_uploads_without_approval: true
   require_project_scoped_paths: true
   require_job_idempotency_key: true
   require_audit_log_for_tool_calls: true
+  max_parallel_heavy_gpu_jobs: 1

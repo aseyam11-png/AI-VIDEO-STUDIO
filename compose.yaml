@@ -57,6 +57,18 @@ services:
       MAX_UPLOAD_GB: ${MAX_UPLOAD_GB:-20}
       DATABASE_URL: postgresql+psycopg://${DATABASE_RUNTIME_USER:-video_studio_runtime}:${DATABASE_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
       CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.5:9b}
+      OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-180}
+      COMFYUI_BASE_URL: ${COMFYUI_BASE_URL:-}
+      COMFYUI_API_KEY: ${COMFYUI_API_KEY:-}
+      COMFYUI_REQUEST_TIMEOUT_SECONDS: ${COMFYUI_REQUEST_TIMEOUT_SECONDS:-120}
+      COMFYUI_JOB_TIMEOUT_SECONDS: ${COMFYUI_JOB_TIMEOUT_SECONDS:-7000}
+      MODEL_WORKFLOW_REGISTRY: ${MODEL_WORKFLOW_REGISTRY:-/srv/video-studio/data/workflows/registry.json}
+      SPEECH_WORKER_ENABLED: ${SPEECH_WORKER_ENABLED:-false}
+      DEEPFILTER_SCRIPT: ${DEEPFILTER_SCRIPT:-}
+      DEEPFILTER_MODEL_DIR: ${DEEPFILTER_MODEL_DIR:-}
+      BLENDER_EXECUTABLE: ${BLENDER_EXECUTABLE:-}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -69,7 +81,10 @@ services:
     networks: [studio]
 
   worker-cpu:
-    build: .
+    build:
+      context: .
+      args:
+        INSTALL_EXTRAS: ${CPU_WORKER_EXTRAS:-media}
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
@@ -79,8 +94,67 @@ services:
       MAX_UPLOAD_GB: ${MAX_UPLOAD_GB:-20}
       DATABASE_URL: postgresql+psycopg://${DATABASE_RUNTIME_USER:-video_studio_runtime}:${DATABASE_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
       CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      DEEPFILTER_SCRIPT: ${DEEPFILTER_SCRIPT:-}
+      DEEPFILTER_MODEL_DIR: ${DEEPFILTER_MODEL_DIR:-}
+      DEEPFILTER_PYTHON: ${DEEPFILTER_PYTHON:-python}
     command:
       ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--queues=cpu", "--concurrency=1"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    volumes:
+      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
+    networks: [studio]
+
+  worker-speech:
+    profiles: ["speech"]
+    build:
+      context: .
+      args:
+        INSTALL_EXTRAS: media,speech
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-AI Video Studio}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MEDIA_ROOT: /srv/video-studio/data
+      DATABASE_URL: postgresql+psycopg://${DATABASE_RUNTIME_USER:-video_studio_runtime}:${DATABASE_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
+      CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+    command:
+      ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--queues=speech", "--concurrency=1"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    volumes:
+      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
+    networks: [studio]
+
+  worker-models:
+    build:
+      context: .
+      args:
+        INSTALL_EXTRAS: media
+        INSTALL_BLENDER: ${INSTALL_BLENDER:-0}
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-AI Video Studio}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MEDIA_ROOT: /srv/video-studio/data
+      DATABASE_URL: postgresql+psycopg://${DATABASE_RUNTIME_USER:-video_studio_runtime}:${DATABASE_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
+      CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      COMFYUI_BASE_URL: ${COMFYUI_BASE_URL:-}
+      COMFYUI_API_KEY: ${COMFYUI_API_KEY:-}
+      COMFYUI_REQUEST_TIMEOUT_SECONDS: ${COMFYUI_REQUEST_TIMEOUT_SECONDS:-120}
+      COMFYUI_JOB_TIMEOUT_SECONDS: ${COMFYUI_JOB_TIMEOUT_SECONDS:-7000}
+      MODEL_WORKFLOW_REGISTRY: ${MODEL_WORKFLOW_REGISTRY:-/srv/video-studio/data/workflows/registry.json}
+      BLENDER_EXECUTABLE: ${BLENDER_EXECUTABLE:-}
+    command:
+      ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--queues=models", "--concurrency=1"]
     depends_on:
       migrate:
         condition: service_completed_successfully
