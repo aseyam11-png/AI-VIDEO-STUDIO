@@ -1,5 +1,3 @@
-import json
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -215,7 +213,10 @@ def render_timeline(
             )
             audio_labels.append(f"[a{index}]")
 
-    concat_inputs = "".join(labels + audio_labels)
+    concat_inputs = "".join(
+        f"[v{index}]" + (f"[a{index}]" if has_audio else "")
+        for index in range(len(clips))
+    )
     if has_audio:
         filters.append(f"{concat_inputs}concat=n={len(clips)}:v=1:a=1[vout][aout]")
     else:
