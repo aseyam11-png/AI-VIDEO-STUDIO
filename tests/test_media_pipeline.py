@@ -1,11 +1,10 @@
 import subprocess
 from pathlib import Path
 
-import pytest
-
 from app.core.config import settings
 from app.media import pipeline
 from app.media.storage import create_project
+import pytest
 
 
 def test_build_timeline_writes_otio_and_json(tmp_path, monkeypatch):
