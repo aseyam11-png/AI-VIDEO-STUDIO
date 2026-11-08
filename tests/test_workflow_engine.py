@@ -3,7 +3,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from app.core.config import settings
 from app.db.models import OutboxRecord
 from app.db.session import session_scope
