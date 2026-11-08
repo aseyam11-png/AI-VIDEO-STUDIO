@@ -1,5 +1,5 @@
-from app.services.job_policy import validate_generation_request
 import pytest
+from app.services.job_policy import validate_generation_request
 
 
 def test_generation_requires_approval():
