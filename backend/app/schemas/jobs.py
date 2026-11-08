@@ -11,6 +11,14 @@ class JobType(StrEnum):
     MEDIA_SCENES = "media.scenes"
     MEDIA_TIMELINE = "media.timeline"
     MEDIA_RENDER = "media.render"
+    SPEECH_TRANSCRIBE = "speech.transcribe"
+    AUDIO_ENHANCE = "audio.enhance"
+    VISION_DETECT = "vision.detect"
+    VISION_TRACK = "vision.track"
+    VIDEO_GENERATE = "video.generate"
+    VIDEO_UPSCALE = "video.upscale"
+    VIDEO_INTERPOLATE = "video.interpolate"
+    MOTION_BLENDER = "motion.blender"
 
 
 class JobStatus(StrEnum):

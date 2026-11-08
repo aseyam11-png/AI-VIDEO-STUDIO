@@ -1,69 +1,103 @@
-# Candidate registry only. No model weights have been downloaded or benchmarked.
-# Pin exact repo commits, weight revisions, SHA-256 and license evidence before production.
+# Exact model set requested for the first integrated release.
+# Adapter code is in the Phase 2 branch. This registry does not download or bundle weights.
 models:
-  executive_llm:
+  executive_director:
     name: Qwen3.5-9B
-    source: https://ollama.com/library/qwen3.5
     runtime: Ollama
-    role: Arabic-first planning and image-reference analysis
-    status: candidate
-    license_status: verify_exact_weights_revision
-    gpu_policy: cpu_first_or_scheduled_gpu_only
+    model_tag: qwen3.5:9b-q4_K_M
+    role: Arabic-first creative brief and storyboard planning
+    integration: implemented
+    readiness: external_runtime_and_single_model_required
+    auto_download: false
+    license_status: verify_exact_ollama_artifact_before_commercial_use
+
+  speech_transcription:
+    name: WhisperX
+    runtime: dedicated CPU worker
+    role: Arabic and English speech transcription with optional alignment
+    integration: implemented
+    dependency_extra: speech
+    default_profile: small
+    readiness: optional_worker_extra_and_first_use_model_cache_required
+    auto_download: false
+    license_status: verify_release_and_model_artifacts
+
+  object_detection:
+    name: Grounding DINO
+    runtime: ComfyUI
+    workflow_id: groundingdino_detect_v1
+    role: text-conditioned object detection
+    integration: implemented_workflow_adapter
+    readiness: exported_api_workflow_custom_node_and_required_weights
+    auto_download: false
+    license_status: verify_code_custom_node_and_checkpoint
+
+  segmentation_tracking:
+    name: SAM 2
+    runtime: ComfyUI
+    workflow_id: sam2_track_v1
+    role: prompted object segmentation and tracking
+    integration: implemented_workflow_adapter
+    readiness: exported_api_workflow_custom_node_and_required_weights
+    auto_download: false
+    license_status: verify_code_custom_node_and_checkpoint
 
   video_generation:
     name: Wan2.2-TI2V-5B
-    source: https://github.com/Wan-Video/Wan2.2
     runtime: ComfyUI
-    role: text/image-to-video shot generation
-    status: candidate_requires_benchmark
-    license_status: verify_exact_code_and_weight_artifacts
-    gpu_policy: exclusive_gpu_job
-    max_initial_shot_seconds: 10
-
-  segmentation:
-    name: SAM2
-    source: https://github.com/facebookresearch/sam2
-    role: video object segmentation and tracking
-    status: candidate
-    license_status: verify_exact_code_and_weights
-    gpu_policy: exclusive_gpu_job
-
-  grounding:
-    name: GroundingDINO
-    source: https://github.com/IDEA-Research/GroundingDINO
-    role: text-guided object detection
-    status: candidate
-    license_status: verify_exact_code_and_checkpoint
-    gpu_policy: exclusive_gpu_job
-
-  transcription:
-    name: WhisperX
-    source: https://github.com/m-bain/whisperX
-    role: multilingual transcription and alignment
-    status: candidate
-    license_status: verify_exact_release_and_model_artifacts
-    gpu_policy: cpu_or_scheduled_gpu
+    workflow_id: wan22_ti2v_5b_v1
+    role: approved text/image-to-video shot generation
+    integration: implemented_workflow_adapter
+    readiness: exported_api_workflow_weights_and_gpu_validation
+    max_shot_seconds: 10
+    auto_download: false
+    license_status: verify_code_and_exact_weight_artifacts
 
   audio_cleanup:
     name: DeepFilterNet
-    source: https://github.com/Rikorose/DeepFilterNet
-    role: speech noise suppression
-    status: candidate
-    license_status: verify_exact_release
-    gpu_policy: cpu_first
+    runtime: dedicated CPU worker
+    role: speech denoising before remuxing audio into a new video
+    integration: implemented_external_cli_adapter
+    readiness: explicit_script_and_existing_checkpoint_directory
+    auto_download: false
+    license_status: verify_exact_release_and_checkpoint
 
-  restoration:
+  image_upscaling:
     name: Real-ESRGAN
-    source: https://github.com/xinntao/Real-ESRGAN
-    role: selected-frame super-resolution
-    status: optional
-    license_status: verify_code_and_weights
-    gpu_policy: exclusive_gpu_job
+    runtime: ComfyUI
+    workflow_id: realesrgan_upscale_v1
+    role: selective image/frame upscaling
+    integration: implemented_workflow_adapter
+    readiness: exported_api_workflow_custom_node_and_required_weights
+    auto_download: false
+    license_status: verify_code_and_exact_weight_artifacts
 
-  interpolation:
+  frame_interpolation:
     name: RIFE
-    source: https://github.com/hzwer/ECCV2022-RIFE
-    role: selected-shot frame interpolation
-    status: optional
-    license_status: verify_exact_release_and_weights
-    gpu_policy: exclusive_gpu_job
+    runtime: ComfyUI
+    workflow_id: rife_interpolate_v1
+    role: selective video frame interpolation
+    integration: implemented_workflow_adapter
+    readiness: exported_api_workflow_custom_node_and_required_weights
+    auto_download: false
+    license_status: verify_code_and_exact_weight_artifacts
+
+runtimes:
+  comfyui:
+    role: isolated workflow execution for Grounding DINO, SAM 2, Wan 2.2, Real-ESRGAN and RIFE
+    integration: implemented_api_client
+    deployment: separate_private_runtime
+    model_storage: external_comfyui_model_directory
+  blender:
+    role: deterministic motion graphics and compositing renders from reviewed project templates
+    integration: implemented_background_cli_adapter
+    deployment: optional_blender_enabled_worker_image
+    model_weights: none
+
+global_policy:
+  download_weights_during_build: false
+  download_weights_during_ci: false
+  commit_weights_to_git: false
+  parallel_heavy_gpu_jobs: 1
+  user_approval_required_for_video_generation: true
+  user_approval_required_for_blender_render: true

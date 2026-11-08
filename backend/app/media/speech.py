@@ -1,6 +1,8 @@
 import gc
+from collections.abc import Callable
 from pathlib import Path
 
+from app.media.pipeline import MediaJobCancelled
 from app.media.storage import atomic_write_json
 
 
@@ -18,12 +20,13 @@ def transcribe_local(
     compute_type: str | None = None,
     cache_dir: Path,
     align: bool = False,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> dict:
     """Run WhisperX locally. Model downloads occur only after this explicit API call."""
     if language not in {"ar", "en"}:
         raise ValueError("Initial transcription supports language codes 'ar' and 'en'.")
-    if model_name not in {"tiny", "base", "small", "medium", "large-v3"}:
-        raise ValueError("Unsupported Whisper model profile.")
+    if model_name != "small":
+        raise ValueError("This deployment is locked to the WhisperX small profile.")
     if device not in {"cpu", "cuda"}:
         raise ValueError("device must be 'cpu' or 'cuda'.")
     selected_compute_type = compute_type or ("int8" if device == "cpu" else "float16")
@@ -38,6 +41,8 @@ def transcribe_local(
     model = None
     align_model = None
     try:
+        if cancel_check and cancel_check():
+            raise MediaJobCancelled("Transcription was cancelled before model loading.")
         model = whisperx.load_model(
             model_name,
             device,
@@ -45,7 +50,12 @@ def transcribe_local(
             language=language,
             download_root=str(cache_dir),
         )
-        result = model.transcribe(str(source), batch_size=4, language=language)
+        audio = whisperx.load_audio(str(source))
+        if cancel_check and cancel_check():
+            raise MediaJobCancelled("Transcription was cancelled after model loading.")
+        result = model.transcribe(audio, batch_size=4, language=language)
+        if cancel_check and cancel_check():
+            raise MediaJobCancelled("Transcription was cancelled after speech recognition.")
         alignment_status = "not_requested"
         alignment_error = None
         if align:
@@ -59,15 +69,19 @@ def transcribe_local(
                     result["segments"],
                     align_model,
                     metadata,
-                    str(source),
+                    audio,
                     device,
                     return_char_alignments=False,
                 )
                 alignment_status = "completed"
+            except MediaJobCancelled:
+                raise
             except Exception as exc:  # Alignment support varies by language/model.
                 alignment_status = "unavailable"
                 alignment_error = str(exc)[:500]
 
+        if cancel_check and cancel_check():
+            raise MediaJobCancelled("Transcription was cancelled before saving its result.")
         payload = {
             "language": result.get("language", language),
             "model": model_name,

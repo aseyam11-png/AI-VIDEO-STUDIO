@@ -167,3 +167,18 @@ GitHub Actions run 89 passed on 2026-11-08: Ruff, Docker Compose configuration, 
 ## Next step
 
 Complete Phase 1 review and acceptance on its feature branch, then connect the Arabic UI to the durable job API. Do not provision paid GPU time or download large generation weights until the exact hardware, artifact licenses, and benchmark budget are verified.
+
+
+## Phase 2 specialist model integrations
+
+The Phase 2 feature branch adds adapters and job routing for the requested specialist stack:
+
+- Qwen3.5-9B through a private Ollama runtime for Arabic creative planning.
+- WhisperX on the optional, dedicated speech worker.
+- Grounding DINO, SAM 2, Wan2.2 TI2V-5B, Real-ESRGAN and RIFE through five fixed ComfyUI API workflow IDs.
+- DeepFilterNet through an explicitly provisioned CPU CLI/checkpoint.
+- Blender through a reviewed project template and background rendering adapter.
+
+The adapters do not bundle or automatically download model weights. The ComfyUI API workflows, required custom nodes/checkpoints, Ollama model, optional WhisperX speech extra/model cache, DeepFilterNet checkpoint and Blender templates must be provisioned outside Git. See docs/15-MODEL-INTEGRATIONS.md.
+
+Phase 2 is a review branch, not a production release. CI can verify schemas and adapter contracts, but real inference, model quality, GPU compatibility and artifact licensing require runtime-specific acceptance.

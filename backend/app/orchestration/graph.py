@@ -1,10 +1,10 @@
-"""Minimal LangGraph skeleton; production nodes are added phase by phase.
+"""Arabic-first creative planning graph with a user approval boundary.
 
-No node in this graph has direct shell access. Tool execution must go through
-validated service adapters and explicit approval policies.
+The LLM proposes a typed plan only. Tool execution remains in explicit job services.
 """
 from typing import TypedDict
 
+from app.integrations.ollama import generate_creative_plan
 from langgraph.graph import END, START, StateGraph
 
 
@@ -16,17 +16,27 @@ class StudioState(TypedDict, total=False):
     approved: bool
     status: str
     errors: list[str]
+    target_duration_seconds: int
+    language: str
 
 
 def understand_request(state: StudioState) -> StudioState:
-    # Placeholder: connect an approved local Ollama model in Phase 2.
-    if not state.get("user_brief"):
+    brief = (state.get("user_brief") or "").strip()
+    if not brief:
         return {"status": "needs_input", "errors": ["user_brief is required"]}
-    return {"status": "brief_received"}
+    plan = generate_creative_plan(
+        brief,
+        target_duration_seconds=state.get("target_duration_seconds", 60),
+        language=state.get("language", "ar"),
+    )
+    return {"creative_brief": plan.model_dump(), "status": "plan_created"}
 
 
 def wait_for_approval(state: StudioState) -> StudioState:
-    return {"status": "approved" if state.get("approved") else "awaiting_approval"}
+    return {
+        "status": "approved" if state.get("approved") else "awaiting_approval",
+        "approved": bool(state.get("approved")),
+    }
 
 
 def build_graph():

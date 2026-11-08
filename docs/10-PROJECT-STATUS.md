@@ -67,3 +67,42 @@ Last updated: 2026-11-08.
 | Production readiness | **Not ready** | Complete Phase 1+, authentication, operational recovery, security review, and full end-to-end acceptance |
 
 The Phase 0.5 API is a local/private development surface. Do not expose it to the public Internet; authentication and private-network deployment are required before remote use.
+
+
+## Phase 2 — specialist model/tool adapters (2026-11-08)
+
+- Implementation branch: feat/phase-2-model-integrations
+- Base: Phase 1 verified commit 0f0ae09baee4a2122b20f5e1e487eed443e3481b
+- This branch is stacked on the Phase 1 feature branch. Neither PR is merged into main.
+
+### Adapter and orchestration work
+
+| Component | Integration added | Runtime activation still required |
+|---|---|---|
+| Qwen3.5-9B | Ollama REST adapter, schema-constrained creative plan, LangGraph director endpoint | One manually installed qwen3.5:9b model in private Ollama |
+| WhisperX | Dedicated optional speech queue and worker image | speech profile, speech flag, selected small profile on explicit transcription |
+| Grounding DINO | Allowlisted ComfyUI workflow adapter and vision.detect job | Actual API-exported workflow, required custom node and checkpoints |
+| SAM 2 | Allowlisted ComfyUI workflow adapter and vision.track job | Actual API-exported workflow, required custom node and checkpoints |
+| Wan2.2 TI2V-5B | Allowlisted generation workflow, 1–10 second validation and approval gate | Actual workflow, only its required model artifacts, GPU benchmark |
+| DeepFilterNet | CPU CLI adapter, explicit checkpoint directory, new-file audio remux | Installed script and checkpoint directory |
+| Real-ESRGAN | Allowlisted ComfyUI upscaling workflow and video.upscale job | Actual API workflow, custom node and required checkpoint |
+| RIFE | Allowlisted ComfyUI interpolation workflow and video.interpolate job | Actual API workflow, custom node and required checkpoint |
+| Blender | Dedicated model-queue adapter and reviewed .blend template renderer | Blender executable and project template |
+
+### New interfaces and routing
+
+- GET /v1/models/status: reports external runtime and workflow configuration without downloading weights.
+- POST /v1/director/plan: produces a typed Arabic/English draft plan; it stops at awaiting_approval.
+- Added job types: speech.transcribe, audio.enhance, vision.detect, vision.track, video.generate, video.upscale, video.interpolate, motion.blender.
+- Heavy ComfyUI/Blender jobs use the separate models queue with one worker process. WhisperX and DeepFilterNet use the CPU queue.
+- Generation and Blender render require an explicit approval field. Wan is capped at 10 seconds per initial shot.
+- ComfyUI workflows are fixed IDs plus private node/input binding configuration. Arbitrary workflow IDs, arbitrary Blender scripts and agent shell access are not allowed.
+
+### Weight policy and verification boundary
+
+- No neural weights, model cache, ComfyUI custom nodes, Blender project templates or generated media are committed to Git.
+- Docker builds and GitHub Actions do not download neural weights.
+- Qwen is not pulled automatically. WhisperX weights are loaded only after an explicit transcription job. DeepFilterNet requires an existing checkpoint folder. ComfyUI must already contain the precise artifacts required by exported workflows.
+- CI tests adapter contracts, strict job schemas, approval gates and workflow input binding using synthetic workflow data. It does not run actual model inference or certify output quality, GPU fit, runtime licensing or hardware performance.
+- A ComfyUI integration is not operational until the five actual API workflows, custom-node revisions and required checkpoints are installed and pass an end-to-end job on the target GPU.
+- A Phase 2 CI run must pass before its PR can be considered for merge. Production readiness remains unverified.

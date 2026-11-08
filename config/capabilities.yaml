@@ -1,44 +1,54 @@
 capabilities:
   media_ingestion:
-    status: scaffold
+    status: implemented
     tools: [ffprobe, ffmpeg]
   scene_detection:
-    status: planned
-    tools: [pyscenedetect, opencv]
+    status: implemented
+    tools: [pyscenedetect]
   transcription:
-    status: candidate
+    status: integrated_optional_worker
     tools: [whisperx]
     locale_priority: [ar, en]
+    worker_extra: speech
+    default_profile: small
+    download_weights_on_explicit_job_only: true
+  audio_cleanup:
+    status: integrated_external_checkpoint
+    tools: [deepfilternet]
+    requires_explicit_script_and_checkpoint_path: true
   object_analysis:
-    status: planned
+    status: integrated_workflow_adapter
     tools: [groundingdino, sam2]
-  semantic_asset_search:
-    status: deferred
-    tools: [open_clip, faiss]
+    runtime: comfyui
+    requires_exported_api_workflows: true
   video_generation:
-    status: candidate_requires_gpu_benchmark
+    status: integrated_workflow_adapter
     tools: [comfyui, wan22_ti2v_5b]
+    max_shot_seconds: 10
+    approval_required: true
+    requires_gpu_and_exported_api_workflow: true
   motion_graphics:
-    status: planned
-    tools: [blender, svg_renderer]
+    status: integrated_template_adapter
+    tools: [blender]
+    arbitrary_scripts_allowed: false
   timeline:
-    status: planned
+    status: implemented
     tools: [opentimelineio]
   rendering:
-    status: planned
+    status: implemented
     tools: [ffmpeg]
-  audio_cleanup:
-    status: optional
-    tools: [deepfilternet]
-  source_separation:
-    status: deferred
-    tools: [demucs]
   restoration:
-    status: optional
+    status: integrated_workflow_adapter
     tools: [realesrgan, rife]
+    runtime: comfyui
+    requires_exported_api_workflows: true
   quality_assurance:
-    status: planned
-    tools: [ffmpeg_checks, vmaf, product_identity_lock]
+    status: partial
+    tools: [ffprobe, ffmpeg]
+  gpu_policy:
+    max_parallel_heavy_jobs: 1
+    runtime: external_comfyui
+    auto_download_weights: false
   capcut_handoff:
-    status: optional_windows_adapter
+    status: planned_optional_windows_adapter
     tools: [opentimelineio_export, srt_export, media_manifest]
