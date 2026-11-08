@@ -1,8 +1,6 @@
 import hashlib
 import io
-
 import pytest
-
 from app.core.config import settings
 from app.media.storage import (
     asset_dir,
