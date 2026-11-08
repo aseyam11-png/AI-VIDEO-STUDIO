@@ -5,7 +5,6 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
-from fastapi.testclient import TestClient
 from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
@@ -14,6 +13,7 @@ from app.db.models import AssetRecord, JobRecord, ProjectRecord
 from app.db.session import configure_database, get_engine, session_scope
 from app.main import app
 from app.services.legacy_import import import_legacy_manifests
+from fastapi.testclient import TestClient
 
 
 def test_alembic_upgrade_creates_phase1_schema(tmp_path, monkeypatch):

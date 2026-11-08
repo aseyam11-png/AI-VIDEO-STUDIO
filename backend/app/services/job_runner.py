@@ -1,7 +1,8 @@
 import threading
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -74,7 +75,13 @@ def _set_progress(
         job.progress_stage = stage[:80]
         job.progress_message = message[:500]
         job.heartbeat_at = _now()
-        append_event(db, job, "progress", message, details={"stage": stage, "progress_semantics": "stage_checkpoint"})
+        append_event(
+            db,
+            job,
+            "progress",
+            message,
+            details={"stage": stage, "progress_semantics": "stage_checkpoint"},
+        )
 
 
 def _heartbeat_loop(
@@ -222,7 +229,11 @@ def _finish_job(
             or job.status not in {"running", "cancel_requested"}
         ):
             return
-        if isinstance(error, (JobCancelled, MediaJobCancelled)) or job.status == "cancel_requested" or job.cancel_requested:
+        if (
+            isinstance(error, (JobCancelled, MediaJobCancelled))
+            or job.status == "cancel_requested"
+            or job.cancel_requested
+        ):
             job.status = "cancelled"
             job.cancel_requested = True
             job.progress_stage = "cancelled"
@@ -286,7 +297,13 @@ def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
         job.progress_message = "A worker claimed this job."
         job.error_code = None
         job.error_message = None
-        append_event(db, job, "started", job.progress_message, details={"attempt": job.attempt_count})
+        append_event(
+            db,
+            job,
+            "started",
+            job.progress_message,
+            details={"attempt": job.attempt_count},
+        )
         snapshot = job_to_dict(job)
 
     stop_event = threading.Event()
@@ -349,7 +366,9 @@ def recover_stale_jobs() -> int:
                 job.status = "cancelled"
                 job.finished_at = _now()
                 job.progress_stage = "cancelled"
-                job.progress_message = "Worker heartbeat expired after cancellation; marked cancelled."
+                job.progress_message = (
+                    "Worker heartbeat expired after cancellation; marked cancelled."
+                )
                 append_event(db, job, "cancelled", job.progress_message)
             elif job.attempt_count >= job.max_attempts:
                 job.status = "failed"

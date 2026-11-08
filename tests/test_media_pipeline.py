@@ -58,7 +58,7 @@ def test_render_timeline_interleaves_audio_video_filter_inputs(tmp_path, monkeyp
     monkeypatch.setattr(pipeline, "probe_media", lambda _path: metadata)
     monkeypatch.setattr(pipeline, "require_binary", lambda _name: "/usr/bin/ffmpeg")
 
-    def fake_run(command, timeout=3600):
+    def fake_run(command, timeout=3600, cancel_check=None):
         captured["command"] = command
         Path(command[-1]).write_bytes(b"rendered")
         return subprocess.CompletedProcess(command, 0, "", "")

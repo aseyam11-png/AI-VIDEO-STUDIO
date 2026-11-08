@@ -36,7 +36,9 @@ class ProjectRecord(Base):
     brief: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="created")
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
@@ -76,7 +78,9 @@ class AssetRecord(Base):
     sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="uploaded")
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
@@ -112,7 +116,10 @@ class JobRecord(Base):
             ondelete="RESTRICT",
         ),
         CheckConstraint(
-            "status IN ('queued', 'running', 'succeeded', 'failed', 'cancel_requested', 'cancelled')",
+            (
+                "status IN ('queued', 'running', 'succeeded', 'failed', "
+                "'cancel_requested', 'cancelled')"
+            ),
             name="ck_jobs_status",
         ),
         CheckConstraint("progress >= 0 AND progress <= 100", name="ck_jobs_progress_range"),
@@ -133,7 +140,9 @@ class JobRecord(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     progress_stage: Mapped[str] = mapped_column(String(80), nullable=False, default="queued")
-    progress_message: Mapped[str] = mapped_column(String(500), nullable=False, default="Waiting for a worker.")
+    progress_message: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="Waiting for a worker."
+    )
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -145,7 +154,9 @@ class JobRecord(Base):
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     dispatch_generation: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
     )
@@ -167,7 +178,9 @@ class JobEventRecord(Base):
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     message: Mapped[str] = mapped_column(String(500), nullable=False)
     details_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
 
 
 class OutboxRecord(Base):
@@ -189,4 +202,6 @@ class OutboxRecord(Base):
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )

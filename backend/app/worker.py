@@ -56,7 +56,10 @@ def dispatch_outbox_batch(publisher=None, *, limit: int | None = None) -> int:
                     and_(OutboxRecord.status == "pending", OutboxRecord.available_at <= now),
                     and_(
                         OutboxRecord.status == "dispatching",
-                        or_(OutboxRecord.locked_at.is_(None), OutboxRecord.locked_at <= lock_cutoff),
+                        or_(
+                            OutboxRecord.locked_at.is_(None),
+                            OutboxRecord.locked_at <= lock_cutoff,
+                        ),
                     ),
                 )
             )
@@ -94,7 +97,9 @@ def dispatch_outbox_batch(publisher=None, *, limit: int | None = None) -> int:
                     row.status = "pending"
                     row.locked_at = None
                     backoff_seconds = min(300, 5 * (2 ** min(row.attempts, 6)))
-                    row.available_at = datetime.now(timezone.utc) + timedelta(seconds=backoff_seconds)
+                    row.available_at = datetime.now(timezone.utc) + timedelta(
+                        seconds=backoff_seconds
+                    )
                     row.last_error = str(exc)[:1000]
     return published
 

@@ -2,14 +2,17 @@ import shutil
 import subprocess
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
 from app.services.job_runner import run_job_attempt
+from fastapi.testclient import TestClient
 
 
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg required for background media job test")
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None,
+    reason="FFmpeg required for background media job test",
+)
 def test_background_worker_executes_full_single_asset_pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
     source = tmp_path / "background-fixture.mp4"

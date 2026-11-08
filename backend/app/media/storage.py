@@ -171,7 +171,9 @@ def update_asset_manifest(project_id: str, asset_id: str, updates: dict) -> dict
                 "id", "project_id", "asset_type", "original_filename", "stored_filename",
                 "relative_path", "size_bytes", "sha256", "status", "created_at", "updated_at",
             }
-            record.metadata_json = {key: value for key, value in manifest.items() if key not in core_keys}
+            record.metadata_json = {
+                key: value for key, value in manifest.items() if key not in core_keys
+            }
     atomic_write_json(directory / "asset.json", manifest)
     return manifest
 

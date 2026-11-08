@@ -36,7 +36,10 @@ def readiness() -> dict:
                     status_code=503,
                     detail="Database migrations have not been applied.",
                 )
-            current = set(connection.execute(text("SELECT version_num FROM alembic_version")).scalars())
+            revision_rows = connection.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalars()
+            current = set(revision_rows)
         config_path = Path(__file__).resolve().parents[2] / "alembic.ini"
         migration_config = Config(str(config_path))
         expected = set(ScriptDirectory.from_config(migration_config).get_heads())

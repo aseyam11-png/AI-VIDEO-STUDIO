@@ -75,18 +75,31 @@ def import_legacy_manifests() -> dict[str, int]:
                 if _valid_id(asset_dir.name) != asset_id:
                     raise ValueError(f"Asset directory/manifest ID mismatch: {asset_dir}")
                 if _valid_id(str(asset_manifest["project_id"])) != project_id:
-                    raise ValueError(f"Asset/project mismatch in legacy manifest: {asset_manifest_path}")
+                    raise ValueError(
+                        f"Asset/project mismatch in legacy manifest: {asset_manifest_path}"
+                    )
                 existing_asset = db.get(AssetRecord, asset_id)
                 if existing_asset is not None:
                     if existing_asset.project_id != project_id:
-                        raise ValueError(f"Asset ID is already registered under a different project: {asset_id}")
+                        raise ValueError(
+                            "Asset ID is already registered under a different project: "
+                            f"{asset_id}"
+                        )
                     continue
                 stored_filename = str(asset_manifest["stored_filename"])
                 if Path(stored_filename).name != stored_filename:
-                    raise ValueError(f"Unsafe stored filename in legacy manifest: {asset_manifest_path}")
+                    raise ValueError(
+                        f"Unsafe stored filename in legacy manifest: {asset_manifest_path}"
+                    )
                 media_path = (asset_dir / stored_filename).resolve()
-                if not media_path.is_relative_to(asset_dir.resolve()) or not media_path.is_file():
-                    raise ValueError(f"Legacy media bytes are missing or outside the asset directory: {media_path}")
+                if (
+                    not media_path.is_relative_to(asset_dir.resolve())
+                    or not media_path.is_file()
+                ):
+                    raise ValueError(
+                        "Legacy media bytes are missing or outside the asset directory: "
+                        f"{media_path}"
+                    )
                 expected_size = int(asset_manifest["size_bytes"])
                 if media_path.stat().st_size != expected_size:
                     raise ValueError(f"Legacy media size does not match its manifest: {media_path}")
@@ -107,7 +120,9 @@ def import_legacy_manifests() -> dict[str, int]:
                         sha256=str(asset_manifest["sha256"]),
                         status=str(asset_manifest.get("status", "uploaded")),
                         metadata_json={
-                            key: value for key, value in asset_manifest.items() if key not in core_keys
+                            key: value
+                            for key, value in asset_manifest.items()
+                            if key not in core_keys
                         },
                         created_at=created_at,
                         updated_at=created_at,

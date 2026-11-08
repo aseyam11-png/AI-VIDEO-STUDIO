@@ -1,9 +1,6 @@
 import io
 from datetime import datetime, timedelta, timezone
 
-from fastapi.testclient import TestClient
-from sqlalchemy import select
-
 from app.core.config import settings
 from app.db.models import JobRecord, OutboxRecord
 from app.db.session import session_scope
@@ -11,6 +8,8 @@ from app.main import app
 from app.media.storage import create_project, ingest_file_stream
 from app.services.job_runner import _finish_job, recover_stale_jobs, run_job_attempt
 from app.worker import dispatch_outbox_batch
+from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 
 def _project_with_video(tmp_path, monkeypatch):

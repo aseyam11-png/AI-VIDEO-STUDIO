@@ -232,7 +232,7 @@ def create_job(data: JobCreate) -> tuple[dict[str, Any], bool]:
             if existing.request_hash != digest:
                 raise JobConflictError(
                     "Idempotency key was already used with a different request."
-                )
+                ) from exc
             return job_to_dict(existing), False
 
 
@@ -266,7 +266,12 @@ def list_jobs(
             .limit(limit)
             .offset(offset)
         ).all()
-        return {"items": [job_to_dict(item) for item in items], "limit": limit, "offset": offset, "total": total}
+        return {
+            "items": [job_to_dict(item) for item in items],
+            "limit": limit,
+            "offset": offset,
+            "total": total,
+        }
 
 
 def cancel_job(job_id: str) -> dict[str, Any]:
@@ -285,7 +290,9 @@ def cancel_job(job_id: str) -> dict[str, Any]:
             job.status = "cancel_requested"
             job.cancel_requested = True
             job.progress_stage = "cancelling"
-            job.progress_message = "Cancellation requested; waiting for the active media step to stop."
+            job.progress_message = (
+                "Cancellation requested; waiting for the active media step to stop."
+            )
             append_event(db, job, "cancel_requested", job.progress_message)
         elif job.status in {"cancel_requested", "cancelled"}:
             pass
@@ -316,7 +323,13 @@ def retry_job(job_id: str) -> dict[str, Any]:
         job.retry_count += 1
         job.dispatch_generation += 1
         job.updated_at = _now()
-        append_event(db, job, "retry_queued", "Job retry accepted.", details={"retry_count": job.retry_count})
+        append_event(
+            db,
+            job,
+            "retry_queued",
+            "Job retry accepted.",
+            details={"retry_count": job.retry_count},
+        )
         _create_outbox(db, job)
         return job_to_dict(job)
 
