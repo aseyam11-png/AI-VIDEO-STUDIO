@@ -1,6 +1,5 @@
+import hashlib
 import io
-import json
-from pathlib import Path
 
 import pytest
 
@@ -36,7 +35,7 @@ def test_ingest_stores_safe_uuid_name_and_hash(tmp_path, monkeypatch):
 
     assert stored.name == "source.mp4"
     assert stored.is_relative_to(asset_dir(project["id"], manifest["id"]))
-    assert manifest["sha256"] == __import__("hashlib").sha256(payload).hexdigest()
+    assert manifest["sha256"] == hashlib.sha256(payload).hexdigest()
     assert get_asset(project["id"], manifest["id"])["original_filename"] == "private-name.mp4"
 
 
