@@ -1,6 +1,5 @@
-import pytest
-
 from app.services.job_policy import validate_generation_request
+import pytest
 
 
 def test_generation_requires_approval():
@@ -21,6 +20,13 @@ def test_generation_rejects_long_single_shot():
     with pytest.raises(ValueError):
         validate_generation_request(
             {"duration_seconds": 30, "workflow_id": "wan22_ti2v_5b_v1"}, approved=True
+        )
+
+
+def test_generation_rejects_boolean_duration():
+    with pytest.raises(ValueError):
+        validate_generation_request(
+            {"duration_seconds": True, "workflow_id": "wan22_ti2v_5b_v1"}, approved=True
         )
 
 
