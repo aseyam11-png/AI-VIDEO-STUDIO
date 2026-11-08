@@ -1,4 +1,4 @@
-import typing
+import typing  # noqa: I001
 
 from app.schemas.jobs import JobType
 from app.schemas.tools import DirectorPlanToolCall
@@ -138,7 +138,9 @@ TOOL_SPECS: tuple[dict[str, typing.Any], ...] = (
 )
 
 
-def _readiness(spec: dict[str, typing.Any], capabilities: dict[str, typing.Any]) -> dict[str, typing.Any]:
+def _readiness(
+    spec: dict[str, typing.Any], capabilities: dict[str, typing.Any]
+) -> dict[str, typing.Any]:
     tool_id = spec["tool_id"]
     models = capabilities.get("models", {})
     runtimes = capabilities.get("runtimes", {})

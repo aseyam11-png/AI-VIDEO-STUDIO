@@ -1,4 +1,4 @@
-from typing import Annotated, Literal
+from typing import Annotated, Literal  # noqa: I001
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
