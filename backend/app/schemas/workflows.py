@@ -24,3 +24,25 @@ class WorkflowCreateRequest(BaseModel):
         if self.interpolate_generated_video and not self.generate_video:
             raise ValueError("Frame interpolation requires video generation in this workflow.")
         return self
+
+
+
+class WorkflowFromBriefRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: UUID
+    asset_id: UUID
+    brief: str = Field(min_length=20, max_length=12000)
+    language: str = Field(default="ar", pattern=r"^(ar|en)$")
+    target_duration_seconds: int = Field(default=60, ge=15, le=300)
+    transcribe_audio: bool = False
+    enhance_audio: bool = False
+    detection_prompt: str | None = Field(default=None, min_length=1, max_length=500)
+    generate_video: bool = False
+    interpolate_generated_video: bool = False
+
+    @model_validator(mode="after")
+    def validate_workflow_options(self):
+        if self.interpolate_generated_video and not self.generate_video:
+            raise ValueError("Frame interpolation requires video generation in this workflow.")
+        return self

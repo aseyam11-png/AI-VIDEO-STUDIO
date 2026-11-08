@@ -2,7 +2,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.schemas.workflows import WorkflowCreateRequest
+from app.integrations.ollama import OllamaError
+from app.schemas.workflows import WorkflowCreateRequest, WorkflowFromBriefRequest
 from app.services.workflow_engine import (
     WorkflowConflictError,
     WorkflowNotFoundError,
@@ -10,6 +11,7 @@ from app.services.workflow_engine import (
     approve_workflow,
     cancel_workflow,
     create_workflow_run,
+    create_workflow_from_brief,
     get_workflow,
 )
 
@@ -23,6 +25,18 @@ def create_workflow(payload: WorkflowCreateRequest) -> dict:
         return create_workflow_run(payload)
     except WorkflowRequestError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/from-brief", status_code=status.HTTP_201_CREATED)
+def create_workflow_from_brief_route(payload: WorkflowFromBriefRequest) -> dict:
+    """Generate an Arabic/English Qwen plan, persist its steps, and stop for approval."""
+    try:
+        return create_workflow_from_brief(payload)
+    except OllamaError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except WorkflowRequestError as exc:
+        status_code = 503 if str(exc).startswith("AI Director could not create a plan:") else 422
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 @router.get("/{workflow_id}")

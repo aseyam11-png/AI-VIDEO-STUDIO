@@ -16,7 +16,9 @@ from app.db.models import (
 )
 from app.db.session import session_scope
 from app.schemas.jobs import JobType
-from app.schemas.workflows import WorkflowCreateRequest
+from app.schemas.models import CreativePlan
+from app.schemas.workflows import WorkflowCreateRequest, WorkflowFromBriefRequest
+from app.integrations.ollama import generate_creative_plan
 from app.services.jobs import (
     JobRequestError,
     _create_outbox,
@@ -422,6 +424,11 @@ def advance_workflow_for_job(db: Session, job: JobRecord) -> None:
         step.error_message = None
         step.finished_at = now
         output_asset_id = (job.result_json or {}).get("output_asset_id")
+        if run.status == "cancel_requested":
+            run.status = "cancelled"
+            run.finished_at = now
+            run.updated_at = now
+            return
         next_step = db.scalar(
             select(WorkflowStepRecord)
             .where(
@@ -539,3 +546,33 @@ def cancel_workflow(workflow_id: str) -> dict:
             run.status = "cancel_requested"
         run.updated_at = now
         return _workflow_to_dict(db, run)
+
+
+
+def create_workflow_from_brief(request: WorkflowFromBriefRequest) -> dict:
+    """Use Qwen to draft a plan, then persist a workflow that awaits explicit approval."""
+    try:
+        plan = generate_creative_plan(
+            request.brief,
+            target_duration_seconds=request.target_duration_seconds,
+            language=request.language,
+        )
+    except Exception as exc:
+        raise WorkflowRequestError(f"AI Director could not create a plan: {exc}") from exc
+
+    create_request = WorkflowCreateRequest(
+        project_id=request.project_id,
+        asset_id=request.asset_id,
+        brief=request.brief,
+        language=request.language,
+        creative_plan=CreativePlan.model_validate(plan.model_dump()),
+        transcribe_audio=request.transcribe_audio,
+        enhance_audio=request.enhance_audio,
+        detection_prompt=request.detection_prompt,
+        generate_video=request.generate_video,
+        interpolate_generated_video=request.interpolate_generated_video,
+    )
+    result = create_workflow_run(create_request)
+    result["plan_model"] = settings.ollama_model
+    result["approval_required"] = True
+    return result
