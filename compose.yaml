@@ -3,13 +3,13 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: \${POSTGRES_DB:-video_studio}
-      POSTGRES_USER: \${POSTGRES_USER:-video_studio}
-      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-video_studio}
+      POSTGRES_USER: ${POSTGRES_USER:-video_studio}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U \${POSTGRES_USER:-video_studio} -d \${POSTGRES_DB:-video_studio}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-video_studio} -d ${POSTGRES_DB:-video_studio}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -18,13 +18,13 @@ services:
   valkey:
     image: valkey/valkey:8-alpine
     restart: unless-stopped
-    command: ["sh", "-c", "valkey-server --appendonly yes --requirepass \\"$$VALKEY_PASSWORD\\""]
+    command: ["sh", "-c", "valkey-server --appendonly yes --requirepass \"$VALKEY_PASSWORD\""]
     environment:
-      VALKEY_PASSWORD: \${VALKEY_PASSWORD:?Set VALKEY_PASSWORD in .env}
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:?Set VALKEY_PASSWORD in .env}
     volumes:
       - valkey_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "valkey-cli -a \\"$$VALKEY_PASSWORD\\" ping | grep -q PONG"]
+      test: ["CMD-SHELL", "valkey-cli -a \"$VALKEY_PASSWORD\" ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -35,9 +35,9 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+psycopg://\${POSTGRES_USER:-video_studio}:\${POSTGRES_PASSWORD}@postgres:5432/\${POSTGRES_DB:-video_studio}
-      CELERY_BROKER_URL: redis://:\${VALKEY_PASSWORD}@valkey:6379/0
-      CELERY_RESULT_BACKEND: redis://:\${VALKEY_PASSWORD}@valkey:6379/1
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-video_studio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
+      CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+      CELERY_RESULT_BACKEND: redis://:${VALKEY_PASSWORD}@valkey:6379/1
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
