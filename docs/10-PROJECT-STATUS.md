@@ -2,18 +2,29 @@
 
 Last updated: 2026-11-08.
 
+## Verified latest CI
+
+- GitHub Actions workflow run: 83
+- Run URL: https://github.com/aseyam11-png/AI-VIDEO-STUDIO/actions/runs/42487114504
+- Ruff: passed
+- Pytest: 16 passed
+- End-to-end fixture: synthetic video generated with FFmpeg, uploaded through the API, probed, proxied, scene-detected, converted to OTIO, rendered, and downloaded.
+- This is CI validation on GitHub's Linux runner, not a deployment or GPU benchmark.
+
+## Component status
+
 | Area | Status | Evidence / next action |
 |---|---|---|
 | GitHub repository | Public repository populated | Keep secrets and private media out |
 | Architecture, roadmap, risk register | Drafted | Implement and attach acceptance evidence |
 | Project creation | Implemented | Atomic JSON manifest on private media volume |
 | Video/image upload | Implemented | Extension allowlist, size cap, SHA-256 and FFprobe validation |
-| Proxy generation | Implemented | FFmpeg H.264 proxy; verify with integration test |
-| Scene detection | Implemented | PySceneDetect ContentDetector; tune threshold per content |
+| Proxy generation | Implemented | FFmpeg H.264 proxy; covered by end-to-end test |
+| Scene detection | Implemented | PySceneDetect ContentDetector; covered by end-to-end test |
 | Arabic transcription | Optional adapter | WhisperX not installed by default; CPU-only in Phase 0.5 |
 | Timeline | Implemented | OpenTimelineIO file plus JSON manifest |
 | Preview render | Implemented | Cut-only render from one source asset using FFmpeg |
-| Media end-to-end test | Added | Must pass CI before Phase 0.5 acceptance |
+| Media end-to-end test | **Passed** | GitHub Actions run 83; 16 tests passed |
 | FastAPI control plane | Active scaffold | No production authentication yet |
 | PostgreSQL / Valkey | Compose declared | Phase 0.5 filesystem manifests; database integration still planned |
 | Arabic RTL web UI | Visual scaffold | Media upload and live API integration not wired |
