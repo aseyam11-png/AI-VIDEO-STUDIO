@@ -168,7 +168,11 @@ def create_job(data: JobCreate) -> tuple[dict[str, Any], bool]:
                 raise JobRequestError(
                     "Project metadata is not in the database. Import legacy manifests first."
                 )
-            asset = db.get(AssetRecord, str(data.asset_id))
+            asset = db.scalar(
+                select(AssetRecord)
+                .where(AssetRecord.id == str(data.asset_id))
+                .with_for_update()
+            )
             if asset is None or asset.project_id != str(data.project_id):
                 raise JobRequestError("Asset was not found in the requested project.")
             if asset.asset_type != "video":
@@ -186,6 +190,19 @@ def create_job(data: JobCreate) -> tuple[dict[str, Any], bool]:
                         "Idempotency key was already used with a different request."
                     )
                 return job_to_dict(existing), False
+
+            active_job = db.scalar(
+                select(JobRecord).where(
+                    JobRecord.project_id == str(data.project_id),
+                    JobRecord.asset_id == str(data.asset_id),
+                    JobRecord.job_type == data.job_type.value,
+                    JobRecord.status.in_(("queued", "running", "cancel_requested")),
+                )
+            )
+            if active_job is not None:
+                raise JobConflictError(
+                    "An active job of this type already exists for this asset."
+                )
 
             now = _now()
             job = JobRecord(
@@ -227,6 +244,18 @@ def create_job(data: JobCreate) -> tuple[dict[str, Any], bool]:
                 )
             )
             if existing is None:
+                active = db.scalar(
+                    select(JobRecord).where(
+                        JobRecord.project_id == str(data.project_id),
+                        JobRecord.asset_id == str(data.asset_id),
+                        JobRecord.job_type == data.job_type.value,
+                        JobRecord.status.in_(("queued", "running", "cancel_requested")),
+                    )
+                )
+                if active is not None:
+                    raise JobConflictError(
+                        "An active job of this type already exists for this asset."
+                    ) from exc
                 raise
             if existing.request_hash != digest:
                 raise JobConflictError(
@@ -301,36 +330,59 @@ def cancel_job(job_id: str) -> dict[str, Any]:
 
 
 def retry_job(job_id: str) -> dict[str, Any]:
-    with session_scope() as db:
-        job = db.scalar(select(JobRecord).where(JobRecord.id == job_id).with_for_update())
-        if job is None:
-            raise JobNotFoundError("Job not found.")
-        if job.status not in {"failed", "cancelled"}:
-            raise JobConflictError("Only failed or cancelled jobs can be retried.")
-        if job.attempt_count >= job.max_attempts:
-            raise JobConflictError("The configured attempt budget has been exhausted.")
-        job.status = "queued"
-        job.cancel_requested = False
-        job.progress = 0
-        job.progress_stage = "queued"
-        job.progress_message = "Retry accepted; waiting for a worker."
-        job.result_json = None
-        job.error_code = None
-        job.error_message = None
-        job.finished_at = None
-        job.heartbeat_at = None
-        job.retry_count += 1
-        job.dispatch_generation += 1
-        job.updated_at = _now()
-        append_event(
-            db,
-            job,
-            "retry_queued",
-            "Job retry accepted.",
-            details={"retry_count": job.retry_count},
-        )
-        _create_outbox(db, job)
-        return job_to_dict(job)
+    try:
+        with session_scope() as db:
+            job = db.scalar(
+                select(JobRecord).where(JobRecord.id == job_id).with_for_update()
+            )
+            if job is None:
+                raise JobNotFoundError("Job not found.")
+            if job.status not in {"failed", "cancelled"}:
+                raise JobConflictError("Only failed or cancelled jobs can be retried.")
+            if job.attempt_count >= job.max_attempts:
+                raise JobConflictError("The configured attempt budget has been exhausted.")
+
+            active = db.scalar(
+                select(JobRecord).where(
+                    JobRecord.project_id == job.project_id,
+                    JobRecord.asset_id == job.asset_id,
+                    JobRecord.job_type == job.job_type,
+                    JobRecord.id != job.id,
+                    JobRecord.status.in_(("queued", "running", "cancel_requested")),
+                )
+            )
+            if active is not None:
+                raise JobConflictError(
+                    "Another active job of this type already exists for this asset."
+                )
+
+            job.status = "queued"
+            job.cancel_requested = False
+            job.progress = 0
+            job.progress_stage = "queued"
+            job.progress_message = "Retry accepted; waiting for a worker."
+            job.result_json = None
+            job.error_code = None
+            job.error_message = None
+            job.finished_at = None
+            job.heartbeat_at = None
+            job.retry_count += 1
+            job.dispatch_generation += 1
+            job.updated_at = _now()
+            append_event(
+                db,
+                job,
+                "retry_queued",
+                "Job retry accepted.",
+                details={"retry_count": job.retry_count},
+            )
+            _create_outbox(db, job)
+            result = job_to_dict(job)
+        return result
+    except IntegrityError as exc:
+        raise JobConflictError(
+            "Another active job of this type already exists for this asset."
+        ) from exc
 
 
 def get_job_events(job_id: str, *, limit: int = 200) -> list[dict[str, Any]]:

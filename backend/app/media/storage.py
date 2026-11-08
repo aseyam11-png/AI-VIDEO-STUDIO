@@ -263,3 +263,18 @@ def ingest_file_stream(
         except OSError:
             pass
         raise
+
+
+
+def delete_asset_record(project_id: str, asset_id: str) -> None:
+    safe_project_id = _uuid(project_id)
+    safe_asset_id = _uuid(asset_id)
+    with session_scope() as db:
+        record = db.scalar(
+            select(AssetRecord).where(
+                AssetRecord.project_id == safe_project_id,
+                AssetRecord.id == safe_asset_id,
+            )
+        )
+        if record is not None:
+            db.delete(record)

@@ -90,6 +90,18 @@ def upgrade() -> None:
     op.create_index("ix_jobs_project_created", "jobs", ["project_id", "created_at"])
     op.create_index("ix_jobs_status_heartbeat", "jobs", ["status", "heartbeat_at"])
     op.create_index("ix_jobs_queue_status", "jobs", ["queue_name", "status"])
+    op.create_index(
+        "uq_jobs_active_asset_operation",
+        "jobs",
+        ["project_id", "asset_id", "job_type"],
+        unique=True,
+        postgresql_where=sa.text(
+            "status IN ('queued', 'running', 'cancel_requested')"
+        ),
+        sqlite_where=sa.text(
+            "status IN ('queued', 'running', 'cancel_requested')"
+        ),
+    )
     op.create_table(
         "job_events",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
@@ -125,6 +137,7 @@ def downgrade() -> None:
     op.drop_table("outbox_events")
     op.drop_index("ix_job_events_job_created", table_name="job_events")
     op.drop_table("job_events")
+    op.drop_index("uq_jobs_active_asset_operation", table_name="jobs")
     op.drop_index("ix_jobs_queue_status", table_name="jobs")
     op.drop_index("ix_jobs_status_heartbeat", table_name="jobs")
     op.drop_index("ix_jobs_project_created", table_name="jobs")

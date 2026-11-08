@@ -31,6 +31,7 @@ Progress is an integer checkpoint, not a fabricated FFmpeg percentage. `progress
 5. Worker heartbeats are stored in PostgreSQL. A periodic recovery task requeues jobs whose heartbeat expires, or fails them when their attempt budget is exhausted.
 6. Task handlers write outputs to temporary files and atomically promote verified results. Cancellation terminates FFmpeg processes. PySceneDetect cancellation is checked at operation boundaries, not inside the detector's internal frame loop.
 7. External effects are not claimed to be exactly-once. Handlers must remain idempotent and verify output before reporting success.
+8. A partial unique database index allows only one active job of the same operation type per asset. Asset-row locking serializes concurrent submissions; the database index is the final race-condition guard.
 
 ## Initial supported durable job types
 
@@ -64,17 +65,27 @@ Without a configured `DATABASE_URL`, the API uses a SQLite file under `MEDIA_ROO
 
 ## Docker Compose stack
 
-The Compose stack runs PostgreSQL, Valkey, an Alembic migration one-shot, the API, a CPU worker, and Celery Beat. PostgreSQL and Valkey do not publish host ports. The API is bound to `127.0.0.1:8000`. Generate strong local secrets and store them only in an ignored local `.env`; never commit `.env`.
+The Compose stack runs PostgreSQL, Valkey, an Alembic migration one-shot, the API, a CPU worker, and Celery Beat. PostgreSQL and Valkey do not publish host ports. The API is bound to `127.0.0.1:8000`. PostgreSQL uses a bootstrap superuser only during first-volume initialization, a separate non-superuser migration owner for Alembic, and a restricted runtime role for the API/workers. The runtime role receives DML privileges on tables and sequences, but no schema DDL rights. Generate strong local secrets and store them only in an ignored local `.env`; never commit `.env`. The `database-init/01-roles.sh` initialization script runs only when PostgreSQL initializes an empty volume.
 
 PowerShell setup:
 
 ```powershell
 Copy-Item .env.example .env
-$postgres = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).TrimEnd('=').Replace('+','-').Replace('/','_')
-$valkey = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).TrimEnd('=').Replace('+','-').Replace('/','_')
+function New-UrlSafeSecret {
+  $bytes = New-Object byte[] 32
+  $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+  try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
+  return [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+','-').Replace('/','_')
+}
+$bootstrap = New-UrlSafeSecret
+$migrator = New-UrlSafeSecret
+$runtime = New-UrlSafeSecret
+$valkey = New-UrlSafeSecret
 $envText = Get-Content .env -Raw
-$envText = $envText.Replace('REPLACE_WITH_GENERATED_URL_SAFE_SECRET', $postgres, 1)
-$envText = $envText.Replace('REPLACE_WITH_A_DIFFERENT_GENERATED_URL_SAFE_SECRET', $valkey)
+$envText = $envText.Replace('REPLACE_WITH_BOOTSTRAP_SECRET', $bootstrap)
+$envText = $envText.Replace('REPLACE_WITH_MIGRATOR_SECRET', $migrator)
+$envText = $envText.Replace('REPLACE_WITH_RUNTIME_SECRET', $runtime)
+$envText = $envText.Replace('REPLACE_WITH_VALKEY_SECRET', $valkey)
 $envText = $envText.Replace('MEDIA_HOST_PATH=./data', 'MEDIA_HOST_PATH=C:/Users/MSI/AI-Video-Studio-Data')
 Set-Content -Path .env -Value $envText -NoNewline
 docker compose up -d --build
@@ -82,7 +93,7 @@ docker compose exec api python -m app.cli import-legacy-manifests
 docker compose ps
 ```
 
-The two passwords are generated locally and are URL-safe. The example path preserves the Phase 0.5 media directory on the Windows host; change it to your actual private media path. Run the legacy import once after migrations; reruns are idempotent. Do not paste your `.env` contents or secrets into chat/issues.
+The four passwords are generated independently on your machine and are URL-safe. The runtime role cannot create tables or alter the schema; only the migrator role performs migrations. The example path preserves the Phase 0.5 media directory on the Windows host; change it to your actual private media path. Run the legacy import once after migrations; reruns are idempotent. Do not paste your `.env` contents or secrets into chat/issues. The role bootstrap runs only when Postgres creates a fresh data volume; do not delete an existing volume to rerun it.
 
 Use `/health` for process health and `/ready` for database/migration readiness. Stop with `docker compose down`; add `-v` only when intentionally deleting persistent PostgreSQL/Valkey data. The bind-mounted media directory is not deleted by `down` or `down -v`.
 
@@ -95,9 +106,11 @@ Back up PostgreSQL and the media volume together. The database stores paths and 
 - Alembic upgrade creates the schema on PostgreSQL and SQLite test databases.
 - Project and asset metadata survives API process restarts because it is stored in the database.
 - Duplicate job requests with the same project/idempotency key and identical canonical payload return the original job; reuse with different request data returns HTTP 409.
+- A database partial unique index prevents concurrent active jobs of the same operation type on the same asset, including requests with different idempotency keys.
 - Job row, creation event, and outbox row are atomic.
 - Outbox failures can be retried; duplicate deliveries cannot claim the same generation twice.
 - Job status, stage checkpoint, attempts, heartbeat, result/error, and ordered event history are inspectable.
-- Queued cancellation, running cancellation request, failed/cancelled retry, exhausted-attempt rejection, and stale-worker recovery are tested.
+- Queued cancellation, running cancellation request, failed/cancelled retry, exhausted-attempt rejection, active-operation uniqueness, and stale-worker recovery are tested.
+- Retry/recovery currently reruns the deterministic media operation from its start; it is not true mid-operation resume.
 - End-to-end worker integration creates a synthetic clip, uploads it, executes proxy/scenes/timeline/render jobs, and downloads the output.
 - Main remains unchanged until the draft PR is reviewed and merged explicitly.

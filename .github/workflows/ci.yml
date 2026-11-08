@@ -12,17 +12,19 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_DB: video_studio_ci
-          POSTGRES_USER: video_studio
-          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_USER: video_studio_bootstrap
+          POSTGRES_PASSWORD: ci-bootstrap-password
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U video_studio -d video_studio_ci"
+          --health-cmd "pg_isready -U video_studio_bootstrap -d video_studio_ci"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql+psycopg://video_studio:ci-only-password@localhost:5432/video_studio_ci
+      BOOTSTRAP_DATABASE_URL: postgresql://video_studio_bootstrap:ci-bootstrap-password@localhost:5432/video_studio_ci
+      DATABASE_URL: postgresql+psycopg://video_studio_migrator:ci-migrator-password@localhost:5432/video_studio_ci
+      RUNTIME_DATABASE_URL: postgresql://video_studio_runtime:ci-runtime-password@localhost:5432/video_studio_ci
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,8 +39,37 @@ jobs:
           cp .env.example .env
           docker compose config --quiet
           rm .env
-      - name: Verify PostgreSQL migrations
+      - name: Provision least-privilege database roles
+        run: |
+          psql "$BOOTSTRAP_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            --set=migrator_user=video_studio_migrator \
+            --set=migrator_password=ci-migrator-password \
+            --set=runtime_user=video_studio_runtime \
+            --set=runtime_password=ci-runtime-password \
+            --set=database_name=video_studio_ci <<'SQL'
+          CREATE ROLE :"migrator_user" LOGIN PASSWORD :'migrator_password'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+          CREATE ROLE :"runtime_user" LOGIN PASSWORD :'runtime_password'
+            NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
+          ALTER DATABASE :"database_name" OWNER TO :"migrator_user";
+          GRANT CONNECT ON DATABASE :"database_name" TO :"runtime_user";
+          ALTER SCHEMA public OWNER TO :"migrator_user";
+          GRANT USAGE ON SCHEMA public TO :"runtime_user";
+          ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_user" IN SCHEMA public
+            GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO :"runtime_user";
+          ALTER DEFAULT PRIVILEGES FOR ROLE :"migrator_user" IN SCHEMA public
+            GRANT USAGE, SELECT ON SEQUENCES TO :"runtime_user";
+          SQL
+      - name: Verify PostgreSQL migrations as migrator role
         run: python -m alembic upgrade head
+      - name: Verify runtime database privileges
+        run: |
+          psql "$RUNTIME_DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT version_num FROM alembic_version"
+          psql "$RUNTIME_DATABASE_URL" -v ON_ERROR_STOP=1 -c "BEGIN; INSERT INTO projects (id, name, target_duration_seconds, target_resolution, target_fps, language, brief, status, metadata_json, created_at, updated_at) VALUES ('00000000-0000-4000-8000-000000000001', 'Runtime permission check', 1, '640x360', 24, 'ar', 'CI', 'created', '{}'::json, NOW(), NOW()); ROLLBACK;"
+          if psql "$RUNTIME_DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE TABLE public.runtime_ddl_must_fail (id integer)" 2>/dev/null; then
+            echo "Runtime role unexpectedly has DDL privileges."
+            exit 1
+          fi
       - name: Verify code quality
         run: ruff check backend tests
       - name: Run test suite

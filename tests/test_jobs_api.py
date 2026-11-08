@@ -198,3 +198,32 @@ def test_running_cancel_is_recorded_as_cooperative_request(tmp_path, monkeypatch
     assert response.status_code == 200
     assert response.json()["status"] == "cancel_requested"
     assert response.json()["cancel_requested"] is True
+
+
+def test_active_jobs_of_same_type_are_unique_per_asset(tmp_path, monkeypatch):
+    project, asset = _project_with_video(tmp_path, monkeypatch)
+    client = TestClient(app)
+    base = {
+        "project_id": project["id"],
+        "asset_id": asset["id"],
+        "job_type": "media.proxy",
+        "payload": {},
+    }
+    first = client.post(
+        "/v1/jobs",
+        json={**base, "idempotency_key": "proxy-active-0001"},
+    )
+    second = client.post(
+        "/v1/jobs",
+        json={**base, "idempotency_key": "proxy-active-0002"},
+    )
+    assert first.status_code == 202
+    assert second.status_code == 409
+
+    cancelled = client.post(f"/v1/jobs/{first.json()['id']}/cancel")
+    assert cancelled.status_code == 200
+    third = client.post(
+        "/v1/jobs",
+        json={**base, "idempotency_key": "proxy-active-0003"},
+    )
+    assert third.status_code == 202

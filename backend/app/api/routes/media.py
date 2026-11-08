@@ -20,6 +20,7 @@ from app.media.speech import SpeechDependencyError, transcribe_local
 from app.media.storage import (
     asset_dir,
     atomic_write_json,
+    delete_asset_record,
     get_asset,
     get_project,
     ingest_file_stream,
@@ -110,10 +111,13 @@ async def upload_asset(project_id: str, file: Annotated[UploadFile, File()]) -> 
         return manifest
     except (ValueError, MediaToolError) as exc:
         if "manifest" in locals():
+            await run_in_threadpool(delete_asset_record, project_id, manifest["id"])
             directory = asset_dir(project_id, manifest["id"])
-            for child in directory.glob("*"):
-                child.unlink(missing_ok=True)
-            directory.rmdir()
+            if directory.exists():
+                for child in directory.iterdir():
+                    if child.is_file():
+                        child.unlink(missing_ok=True)
+                directory.rmdir()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     finally:
         await file.close()

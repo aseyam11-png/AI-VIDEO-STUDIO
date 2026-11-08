@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -128,6 +129,19 @@ class JobRecord(Base):
         Index("ix_jobs_project_created", "project_id", "created_at"),
         Index("ix_jobs_status_heartbeat", "status", "heartbeat_at"),
         Index("ix_jobs_queue_status", "queue_name", "status"),
+        Index(
+            "uq_jobs_active_asset_operation",
+            "project_id",
+            "asset_id",
+            "job_type",
+            unique=True,
+            postgresql_where=text(
+                "status IN ('queued', 'running', 'cancel_requested')"
+            ),
+            sqlite_where=text(
+                "status IN ('queued', 'running', 'cancel_requested')"
+            ),
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))

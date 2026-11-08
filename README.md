@@ -87,7 +87,7 @@ Request cancellation or retry an eligible job:
     POST /v1/jobs/{job_id}/cancel
     POST /v1/jobs/{job_id}/retry
 
-Supported initial types are `media.proxy`, `media.scenes`, `media.timeline`, and `media.render`. Payloads are allowlisted and validated by job type. Submit requests carry a project-scoped `idempotency_key`; repeating the same request returns the original job, while reusing the key with different request content returns HTTP 409.
+Supported initial types are `media.proxy`, `media.scenes`, `media.timeline`, and `media.render`. Payloads are allowlisted and validated by job type. Submit requests carry a project-scoped `idempotency_key`; repeating the same request returns the original job, while reusing the key with different request content returns HTTP 409. A partial unique database index also prevents concurrent active jobs of the same operation type on the same asset.
 
 Job rows, job events, and outbox messages are written in one database transaction. Celery workers consume messages via Valkey; PostgreSQL remains the authoritative source for status, progress checkpoints, attempts, heartbeats, results, and errors. Delivery is at-least-once, with database generation checks fencing stale/duplicate deliveries. Progress is an honest stage checkpoint, not a fabricated percentage from FFmpeg.
 
@@ -121,7 +121,7 @@ Requirements: Python 3.11, FFmpeg/FFprobe, and the media extra.
 Docker development (Phase 1):
 
 1. Copy .env.example to .env.
-2. Generate two different URL-safe random secrets for POSTGRES_PASSWORD and VALKEY_PASSWORD. Set MEDIA_HOST_PATH to a private host directory outside the Git checkout; for example, the existing Windows media directory.
+2. Generate four independent URL-safe secrets for the PostgreSQL bootstrap, migration, runtime, and Valkey roles. Set MEDIA_HOST_PATH to a private host directory outside the Git checkout; for example, the existing Windows media directory.
 3. Run `docker compose up -d --build`. Compose starts PostgreSQL and Valkey, applies Alembic migrations, then starts the API, CPU worker, and scheduler.
 4. Import existing Phase 0.5 manifests once with `docker compose exec api python -m app.cli import-legacy-manifests`. The importer is idempotent and does not move media bytes.
 5. Check `http://127.0.0.1:8000/health` and `http://127.0.0.1:8000/ready`.
@@ -147,13 +147,13 @@ WhisperX is not installed in the base image because it brings a large ML depende
 | Simple cut-only FFmpeg preview render | Implemented for one source asset |
 | Automated media integration test | **Passed in GitHub Actions** |
 | PostgreSQL-backed project/asset/job metadata | Implemented on Phase 1 branch; Alembic migration and legacy import added |
-| Durable job API, transactional outbox, Celery CPU worker and recovery | Implemented on Phase 1 branch; CI acceptance pending |
+| Durable job API, transactional outbox, Celery CPU worker and recovery | Implemented on Phase 1 branch; PostgreSQL CI run 88 passed (27 tests) |
 | GPU scheduler and isolated GPU workers | Not implemented |
 | LangGraph live LLM and agents | Placeholder only |
 | Wan/ComfyUI/SAM 2 production inference | Not installed or benchmarked |
 | Product Identity Lock | Design requirement; not implemented |
 | Arabic RTL web UI | Visual scaffold; not connected to API |
-| Phase 1 merge / PostgreSQL CI verification | Pending draft PR review and CI |
+| Phase 1 merge / PostgreSQL CI verification | CI passed on reviewed commit bb5f7db; latest concurrency/cleanup/role hardening pending CI |
 | Production readiness | **Not ready** |
 
 ## Public repository notice

@@ -37,6 +37,9 @@ def test_alembic_upgrade_creates_phase1_schema(tmp_path, monkeypatch):
     assert "uq_jobs_project_idempotency" in {
         item["name"] for item in inspector.get_unique_constraints("jobs")
     }
+    assert "uq_jobs_active_asset_operation" in {
+        item["name"] for item in inspector.get_indexes("jobs")
+    }
     ready = TestClient(app).get("/ready")
     assert ready.status_code == 200, ready.text
 
