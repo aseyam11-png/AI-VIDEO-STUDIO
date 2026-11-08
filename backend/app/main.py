@@ -1,14 +1,17 @@
 from fastapi import FastAPI
 
+from app.api.router import api_router
 from app.core.config import settings
-from app.orchestration.graph import build_graph
 
 app = FastAPI(
     title=settings.app_name,
-    version="0.1.0",
-    description="Single-user AI video production control plane. Initial scaffold only.",
+    version="0.2.0",
+    description=(
+        "Phase 0.5 deterministic media pipeline: ingest, probe, proxy, "
+        "scene detection, optional local speech transcription, OTIO timeline and FFmpeg render."
+    ),
 )
-workflow = build_graph()
+app.include_router(api_router)
 
 
 @app.get("/health", tags=["system"])
@@ -19,11 +22,19 @@ def health() -> dict:
 @app.get("/v1/system/capabilities", tags=["system"])
 def capabilities() -> dict:
     return {
-        "phase": "scaffold",
+        "phase": "0.5",
+        "media_ingestion": True,
+        "ffprobe": True,
+        "proxy_generation": True,
+        "scene_detection": True,
+        "opentimelineio": True,
+        "ffmpeg_render": True,
+        "local_whisperx": "optional_not_installed_by_default",
         "gpu_worker_enabled": False,
-        "generation_enabled": False,
+        "video_generation_enabled": False,
         "external_model_apis_enabled": False,
-        "approval_required_before_generation": settings.require_approval_before_generation,
-        "approval_required_before_export": settings.require_approval_before_export,
-        "note": "No model weights or third-party inference workers are installed by this scaffold.",
+        "note": (
+            "The deterministic media pipeline is available when FFmpeg and the media extra are installed. "
+            "WhisperX is an explicit optional local worker; no external transcription API is used."
+        ),
     }
