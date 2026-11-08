@@ -18,10 +18,7 @@ checkpoints/
 ComfyUI/models/
 ComfyUI/output/
 ComfyUI/temp/
-data/media/
-data/generated/
-data/proxies/
-data/exports/
+data/
 *.mp4
 *.mov
 *.mkv
