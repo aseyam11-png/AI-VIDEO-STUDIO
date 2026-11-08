@@ -45,7 +45,7 @@ class SceneRequest(BaseModel):
 class TranscriptionRequest(BaseModel):
     language: str = Field(default="ar", pattern="^(ar|en)$")
     model_name: str = Field(default="small", pattern="^(tiny|base|small|medium|large-v3)$")
-    device: str = Field(default="cpu", pattern="^(cpu|cuda)$")
+    device: str = Field(default="cpu", pattern="^cpu$")
     align: bool = False
 
 
