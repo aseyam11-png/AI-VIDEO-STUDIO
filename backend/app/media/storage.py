@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from sqlalchemy import select
 
@@ -262,6 +262,105 @@ def ingest_file_stream(
             directory.rmdir()
         except OSError:
             pass
+        raise
+
+
+
+def register_generated_video_asset(
+    project_id: str,
+    job_id: str,
+    source_path: Path,
+    *,
+    max_bytes: int,
+) -> dict:
+    """Register a generated video under a stable job-derived asset ID.
+
+    A retry of the same durable job updates the same asset instead of creating
+    duplicate asset rows. Only files inside the project workspace are accepted.
+    """
+    safe_project_id = _uuid(project_id)
+    safe_job_id = _uuid(job_id)
+    root = project_dir(safe_project_id).resolve()
+    source = source_path.expanduser().resolve()
+    if not source.is_relative_to(root) or not source.is_file():
+        raise StorageError("Generated video must be a file inside the project workspace.")
+    suffix = source.suffix.lower()
+    if suffix not in {".mp4", ".mov", ".mkv", ".webm", ".m4v"}:
+        raise StorageError("Generated output is not a supported video format.")
+
+    identifier = str(uuid5(NAMESPACE_URL, f"ai-video-studio:{safe_project_id}:{safe_job_id}"))
+    directory = asset_dir(safe_project_id, identifier)
+    directory.mkdir(parents=True, exist_ok=True)
+    temporary = directory / f"source{suffix}.uploading"
+    destination = directory / f"source{suffix}"
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        with source.open("rb") as input_stream, temporary.open("wb") as output_stream:
+            while True:
+                chunk = input_stream.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > max_bytes:
+                    raise StorageError("Generated output exceeds the configured maximum size.")
+                digest.update(chunk)
+                output_stream.write(chunk)
+            output_stream.flush()
+            os.fsync(output_stream.fileno())
+        if size == 0:
+            raise StorageError("Generated output is empty.")
+        os.replace(temporary, destination)
+        now = datetime.now(timezone.utc)
+        manifest = {
+            "id": identifier,
+            "project_id": safe_project_id,
+            "asset_type": "video",
+            "original_filename": f"job-{safe_job_id[:8]}-{source.name}"[:240],
+            "stored_filename": destination.name,
+            "relative_path": destination.relative_to(root).as_posix(),
+            "size_bytes": size,
+            "sha256": digest.hexdigest(),
+            "created_at": now.isoformat(),
+            "status": "generated",
+            "source_job_id": safe_job_id,
+        }
+        atomic_write_json(directory / "asset.json", manifest)
+        with session_scope() as db:
+            if db.get(ProjectRecord, safe_project_id) is None:
+                raise FileNotFoundError("Project metadata is not available in PostgreSQL.")
+            record = db.get(AssetRecord, identifier)
+            if record is None:
+                db.add(
+                    AssetRecord(
+                        id=identifier,
+                        project_id=safe_project_id,
+                        asset_type="video",
+                        original_filename=manifest["original_filename"],
+                        stored_filename=destination.name,
+                        relative_path=manifest["relative_path"],
+                        size_bytes=size,
+                        sha256=manifest["sha256"],
+                        status="generated",
+                        metadata_json={"source_job_id": safe_job_id},
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            else:
+                if record.project_id != safe_project_id:
+                    raise StorageError("Generated asset ID is already assigned to another project.")
+                record.original_filename = manifest["original_filename"]
+                record.stored_filename = destination.name
+                record.relative_path = manifest["relative_path"]
+                record.size_bytes = size
+                record.sha256 = manifest["sha256"]
+                record.status = "generated"
+                record.metadata_json = {"source_job_id": safe_job_id}
+                record.updated_at = now
+        return manifest
+    except Exception:
+        temporary.unlink(missing_ok=True)
         raise
 
 

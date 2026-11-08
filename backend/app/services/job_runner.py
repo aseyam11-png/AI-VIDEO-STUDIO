@@ -21,6 +21,7 @@ from app.media.storage import (
     get_asset,
     project_dir,
     read_json,
+    register_generated_video_asset,
     update_asset_manifest,
 )
 from app.schemas.jobs import JobType
@@ -154,6 +155,19 @@ def _execute_media_job(
             project_id, asset_id, job["id"], source, payload, cancel_check=cancel_check
         )
         progress(95, "audio_muxed", "Enhanced audio was muxed into a new video file.")
+        generated_path = project_dir(project_id) / result["relative_path"]
+        output_asset = register_generated_video_asset(
+            project_id,
+            job["id"],
+            generated_path,
+            max_bytes=settings.max_model_output_bytes,
+        )
+        result["output_asset_id"] = output_asset["id"]
+        result["output_asset"] = {
+            "id": output_asset["id"],
+            "asset_type": output_asset["asset_type"],
+            "relative_path": output_asset["relative_path"],
+        }
         return result
 
     if job_type in {
@@ -171,9 +185,44 @@ def _execute_media_job(
         if asset_type not in {"video", "image"}:
             raise ValueError("The selected model workflow requires an image or video asset.")
         progress(10, "preparing_model_workflow", "Preparing the approved ComfyUI workflow.")
-        return execute_comfyui_job(
+        result = execute_comfyui_job(
             job, source, progress=progress, cancel_check=cancel_check
         )
+        if job_type in {
+            JobType.VIDEO_GENERATE.value,
+            JobType.VIDEO_INTERPOLATE.value,
+            JobType.VIDEO_UPSCALE.value,
+        }:
+            video_output = next(
+                (
+                    output
+                    for output in result.get("outputs", [])
+                    if any(
+                        stream.get("codec_type") == "video"
+                        for stream in (output.get("metadata", {}).get("streams", []))
+                    )
+                ),
+                None,
+            )
+            if video_output is not None:
+                generated_path = (
+                    project_dir(project_id)
+                    / result["files_directory"]
+                    / video_output["saved_as"]
+                )
+                output_asset = register_generated_video_asset(
+                    project_id,
+                    job["id"],
+                    generated_path,
+                    max_bytes=settings.max_model_output_bytes,
+                )
+                result["output_asset_id"] = output_asset["id"]
+                result["output_asset"] = {
+                    "id": output_asset["id"],
+                    "asset_type": output_asset["asset_type"],
+                    "relative_path": output_asset["relative_path"],
+                }
+        return result
 
     if job_type == JobType.MOTION_BLENDER.value:
         progress(10, "preparing_blender", "Validating the approved Blender project template.")
