@@ -35,6 +35,7 @@ def capabilities() -> dict:
         "external_model_apis_enabled": False,
         "note": (
             "The deterministic media pipeline is available when FFmpeg and the media extra are installed. "
-            "WhisperX is an explicit optional local worker; no external transcription API is used."
+            "WhisperX is an explicit optional local worker; "
+            "no external transcription API is used."
         ),
     }
