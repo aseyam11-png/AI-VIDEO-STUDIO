@@ -81,6 +81,25 @@ def test_render_timeline_interleaves_audio_video_filter_inputs(tmp_path, monkeyp
     assert destination.read_bytes() == b"rendered"
 
 
+def test_render_rejects_clip_beyond_source_duration(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        pipeline,
+        "probe_media",
+        lambda _source: {
+            "format": {"duration": "5.0"},
+            "streams": [{"codec_type": "video"}],
+        },
+    )
+    with pytest.raises(ValueError, match="exceeds the source video duration"):
+        pipeline.render_timeline(
+            source=tmp_path / "source.mp4",
+            timeline_manifest={
+                "clips": [{"start_seconds": 4.0, "duration_seconds": 2.0}]
+            },
+            destination=tmp_path / "out.mp4",
+        )
+
+
 def test_render_rejects_empty_timeline(tmp_path):
     with pytest.raises(ValueError, match="between 1 and 500"):
         pipeline.render_timeline(
