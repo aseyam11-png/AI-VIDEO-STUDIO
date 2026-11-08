@@ -1,3 +1,4 @@
+import math
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -44,7 +45,8 @@ def create_proxy(
     command = [
         ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
         "-map", "0:v:0", "-map", "0:a?", "-vf",
-        f"scale=w='min({max_width},iw)':h=-2,fps={fps}",
+        f"scale=w='min({max_width},iw)':h='min({max_width},ih)':"
+        f"force_original_aspect_ratio=decrease:force_divisible_by=2,fps={fps}",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "25",
         "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
         "-movflags", "+faststart", str(temporary),
@@ -82,11 +84,11 @@ def detect_scenes(source: Path, *, threshold: float = 27.0, min_scene_len: int =
     manager.add_detector(ContentDetector(threshold=threshold, min_scene_len=min_scene_len))
     manager.detect_scenes(video, show_progress=False)
     scene_list = manager.get_scene_list()
-    duration = float(video.duration.get_seconds())
+    duration = float(video.duration.seconds)
     scenes: list[dict] = []
     for index, (start, end) in enumerate(scene_list, start=1):
-        start_seconds = max(0.0, float(start.get_seconds()))
-        end_seconds = min(duration, float(end.get_seconds()))
+        start_seconds = max(0.0, float(start.seconds))
+        end_seconds = min(duration, float(end.seconds))
         if end_seconds > start_seconds:
             scenes.append({
                 "id": f"scene_{index:04d}",
@@ -123,6 +125,13 @@ def build_timeline(
     if fps < 1 or fps > 120 or not scenes or len(scenes) > 500:
         raise ValueError("Invalid timeline frame rate or scene count.")
 
+    source_metadata = probe_media(source)
+    duration_value = source_metadata.get("format", {}).get("duration")
+    try:
+        source_duration = float(duration_value) if duration_value is not None else None
+    except (TypeError, ValueError):
+        source_duration = None
+
     project_path = project_dir(project_id)
     timeline_dir = project_path / "timelines"
     timeline_dir.mkdir(parents=True, exist_ok=True)
@@ -132,11 +141,23 @@ def build_timeline(
     timeline.tracks.append(video)
     normalized_scenes = []
 
+    previous_end = 0.0
     for scene in scenes:
         start = float(scene["start_seconds"])
         duration = float(scene["duration_seconds"])
-        if start < 0 or duration <= 0:
-            raise ValueError("Scene time range must be positive.")
+        end = start + duration
+        if (
+            not math.isfinite(start)
+            or not math.isfinite(duration)
+            or start < 0
+            or duration <= 0
+        ):
+            raise ValueError("Scene time range must be finite and positive.")
+        if start < previous_end - (1.0 / fps):
+            raise ValueError("Scenes must be ordered and cannot overlap.")
+        if source_duration is not None and end > source_duration + (1.0 / fps):
+            raise ValueError("Scene time range exceeds the source video duration.")
+        previous_end = end
         reference = otio.schema.ExternalReference(target_url=source_url)
         clip = otio.schema.Clip(name=str(scene["id"]), media_reference=reference)
         clip.source_range = otio.opentime.TimeRange(
@@ -190,13 +211,20 @@ def render_timeline(
     has_audio = any(s.get("codec_type") == "audio" for s in streams)
     if not video_streams:
         raise ValueError("Rendering requires a video source.")
+    duration_value = probe.get("format", {}).get("duration")
+    try:
+        source_duration = float(duration_value) if duration_value is not None else None
+    except (TypeError, ValueError):
+        source_duration = None
 
     filters: list[str] = []
     for index, clip in enumerate(clips):
         start = float(clip["start_seconds"])
         duration = float(clip["duration_seconds"])
-        if start < 0 or duration <= 0:
+        if not math.isfinite(start) or not math.isfinite(duration) or start < 0 or duration <= 0:
             raise ValueError("Timeline contains an invalid clip range.")
+        if source_duration is not None and start + duration > source_duration + (1.0 / fps):
+            raise ValueError("Timeline clip exceeds the source video duration.")
         filters.append(
             f"[0:v:0]trim=start={start:.6f}:duration={duration:.6f},"
             f"setpts=PTS-STARTPTS,scale={width}:{height}:force_original_aspect_ratio=decrease,"
