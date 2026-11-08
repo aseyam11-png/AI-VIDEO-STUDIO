@@ -1,8 +1,6 @@
 import subprocess
 from pathlib import Path
-
 import pytest
-
 from app.core.config import settings
 from app.media import pipeline
 from app.media.storage import create_project
