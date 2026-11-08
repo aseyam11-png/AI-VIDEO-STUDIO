@@ -219,6 +219,7 @@ def _workflow_to_dict(db: Session, run: WorkflowRunRecord) -> dict:
         "id": run.id,
         "project_id": run.project_id,
         "asset_id": run.asset_id,
+        "idempotency_key": run.idempotency_key,
         "brief": run.brief,
         "language": run.language,
         "creative_plan": run.plan_json,
@@ -265,72 +266,74 @@ def create_workflow_run(
 
     try:
         with session_scope() as db:
-        project = db.get(ProjectRecord, str(request.project_id))
-        if project is None:
-            raise WorkflowRequestError(
-                "Project metadata is not in PostgreSQL. Import legacy manifests first."
-            )
-        asset = db.scalar(
-            select(AssetRecord).where(
-                AssetRecord.project_id == str(request.project_id),
-                AssetRecord.id == str(request.asset_id),
-            )
-        )
-        if asset is None:
-            raise WorkflowRequestError("Source asset does not belong to the requested project.")
-
-        specs = _step_specs(asset.asset_type, request, project)
-        normalized_specs = []
-        for job_type, payload in specs:
-            try:
-                normalized = normalize_payload(job_type, payload)
-            except JobRequestError as exc:
+            project = db.get(ProjectRecord, project_id)
+            if project is None:
                 raise WorkflowRequestError(
-                    f"Workflow step '{job_type.value}' is not configured: {exc}"
-                ) from exc
-            normalized_specs.append((job_type, normalized))
-
-        now = _now()
-        run = WorkflowRunRecord(
-            id=str(uuid4()),
-            project_id=str(request.project_id),
-            asset_id=str(request.asset_id),
-            idempotency_key=request.idempotency_key,
-            request_hash=request_hash,
-            brief=request.brief,
-            language=request.language,
-            plan_json=request.creative_plan.model_dump(),
-            options_json={
-                "transcribe_audio": request.transcribe_audio,
-                "enhance_audio": request.enhance_audio,
-                "detection_prompt": request.detection_prompt,
-                "tracking_prompt": request.tracking_prompt,
-                "upscale_output": request.upscale_output,
-                "generate_video": request.generate_video,
-                "interpolate_generated_video": request.interpolate_generated_video,
-            },
-            status="awaiting_approval",
-            current_step_index=0,
-            created_at=now,
-            updated_at=now,
-        )
-        db.add(run)
-        db.flush()
-        for index, (job_type, payload) in enumerate(normalized_specs, start=1):
-            db.add(
-                WorkflowStepRecord(
-                    id=str(uuid4()),
-                    workflow_id=run.id,
-                    sequence=index,
-                    tool_id=job_type.value,
-                    asset_id=asset.id,
-                    payload_json=payload,
-                    status="planned",
-                    created_at=now,
-                    updated_at=now,
+                    "Project metadata is not in PostgreSQL. Import legacy manifests first."
+                )
+            asset = db.scalar(
+                select(AssetRecord).where(
+                    AssetRecord.project_id == project_id,
+                    AssetRecord.id == str(request.asset_id),
                 )
             )
-        db.flush()
+            if asset is None:
+                raise WorkflowRequestError(
+                    "Source asset does not belong to the requested project."
+                )
+
+            specs = _step_specs(asset.asset_type, request, project)
+            normalized_specs = []
+            for job_type, payload in specs:
+                try:
+                    normalized = normalize_payload(job_type, payload)
+                except JobRequestError as exc:
+                    raise WorkflowRequestError(
+                        f"Workflow step '{job_type.value}' is not configured: {exc}"
+                    ) from exc
+                normalized_specs.append((job_type, normalized))
+
+            now = _now()
+            run = WorkflowRunRecord(
+                id=str(uuid4()),
+                project_id=project_id,
+                asset_id=str(request.asset_id),
+                idempotency_key=request.idempotency_key,
+                request_hash=request_hash,
+                brief=request.brief,
+                language=request.language,
+                plan_json=request.creative_plan.model_dump(),
+                options_json={
+                    "transcribe_audio": request.transcribe_audio,
+                    "enhance_audio": request.enhance_audio,
+                    "detection_prompt": request.detection_prompt,
+                    "tracking_prompt": request.tracking_prompt,
+                    "upscale_output": request.upscale_output,
+                    "generate_video": request.generate_video,
+                    "interpolate_generated_video": request.interpolate_generated_video,
+                },
+                status="awaiting_approval",
+                current_step_index=0,
+                created_at=now,
+                updated_at=now,
+            )
+            db.add(run)
+            db.flush()
+            for index, (job_type, payload) in enumerate(normalized_specs, start=1):
+                db.add(
+                    WorkflowStepRecord(
+                        id=str(uuid4()),
+                        workflow_id=run.id,
+                        sequence=index,
+                        tool_id=job_type.value,
+                        asset_id=asset.id,
+                        payload_json=payload,
+                        status="planned",
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+            db.flush()
             return _workflow_to_dict(db, run)
     except IntegrityError:
         existing = _existing_workflow(

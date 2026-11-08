@@ -95,6 +95,7 @@ def test_from_arabic_brief_creates_reviewable_workflow_not_an_automatic_export(
         json={
             "project_id": project["id"],
             "asset_id": asset["id"],
+            "idempotency_key": "workflow-ar-from-brief-0001",
             "brief": "أنشئ مونتاجًا سينمائيًا قصيرًا لهذا الفيديو مع لقطات واضحة وانتقال سلس.",
             "language": "ar",
             "target_duration_seconds": 15,
@@ -129,6 +130,7 @@ def test_approved_workflow_runs_durable_steps_and_exports_mp4(tmp_path, monkeypa
         json={
             "project_id": project["id"],
             "asset_id": asset["id"],
+            "idempotency_key": "workflow-render-0001",
             "brief": "اختبار إخراج فيديو من خطة عربية محفوظة.",
             "language": "ar",
             "creative_plan": _plan().model_dump(),
@@ -195,6 +197,7 @@ def test_generated_video_becomes_next_step_input_asset(tmp_path, monkeypatch):
         json={
             "project_id": project["id"],
             "asset_id": image_asset["id"],
+            "idempotency_key": "workflow-image-to-video-0001",
             "brief": "أنشئ فيديو من صورة المنتج ثم حسّن الحركة قبل التصدير.",
             "language": "ar",
             "creative_plan": _plan().model_dump(),
@@ -237,6 +240,7 @@ def test_workflow_approval_is_idempotent_and_cancel_stops_pending_steps(
         json={
             "project_id": project["id"],
             "asset_id": asset["id"],
+            "idempotency_key": "workflow-cancel-0001",
             "brief": "اختبار إيقاف Workflow قبل بدء التنفيذ.",
             "language": "ar",
             "creative_plan": _plan().model_dump(),
@@ -254,6 +258,7 @@ def test_workflow_approval_is_idempotent_and_cancel_stops_pending_steps(
         json={
             "project_id": project["id"],
             "asset_id": asset["id"],
+            "idempotency_key": "workflow-approval-0002",
             "brief": "اختبار الموافقة المتكررة.",
             "language": "ar",
             "creative_plan": _plan().model_dump(),

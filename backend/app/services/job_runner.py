@@ -227,6 +227,19 @@ def _execute_media_job(
     if job_type == JobType.MOTION_BLENDER.value:
         progress(10, "preparing_blender", "Validating the approved Blender project template.")
         result = execute_blender_job(job, cancel_check=cancel_check)
+        generated_path = project_dir(project_id) / result["relative_path"]
+        output_asset = register_generated_video_asset(
+            project_id,
+            job["id"],
+            generated_path,
+            max_bytes=settings.max_model_output_bytes,
+        )
+        result["output_asset_id"] = output_asset["id"]
+        result["output_asset"] = {
+            "id": output_asset["id"],
+            "asset_type": output_asset["asset_type"],
+            "relative_path": output_asset["relative_path"],
+        }
         progress(95, "blender_rendered", "Blender completed the motion graphics render.")
         return result
 
