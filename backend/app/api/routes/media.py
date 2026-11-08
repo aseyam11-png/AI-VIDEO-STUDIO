@@ -1,3 +1,5 @@
+from pathlib import Path
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -73,7 +75,7 @@ def _source_path(project_id: str, asset_id: str) -> tuple[dict, Path]:
 
 
 @router.post("/assets", status_code=201)
-async def upload_asset(project_id: str, file: UploadFile = File(...)) -> dict:
+async def upload_asset(project_id: str, file: Annotated[UploadFile, File()]) -> dict:
     try:
         get_project(project_id)
     except ValueError as exc:
@@ -136,7 +138,9 @@ def get_asset_route(project_id: str, asset_id: str) -> dict:
 async def create_proxy_route(project_id: str, asset_id: str, payload: ProxyRequest) -> dict:
     asset, source = _source_path(project_id, asset_id)
     if asset["asset_type"] != "video":
-        raise HTTPException(status_code=422, detail="Proxy generation is only available for videos.")
+        raise HTTPException(
+            status_code=422, detail="Proxy generation is only available for videos."
+        )
     destination = asset_dir(project_id, asset_id) / "proxy.mp4"
     try:
         result = await run_in_threadpool(
@@ -186,6 +190,9 @@ async def transcribe_route(
     asset, source = _source_path(project_id, asset_id)
     if asset["asset_type"] != "video":
         raise HTTPException(status_code=422, detail="Transcription requires a video with audio.")
+    media_info = await run_in_threadpool(probe_media, source)
+    if not any(stream.get("codec_type") == "audio" for stream in media_info.get("streams", [])):
+        raise HTTPException(status_code=422, detail="The video does not contain an audio stream.")
     destination = asset_dir(project_id, asset_id) / "transcription.json"
     cache_dir = media_root() / "models" / "whisperx"
     try:
@@ -227,7 +234,8 @@ async def create_timeline_route(
             scenes=scenes,
             fps=payload.fps,
         )
-        return {**manifest, "timeline_path": str(timeline_path.relative_to(project_dir(project_id)))}
+        relative_timeline = timeline_path.relative_to(project_dir(project_id))
+        return {**manifest, "timeline_path": str(relative_timeline)}
     except OptionalMediaDependencyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except (ValueError, MediaToolError, KeyError) as exc:
