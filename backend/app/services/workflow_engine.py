@@ -485,6 +485,28 @@ def mark_workflow_job_running(db: Session, job: JobRecord) -> None:
     run.updated_at = now
 
 
+def mark_workflow_job_queued(db: Session, job: JobRecord) -> None:
+    step = db.scalar(
+        select(WorkflowStepRecord)
+        .where(WorkflowStepRecord.job_id == job.id)
+        .with_for_update()
+    )
+    if step is None:
+        return
+    run = db.scalar(
+        select(WorkflowRunRecord)
+        .where(WorkflowRunRecord.id == step.workflow_id)
+        .with_for_update()
+    )
+    if run is None or run.status in _TERMINAL_WORKFLOW_STATES:
+        return
+    now = _now()
+    step.status = "queued"
+    step.updated_at = now
+    run.status = "queued"
+    run.updated_at = now
+
+
 def advance_workflow_for_job(db: Session, job: JobRecord) -> None:
     step = db.scalar(
         select(WorkflowStepRecord)

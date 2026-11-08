@@ -9,7 +9,7 @@ The first version supports these safe paths. SAM 2 tracking can be inserted for 
 - Video asset: optional Grounding DINO detection, optional DeepFilterNet audio enhancement, optional WhisperX transcription, FFmpeg proxy, scene detection, OTIO timeline, FFmpeg MP4 export.
 - Image asset: approved Wan 2.2 TI2V 5B generation and optional RIFE interpolation, followed by OTIO timeline and FFmpeg export. This is a short-shot path; full multi-scene Wan shot assembly is not included in workflow v1.
 
-Generated video output from Wan, RIFE, Real-ESRGAN video output, and DeepFilterNet's cleaned video is registered as a project Asset using a stable job-derived ID. The next workflow step receives that new asset ID. The engine does not rely on in-memory task return state for handoff.
+Generated video output from Wan, RIFE and Blender, plus DeepFilterNet's cleaned video, is registered as a project Asset using a stable job-derived ID. The next workflow step receives that new asset ID. The engine does not rely on in-memory task return state for handoff.
 
 A failure stops the run. Retrying the child job re-opens its workflow step. Cancellation stops the active job and prevents subsequent steps from being queued.
 
@@ -28,7 +28,7 @@ A failure stops the run. Retrying the child job re-opens its workflow step. Canc
       "transcribe_audio": false,
       "enhance_audio": false,
       "generate_video": false,
-  "tracking_prompt": "the main product"
+      "tracking_prompt": "the main product"
     }
 
 2. Inspect the Qwen plan and ordered steps in the response. The workflow status remains awaiting_approval. No Job or Outbox entry is created before approval.

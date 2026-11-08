@@ -533,5 +533,9 @@ def recover_stale_jobs() -> int:
                 from app.services.workflow_engine import advance_workflow_for_job
 
                 advance_workflow_for_job(db, job)
+            elif job.status == "queued":
+                from app.services.workflow_engine import mark_workflow_job_queued
+
+                mark_workflow_job_queued(db, job)
             recovered += 1
     return recovered
