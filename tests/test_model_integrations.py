@@ -4,7 +4,6 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-
 from app.api.routes import models as models_route
 from app.core.config import settings
 from app.integrations.comfyui import (
