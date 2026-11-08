@@ -30,6 +30,18 @@ services:
       retries: 10
     networks: [studio]
 
+  migrate:
+    build: .
+    restart: "no"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-video_studio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [studio]
+
   api:
     build: .
     restart: unless-stopped
@@ -37,33 +49,57 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-video_studio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
       CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
-      CELERY_RESULT_BACKEND: redis://:${VALKEY_PASSWORD}@valkey:6379/1
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
-      postgres: {condition: service_healthy}
-      valkey: {condition: service_healthy}
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
     volumes:
-      - studio_data:/srv/video-studio/data
+      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
     networks: [studio]
 
   worker-cpu:
     build: .
     restart: unless-stopped
     env_file: .env
-    command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--queues=cpu"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-video_studio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
+      CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+    command:
+      ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--queues=cpu", "--concurrency=1"]
     depends_on:
-      postgres: {condition: service_healthy}
-      valkey: {condition: service_healthy}
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
     volumes:
-      - studio_data:/srv/video-studio/data
+      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
     networks: [studio]
-    profiles: [workers]
+
+  scheduler:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-video_studio}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
+      CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+    command:
+      ["celery", "-A", "app.worker.celery_app", "beat", "--loglevel=INFO", "--schedule=/var/run/celery/celerybeat-schedule"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    volumes:
+      - celery_beat_data:/var/run/celery
+    networks: [studio]
 
 volumes:
   postgres_data:
   valkey_data:
-  studio_data:
+  celery_beat_data:
 
 networks:
   studio: {}

@@ -41,6 +41,7 @@ def upgrade() -> None:
         sa.Column("metadata_json", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.UniqueConstraint("project_id", "id", name="uq_assets_project_id_id"),
     )
     op.create_index("ix_assets_project_created", "assets", ["project_id", "created_at"])
     op.create_index("ix_assets_sha256", "assets", ["sha256"])
@@ -48,7 +49,7 @@ def upgrade() -> None:
         "jobs",
         sa.Column("id", sa.String(36), primary_key=True),
         sa.Column("project_id", sa.String(36), sa.ForeignKey("projects.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("asset_id", sa.String(36), sa.ForeignKey("assets.id", ondelete="SET NULL"), nullable=True),
+        sa.Column("asset_id", sa.String(36), nullable=True),
         sa.Column("job_type", sa.String(80), nullable=False),
         sa.Column("queue_name", sa.String(32), nullable=False),
         sa.Column("status", sa.String(32), nullable=False),
@@ -72,6 +73,16 @@ def upgrade() -> None:
         sa.Column("heartbeat_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.UniqueConstraint("project_id", "idempotency_key", name="uq_jobs_project_idempotency"),
+        sa.ForeignKeyConstraint(
+            ["project_id", "asset_id"],
+            ["assets.project_id", "assets.id"],
+            name="fk_jobs_project_asset_scope",
+            ondelete="RESTRICT",
+        ),
+        sa.CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'cancel_requested', 'cancelled')",
+            name="ck_jobs_status",
+        ),
         sa.CheckConstraint("progress >= 0 AND progress <= 100", name="ck_jobs_progress_range"),
         sa.CheckConstraint("attempt_count >= 0", name="ck_jobs_attempt_count"),
         sa.CheckConstraint("max_attempts >= 1", name="ck_jobs_max_attempts"),

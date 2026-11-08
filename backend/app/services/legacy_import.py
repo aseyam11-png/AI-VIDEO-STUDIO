@@ -32,11 +32,15 @@ def import_legacy_manifests() -> dict[str, int]:
     asset_count = 0
     with session_scope() as db:
         for project_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+            if not project_dir.resolve().is_relative_to(root):
+                raise ValueError(f"Legacy project directory escapes the media root: {project_dir}")
             project_manifest_path = project_dir / "project.json"
             if not project_manifest_path.is_file():
                 continue
             manifest = _read_manifest(project_manifest_path)
             project_id = _valid_id(str(manifest["id"]))
+            if _valid_id(project_dir.name) != project_id:
+                raise ValueError(f"Project directory/manifest ID mismatch: {project_dir}")
             if db.get(ProjectRecord, project_id) is None:
                 created_at = datetime.fromisoformat(manifest["created_at"])
                 db.add(
@@ -54,21 +58,38 @@ def import_legacy_manifests() -> dict[str, int]:
                         updated_at=created_at,
                     )
                 )
+                db.flush()
                 project_count += 1
 
             assets_dir = project_dir / "assets"
             if not assets_dir.exists():
                 continue
             for asset_dir in sorted(path for path in assets_dir.iterdir() if path.is_dir()):
+                if not asset_dir.resolve().is_relative_to(project_dir.resolve()):
+                    raise ValueError(f"Legacy asset directory escapes its project: {asset_dir}")
                 asset_manifest_path = asset_dir / "asset.json"
                 if not asset_manifest_path.is_file():
                     continue
                 asset_manifest = _read_manifest(asset_manifest_path)
                 asset_id = _valid_id(str(asset_manifest["id"]))
-                if db.get(AssetRecord, asset_id) is not None:
-                    continue
+                if _valid_id(asset_dir.name) != asset_id:
+                    raise ValueError(f"Asset directory/manifest ID mismatch: {asset_dir}")
                 if _valid_id(str(asset_manifest["project_id"])) != project_id:
                     raise ValueError(f"Asset/project mismatch in legacy manifest: {asset_manifest_path}")
+                existing_asset = db.get(AssetRecord, asset_id)
+                if existing_asset is not None:
+                    if existing_asset.project_id != project_id:
+                        raise ValueError(f"Asset ID is already registered under a different project: {asset_id}")
+                    continue
+                stored_filename = str(asset_manifest["stored_filename"])
+                if Path(stored_filename).name != stored_filename:
+                    raise ValueError(f"Unsafe stored filename in legacy manifest: {asset_manifest_path}")
+                media_path = (asset_dir / stored_filename).resolve()
+                if not media_path.is_relative_to(asset_dir.resolve()) or not media_path.is_file():
+                    raise ValueError(f"Legacy media bytes are missing or outside the asset directory: {media_path}")
+                expected_size = int(asset_manifest["size_bytes"])
+                if media_path.stat().st_size != expected_size:
+                    raise ValueError(f"Legacy media size does not match its manifest: {media_path}")
                 created_at = datetime.fromisoformat(asset_manifest["created_at"])
                 core_keys = {
                     "id", "project_id", "asset_type", "original_filename", "stored_filename",

@@ -8,6 +8,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -58,6 +59,7 @@ class ProjectRecord(Base):
 class AssetRecord(Base):
     __tablename__ = "assets"
     __table_args__ = (
+        UniqueConstraint("project_id", "id", name="uq_assets_project_id_id"),
         Index("ix_assets_project_created", "project_id", "created_at"),
         Index("ix_assets_sha256", "sha256"),
     )
@@ -103,6 +105,16 @@ class JobRecord(Base):
     __tablename__ = "jobs"
     __table_args__ = (
         UniqueConstraint("project_id", "idempotency_key", name="uq_jobs_project_idempotency"),
+        ForeignKeyConstraint(
+            ["project_id", "asset_id"],
+            ["assets.project_id", "assets.id"],
+            name="fk_jobs_project_asset_scope",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'succeeded', 'failed', 'cancel_requested', 'cancelled')",
+            name="ck_jobs_status",
+        ),
         CheckConstraint("progress >= 0 AND progress <= 100", name="ck_jobs_progress_range"),
         CheckConstraint("attempt_count >= 0", name="ck_jobs_attempt_count"),
         CheckConstraint("max_attempts >= 1", name="ck_jobs_max_attempts"),
@@ -115,9 +127,7 @@ class JobRecord(Base):
     project_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
-    asset_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("assets.id", ondelete="SET NULL"), nullable=True
-    )
+    asset_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     job_type: Mapped[str] = mapped_column(String(80), nullable=False)
     queue_name: Mapped[str] = mapped_column(String(32), nullable=False, default="cpu")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")

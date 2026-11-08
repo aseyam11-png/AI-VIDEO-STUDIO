@@ -1,0 +1,103 @@
+# Phase 1 — Durable Project and Job Engine
+
+## Scope
+
+Phase 1 adds the durable control plane needed before AI agents and model workers are introduced. It does not add a live LLM, GPU inference, public multi-user access, or unlimited execution.
+
+### Data ownership
+
+- PostgreSQL is the authoritative store for projects, asset metadata, jobs, job events, and dispatch outbox records.
+- Media bytes, generated artifacts, JSON timeline files, and model caches remain under the private `MEDIA_ROOT`; binary media is not stored in PostgreSQL.
+- Valkey is a Celery broker/transport only. It is not the source of truth for job status or results.
+- SQLite is the default for single-process local API development when `DATABASE_URL` is omitted. It is not the recommended deployment database.
+- Alembic is the only schema migration mechanism. Application startup never calls `create_all`.
+
+## Job lifecycle
+
+Allowed statuses:
+
+`queued → running → succeeded | failed | cancel_requested → cancelled`
+
+A retry is a new dispatch generation on the same job record and is permitted only for failed/cancelled jobs while the configured attempt budget remains.
+
+Progress is an integer checkpoint, not a fabricated FFmpeg percentage. `progress_stage`, `progress_message`, heartbeat timestamps, and append-only `job_events` explain current activity. A job reaches 100 only after the handler has verified its output.
+
+## Reliability model
+
+1. Job row, creation event, and outbox row are committed in one database transaction.
+2. A Celery Beat dispatcher claims pending outbox rows with database row locks and publishes them.
+3. If publishing fails, the outbox row is made eligible for a later retry. If the dispatcher crashes after publishing but before marking the row published, the message may be delivered twice.
+4. Worker delivery is therefore at-least-once. Job claim checks both current status and dispatch generation under a database row lock; stale/duplicate deliveries are ignored.
+5. Worker heartbeats are stored in PostgreSQL. A periodic recovery task requeues jobs whose heartbeat expires, or fails them when their attempt budget is exhausted.
+6. Task handlers write outputs to temporary files and atomically promote verified results. Cancellation terminates FFmpeg processes. PySceneDetect cancellation is checked at operation boundaries, not inside the detector's internal frame loop.
+7. External effects are not claimed to be exactly-once. Handlers must remain idempotent and verify output before reporting success.
+
+## Initial supported durable job types
+
+- `media.proxy`
+- `media.scenes`
+- `media.timeline`
+- `media.render`
+
+Only validated payload fields are accepted. Arbitrary shell commands, filesystem paths, model URLs, and workflow definitions are not accepted in job payloads. All initial jobs route to the CPU queue; no GPU scheduling is enabled in this phase.
+
+## API
+
+- `POST /v1/jobs` — create a durable media job; requires `Idempotency-Key` in the request body.
+- `GET /v1/jobs?project_id=...` — list jobs with bounded pagination and optional status filter.
+- `GET /v1/jobs/{job_id}` — inspect state and progress checkpoints.
+- `GET /v1/jobs/{job_id}/events` — read the event history.
+- `POST /v1/jobs/{job_id}/cancel` — cancel a queued job immediately or request cooperative cancellation of a running job.
+- `POST /v1/jobs/{job_id}/retry` — create a new dispatch generation for an eligible job.
+
+The existing synchronous Phase 0.5 media endpoints remain available for compatibility. New UI integrations should submit durable jobs for long-running work.
+
+## Local development without Docker
+
+1. Install the project: `pip install -e ".[dev,media]"`.
+2. Set `MEDIA_ROOT` to a private directory outside the repository.
+3. Apply migrations: `python -m alembic upgrade head`.
+4. Import any Phase 0.5 manifests once: `python -m app.cli import-legacy-manifests`.
+5. Start the API: `uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000`.
+
+Without a configured `DATABASE_URL`, the API uses a SQLite file under `MEDIA_ROOT`. Durable job submission is persisted, but jobs will remain queued until a Celery worker and broker are configured.
+
+## Docker Compose stack
+
+The Compose stack runs PostgreSQL, Valkey, an Alembic migration one-shot, the API, a CPU worker, and Celery Beat. PostgreSQL and Valkey do not publish host ports. The API is bound to `127.0.0.1:8000`. Generate strong local secrets and store them only in an ignored local `.env`; never commit `.env`.
+
+PowerShell setup:
+
+```powershell
+Copy-Item .env.example .env
+$postgres = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).TrimEnd('=').Replace('+','-').Replace('/','_')
+$valkey = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).TrimEnd('=').Replace('+','-').Replace('/','_')
+$envText = Get-Content .env -Raw
+$envText = $envText.Replace('REPLACE_WITH_GENERATED_URL_SAFE_SECRET', $postgres, 1)
+$envText = $envText.Replace('REPLACE_WITH_A_DIFFERENT_GENERATED_URL_SAFE_SECRET', $valkey)
+$envText = $envText.Replace('MEDIA_HOST_PATH=./data', 'MEDIA_HOST_PATH=C:/Users/MSI/AI-Video-Studio-Data')
+Set-Content -Path .env -Value $envText -NoNewline
+docker compose up -d --build
+docker compose exec api python -m app.cli import-legacy-manifests
+docker compose ps
+```
+
+The two passwords are generated locally and are URL-safe. The example path preserves the Phase 0.5 media directory on the Windows host; change it to your actual private media path. Run the legacy import once after migrations; reruns are idempotent. Do not paste your `.env` contents or secrets into chat/issues.
+
+Use `/health` for process health and `/ready` for database/migration readiness. Stop with `docker compose down`; add `-v` only when intentionally deleting persistent PostgreSQL/Valkey data. The bind-mounted media directory is not deleted by `down` or `down -v`.
+
+## Backup and recovery
+
+Back up PostgreSQL and the media volume together. The database stores paths and metadata that point to media bytes; restoring only one side can leave broken references. Do not run the legacy import command against an unverified media directory. The importer is idempotent and does not move or delete source files.
+
+## Phase 1 acceptance criteria
+
+- Alembic upgrade creates the schema on PostgreSQL and SQLite test databases.
+- Project and asset metadata survives API process restarts because it is stored in the database.
+- Duplicate job requests with the same project/idempotency key and identical canonical payload return the original job; reuse with different request data returns HTTP 409.
+- Job row, creation event, and outbox row are atomic.
+- Outbox failures can be retried; duplicate deliveries cannot claim the same generation twice.
+- Job status, stage checkpoint, attempts, heartbeat, result/error, and ordered event history are inspectable.
+- Queued cancellation, running cancellation request, failed/cancelled retry, exhausted-attempt rejection, and stale-worker recovery are tested.
+- End-to-end worker integration creates a synthetic clip, uploads it, executes proxy/scenes/timeline/render jobs, and downloads the output.
+- Main remains unchanged until the draft PR is reviewed and merged explicitly.

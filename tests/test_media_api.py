@@ -27,7 +27,7 @@ def test_create_project_and_read_capabilities(tmp_path, monkeypatch):
 
     capabilities = client.get("/v1/system/capabilities")
     assert capabilities.status_code == 200
-    assert capabilities.json()["phase"] == "0.5"
+    assert capabilities.json()["phase"] == "1"
     assert capabilities.json()["external_model_apis_enabled"] is False
 
 

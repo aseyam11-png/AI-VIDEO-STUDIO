@@ -1,5 +1,7 @@
 import math
 import subprocess
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -12,14 +14,52 @@ class OptionalMediaDependencyError(RuntimeError):
     pass
 
 
-def _run(command: list[str], *, timeout: int = 3600) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(
+class MediaJobCancelled(RuntimeError):
+    pass
+
+
+def _check_cancel(cancel_check: Callable[[], bool] | None) -> None:
+    if cancel_check is not None and cancel_check():
+        raise MediaJobCancelled("Media operation cancelled.")
+
+
+def _run(
+    command: list[str],
+    *,
+    timeout: int = 3600,
+    cancel_check: Callable[[], bool] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    process = subprocess.Popen(
         command,
-        check=False,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=timeout,
     )
+    deadline = time.monotonic() + timeout
+    stdout = ""
+    stderr = ""
+    while True:
+        if cancel_check is not None and cancel_check():
+            process.terminate()
+            try:
+                stdout, stderr = process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                stdout, stderr = process.communicate()
+            raise MediaJobCancelled("FFmpeg process terminated after cancellation.")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            process.kill()
+            stdout, stderr = process.communicate()
+            raise MediaToolError(
+                f"Media command timed out after {timeout} seconds. {stderr[-4000:]}"
+            )
+        try:
+            stdout, stderr = process.communicate(timeout=min(1.0, remaining))
+            break
+        except subprocess.TimeoutExpired:
+            continue
+    result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
     if result.returncode != 0:
         raise MediaToolError(result.stderr[-4000:] or "Media command failed.")
     return result
@@ -31,7 +71,9 @@ def create_proxy(
     *,
     max_width: int = 1280,
     fps: int = 30,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
+    _check_cancel(cancel_check)
     if max_width < 160 or max_width > 1920 or fps < 1 or fps > 60:
         raise ValueError("Proxy settings are outside the supported range.")
     metadata = probe_media(source)
@@ -52,7 +94,7 @@ def create_proxy(
         "-movflags", "+faststart", str(temporary),
     ]
     try:
-        _run(command)
+        _run(command, cancel_check=cancel_check)
         if not temporary.is_file() or temporary.stat().st_size == 0:
             raise MediaToolError("FFmpeg did not create a valid proxy.")
         probe_media(temporary)
@@ -68,7 +110,14 @@ def create_proxy(
     }
 
 
-def detect_scenes(source: Path, *, threshold: float = 27.0, min_scene_len: int = 15) -> list[dict]:
+def detect_scenes(
+    source: Path,
+    *,
+    threshold: float = 27.0,
+    min_scene_len: int = 15,
+    cancel_check: Callable[[], bool] | None = None,
+) -> list[dict]:
+    _check_cancel(cancel_check)
     if threshold <= 0 or threshold > 100 or min_scene_len < 1 or min_scene_len > 1000:
         raise ValueError("Invalid scene detection settings.")
     try:
@@ -83,6 +132,7 @@ def detect_scenes(source: Path, *, threshold: float = 27.0, min_scene_len: int =
     manager = SceneManager()
     manager.add_detector(ContentDetector(threshold=threshold, min_scene_len=min_scene_len))
     manager.detect_scenes(video, show_progress=False)
+    _check_cancel(cancel_check)
     scene_list = manager.get_scene_list()
     duration = float(video.duration.seconds)
     scenes: list[dict] = []
@@ -115,7 +165,9 @@ def build_timeline(
     source: Path,
     scenes: list[dict],
     fps: int = 30,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> tuple[dict, Path]:
+    _check_cancel(cancel_check)
     try:
         import opentimelineio as otio
     except ImportError as exc:
@@ -143,6 +195,7 @@ def build_timeline(
 
     previous_end = 0.0
     for scene in scenes:
+        _check_cancel(cancel_check)
         start = float(scene["start_seconds"])
         duration = float(scene["duration_seconds"])
         end = start + duration
@@ -196,7 +249,9 @@ def render_timeline(
     height: int = 1080,
     fps: int = 30,
     crf: int = 20,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> dict:
+    _check_cancel(cancel_check)
     if width < 320 or width > 3840 or height < 240 or height > 2160:
         raise ValueError("Render resolution is outside the supported range.")
     if fps < 1 or fps > 60 or crf < 0 or crf > 35:
@@ -219,6 +274,7 @@ def render_timeline(
 
     filters: list[str] = []
     for index, clip in enumerate(clips):
+        _check_cancel(cancel_check)
         start = float(clip["start_seconds"])
         duration = float(clip["duration_seconds"])
         if not math.isfinite(start) or not math.isfinite(duration) or start < 0 or duration <= 0:
@@ -262,7 +318,7 @@ def render_timeline(
         "-pix_fmt", "yuv420p", "-movflags", "+faststart", str(temporary),
     ])
     try:
-        _run(command, timeout=7200)
+        _run(command, timeout=7200, cancel_check=cancel_check)
         if not temporary.is_file() or temporary.stat().st_size == 0:
             raise MediaToolError("FFmpeg did not create the rendered video.")
         probe_media(temporary)
