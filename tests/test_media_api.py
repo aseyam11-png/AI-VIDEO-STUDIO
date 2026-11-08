@@ -1,7 +1,6 @@
-from fastapi.testclient import TestClient
-
 from app.core.config import settings
 from app.main import app
+from fastapi.testclient import TestClient
 
 
 def test_create_project_and_read_capabilities(tmp_path, monkeypatch):
