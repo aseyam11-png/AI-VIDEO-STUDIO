@@ -175,35 +175,59 @@ jobs:
             "http://127.0.0.1:8000/v1/projects/$project_id/assets")"
           asset_id="$(python -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<< "$asset_response")"
 
-          job_response="$(curl --fail --silent --show-error \
-            -H 'Content-Type: application/json' \
-            -d "{\"project_id\":\"$project_id\",\"asset_id\":\"$asset_id\",\"job_type\":\"media.proxy\",\"payload\":{\"max_width\":640,\"fps\":24},\"idempotency_key\":\"compose-worker-acceptance-0001\"}" \
-            http://127.0.0.1:8000/v1/jobs)"
-          job_id="$(python -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<< "$job_response")"
+          submit_job() {
+            local job_type="$1"
+            local payload="$2"
+            local idempotency_key="$3"
+            local job_response
+            local job_id
+            local final_status=""
+            local job_state
 
-          final_status=""
-          for attempt in $(seq 1 90); do
-            job_state="$(curl --fail --silent --show-error "http://127.0.0.1:8000/v1/jobs/$job_id")"
-            final_status="$(python -c 'import json,sys; print(json.load(sys.stdin)["status"])' <<< "$job_state")"
-            if [ "$final_status" = "succeeded" ]; then
-              break
-            fi
-            if [ "$final_status" = "failed" ] || [ "$final_status" = "cancelled" ]; then
-              echo "$job_state"
-              docker compose logs --no-color --tail=120 worker-cpu worker-control scheduler api
+            job_response="$(curl --fail --silent --show-error \
+              -H 'Content-Type: application/json' \
+              -d "{\"project_id\":\"$project_id\",\"asset_id\":\"$asset_id\",\"job_type\":\"$job_type\",\"payload\":$payload,\"idempotency_key\":\"$idempotency_key\"}" \
+              http://127.0.0.1:8000/v1/jobs)"
+            job_id="$(python -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<< "$job_response")"
+
+            for attempt in $(seq 1 90); do
+              job_state="$(curl --fail --silent --show-error "http://127.0.0.1:8000/v1/jobs/$job_id")"
+              final_status="$(python -c 'import json,sys; print(json.load(sys.stdin)["status"])' <<< "$job_state")"
+              if [ "$final_status" = "succeeded" ]; then
+                break
+              fi
+              if [ "$final_status" = "failed" ] || [ "$final_status" = "cancelled" ]; then
+                echo "$job_state"
+                docker compose logs --no-color --tail=160 worker-cpu worker-control scheduler api
+                exit 1
+              fi
+              sleep 2
+            done
+
+            if [ "$final_status" != "succeeded" ]; then
+              echo "Job $job_type did not finish. Final state: $final_status"
+              docker compose logs --no-color --tail=160 worker-cpu worker-control scheduler api
               exit 1
             fi
-            sleep 2
-          done
 
-          if [ "$final_status" != "succeeded" ]; then
-            echo "Job did not finish. Final state: $final_status"
-            docker compose logs --no-color --tail=120 worker-cpu scheduler api
-            exit 1
-          fi
-          events="$(curl --fail --silent --show-error "http://127.0.0.1:8000/v1/jobs/$job_id/events")"
-          python -c 'import json,sys; e=json.load(sys.stdin); kinds={x["event_type"] for x in e}; assert {"created","started","progress","succeeded"}.issubset(kinds), kinds; print("Broker-backed job event lifecycle passed:", sorted(kinds))' <<< "$events"
-          echo "Compose API -> PostgreSQL outbox -> Valkey -> Celery worker -> FFmpeg proxy succeeded."
+            events="$(curl --fail --silent --show-error "http://127.0.0.1:8000/v1/jobs/$job_id/events")"
+            python -c 'import json,sys; e=json.load(sys.stdin); kinds={x["event_type"] for x in e}; assert {"created","started","progress","succeeded"}.issubset(kinds), kinds; print("Broker-backed event lifecycle passed:", sorted(kinds))' <<< "$events"
+            echo "Completed broker-backed job: $job_type ($job_id)"
+          }
+
+          submit_job "media.proxy" '{"max_width":640,"fps":24}' "compose-proxy-acceptance-0001"
+          submit_job "media.scenes" '{"threshold":27.0,"min_scene_len":10}' "compose-scenes-acceptance-0001"
+          submit_job "media.timeline" '{"fps":24}' "compose-timeline-acceptance-0001"
+          submit_job "media.render" '{"width":640,"height":360,"fps":24,"crf":24}' "compose-render-acceptance-0001"
+
+          rendered_path="${RUNNER_TEMP}/studio-compose-rendered.mp4"
+          content_type="$(curl --fail --silent --show-error \
+            -o "$rendered_path" -w '%{content_type}' \
+            "http://127.0.0.1:8000/v1/projects/$project_id/assets/$asset_id/rendered")"
+          test "$content_type" = "video/mp4"
+          test -s "$rendered_path"
+          ffprobe -v error -show_entries format=duration -of csv=p=0 "$rendered_path"
+          echo "Full Compose acceptance passed: API -> PostgreSQL -> Outbox -> Valkey -> control worker -> CPU worker -> FFmpeg/PySceneDetect/OTIO -> MP4 download."
       - name: Collect service logs on failure
         if: failure()
         run: docker compose logs --no-color --tail=200
