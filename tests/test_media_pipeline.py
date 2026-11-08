@@ -1,5 +1,5 @@
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -11,7 +11,9 @@ from app.media.storage import create_project
 def test_build_timeline_writes_otio_and_json(tmp_path, monkeypatch):
     pytest.importorskip("opentimelineio")
     monkeypatch.setattr(settings, "media_root", str(tmp_path))
-    project = create_project({"name": "Timeline test", "target_duration_seconds": 10, "brief": "test"})
+    project = create_project(
+        {"name": "Timeline test", "target_duration_seconds": 10, "brief": "test"}
+    )
     source = tmp_path / "source.mp4"
     source.write_bytes(b"fixture")
     asset_id = "f503ab55-36f8-48d3-a0ee-2a1d573cb5db"
