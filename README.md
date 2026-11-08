@@ -182,3 +182,10 @@ The Phase 2 feature branch adds adapters and job routing for the requested speci
 The adapters do not bundle or automatically download model weights. The ComfyUI API workflows, required custom nodes/checkpoints, Ollama model, optional WhisperX speech extra/model cache, DeepFilterNet checkpoint and Blender templates must be provisioned outside Git. See docs/15-MODEL-INTEGRATIONS.md.
 
 Phase 2 is a review branch, not a production release. CI can verify schemas and adapter contracts, but real inference, model quality, GPU compatibility and artifact licensing require runtime-specific acceptance.
+
+
+## Phase 3 — durable AI workflows
+
+The durable workflow API is documented in docs/16-WORKFLOW-ORCHESTRATION.md. It stores the ordered steps in PostgreSQL and chains normal jobs through the transactional outbox. Runs stop in awaiting_approval until a user approves the Qwen plan. Generated videos are registered as project assets and passed to subsequent steps.
+
+Ollama is available as an optional Compose profile. Model weights and ComfyUI workflows/checkpoints are provisioned explicitly on the target machine; no model weights are downloaded by application startup, CI or the default Docker Compose stack.
