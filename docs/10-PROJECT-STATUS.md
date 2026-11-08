@@ -5,15 +5,17 @@ Last updated: 2026-11-08.
 ## Verified CI
 
 ### Phase 1 latest verified run
-- GitHub Actions run: 89
-- Run URL: https://github.com/aseyam11-png/AI-VIDEO-STUDIO/actions/runs/42497165099
-- Commit: `01d2e43ce384dfdfb9a6879a3c6e49af92dec4f2`
+- GitHub Actions run: 95
+- Run URL: https://github.com/aseyam11-png/AI-VIDEO-STUDIO/actions/runs/42498886302
+- Commit: `b88b7a81e0e31a3531a79a315276124d9cb29d00`
 - Ruff: passed
 - PostgreSQL migration: passed using a non-superuser migrator role
 - Runtime privilege check: DML passed; schema DDL denied as intended
+- FastAPI readiness, project creation, and project read: passed using the restricted runtime role
 - Docker Compose configuration: passed
-- Pytest: 29 passed, 2 warnings
-- This CI run verifies the implementation state on GitHub's Linux runner, not a full Docker Compose lifecycle on Windows, production deployment, or GPU benchmark.
+- Pytest: 29 passed in 3.68 seconds
+- Full Compose integration: passed through PostgreSQL → transactional outbox → Valkey → control worker → CPU worker; Proxy, Scenes, Timeline, Render, MP4 download and FFprobe validation all succeeded.
+- This CI run verifies the implementation on GitHub's Linux runner, not yet a full Compose lifecycle on the user's Windows machine, production deployment, or GPU benchmark.
 
 ### Phase 0.5 baseline run
 - GitHub Actions run: 83
@@ -31,8 +33,9 @@ Last updated: 2026-11-08.
 - Added Alembic schema for projects, assets, jobs, job events, and transactional outbox records.
 - Added PostgreSQL-backed metadata with filesystem media bytes retained under MEDIA_ROOT, plus an idempotent legacy manifest importer.
 - Added job submit/list/detail/events/cancel/retry APIs, strict per-operation payload allowlists, request hashing, and idempotency conflict handling.
-- Added transactional outbox dispatcher, Celery CPU worker, heartbeat-based stale job recovery, cancellation checkpoints, and dispatch-generation fencing.
-- Added synthetic background worker end-to-end test, PostgreSQL migration validation, runtime least-privilege role validation, and Compose config validation to CI. Run 89 passed (29 tests, 2 warnings).
+- Added transactional outbox dispatcher, dedicated Celery `control` and `cpu` queues/workers, heartbeat-based stale job recovery, cancellation checkpoints, and dispatch-generation fencing.
+- Media sizes use PostgreSQL BIGINT to match the configured upload size range.
+- Added synthetic background worker end-to-end test, PostgreSQL migration validation, runtime least-privilege role validation, and full Compose broker-backed media pipeline validation. Run 95 passed (29 tests plus all four media jobs in Compose).
 - Progress is reported as stage checkpoints; actual encoder percentage is not yet measured.
 - This branch remains a local/private development surface without production authentication or public deployment hardening.
 
@@ -51,16 +54,16 @@ Last updated: 2026-11-08.
 | Preview render | Implemented | Cut-only render from one source asset using FFmpeg |
 | Media end-to-end test | **Passed** | GitHub Actions run 83; plus local Windows manual test of project/upload/proxy/scenes/OTIO/render/download |
 | FastAPI control plane | Phase 1 API on feature branch | Job API added; no production authentication yet |
-| PostgreSQL / Alembic | Implemented on Phase 1 branch | Schema + readiness check; migration passed using a non-superuser migrator role |
-| Runtime DB role | Implemented on Phase 1 branch | Runtime DML allowed; DDL denied in CI |
-| Valkey / Celery | Implemented on Phase 1 branch | Transactional outbox, CPU worker, scheduler, retry/recovery; CI passed |
+| PostgreSQL / Alembic | Implemented on Phase 1 branch | Schema + readiness check; migration passed using a non-superuser migrator role; asset sizes are BIGINT |
+| Runtime DB role | Implemented on Phase 1 branch | Runtime DML allowed; DDL denied in CI; FastAPI create/read verified |
+| Valkey / Celery | Implemented on Phase 1 branch | Transactional outbox, control + CPU workers, scheduler, retry/recovery; full Compose media pipeline passed |
 | Arabic RTL web UI | Visual scaffold | Media upload and live API integration not wired |
 | GPU scheduler and isolated workers | Not implemented | Needed before CUDA transcription or generation |
 | Qwen / LangGraph agents | Placeholder/design | No live LLM connected |
 | Wan / ComfyUI / SAM 2 / Grounding DINO | Candidate only | Not installed or benchmarked |
 | Product Identity Lock | Design requirement | Not implemented |
 | CapCut handoff | Design only | Optional Windows-side adapter |
-| Phase 1 local Compose acceptance | Pending | Start PostgreSQL/Valkey/API/worker/scheduler on Windows and verify /ready plus a broker-backed job |
+| Phase 1 local Compose acceptance | Pending on Windows | Run the feature branch in a separate clone; verify /ready, import old manifests, then submit a broker-backed media job |
 | Production readiness | **Not ready** | Complete Phase 1+, authentication, operational recovery, security review, and full end-to-end acceptance |
 
 The Phase 0.5 API is a local/private development surface. Do not expose it to the public Internet; authentication and private-network deployment are required before remote use.

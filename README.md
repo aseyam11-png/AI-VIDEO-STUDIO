@@ -122,7 +122,7 @@ Docker development (Phase 1):
 
 1. Copy .env.example to .env.
 2. Generate four independent URL-safe secrets for the PostgreSQL bootstrap, migration, runtime, and Valkey roles. Set MEDIA_HOST_PATH to a private host directory outside the Git checkout; for example, the existing Windows media directory.
-3. Run `docker compose up -d --build`. Compose starts PostgreSQL and Valkey, applies Alembic migrations, then starts the API, CPU worker, and scheduler.
+3. Run `docker compose up -d --build`. Compose starts PostgreSQL and Valkey, applies Alembic migrations, then starts the API, CPU media worker, control worker, and scheduler.
 4. Import existing Phase 0.5 manifests once with `docker compose exec api python -m app.cli import-legacy-manifests`. The importer is idempotent and does not move media bytes.
 5. Check `http://127.0.0.1:8000/health` and `http://127.0.0.1:8000/ready`.
 
@@ -147,13 +147,13 @@ WhisperX is not installed in the base image because it brings a large ML depende
 | Simple cut-only FFmpeg preview render | Implemented for one source asset |
 | Automated media integration test | **Passed in GitHub Actions** |
 | PostgreSQL-backed project/asset/job metadata | Implemented on Phase 1 branch; Alembic migration and legacy import added |
-| Durable job API, transactional outbox, Celery CPU worker and recovery | Implemented on Phase 1 branch; PostgreSQL CI run 88 passed (27 tests) |
+| Durable job API, transactional outbox, Celery control + CPU workers and recovery | Implemented on Phase 1 branch; CI run 95 passed (29 tests + full Compose pipeline) |
 | GPU scheduler and isolated GPU workers | Not implemented |
 | LangGraph live LLM and agents | Placeholder only |
 | Wan/ComfyUI/SAM 2 production inference | Not installed or benchmarked |
 | Product Identity Lock | Design requirement; not implemented |
 | Arabic RTL web UI | Visual scaffold; not connected to API |
-| Phase 1 merge / PostgreSQL CI verification | CI run 89 passed on commit 01d2e43; newer Compose secret-isolation change awaiting CI |
+| Phase 1 review / CI verification | CI run 95 passed on commit b88b7a8; PR #1 remains Draft and unmerged |
 | Production readiness | **Not ready** |
 
 ## Public repository notice

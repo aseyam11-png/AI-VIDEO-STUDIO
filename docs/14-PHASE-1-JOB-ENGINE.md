@@ -40,7 +40,7 @@ Progress is an integer checkpoint, not a fabricated FFmpeg percentage. `progress
 - `media.timeline`
 - `media.render`
 
-Only validated payload fields are accepted. Arbitrary shell commands, filesystem paths, model URLs, and workflow definitions are not accepted in job payloads. A partial unique database index permits only one active job of a given operation type per asset. All initial jobs route to the CPU queue; no GPU scheduling is enabled in this phase.
+Only validated payload fields are accepted. Arbitrary shell commands, filesystem paths, model URLs, and workflow definitions are not accepted in job payloads. A partial unique database index permits only one active job of a given operation type per asset. All four media job types route to the `cpu` queue. The outbox dispatcher and stale-job recovery tasks route to a separate `control` queue consumed by a dedicated control worker. No GPU scheduling is enabled in this phase.
 
 ## API
 
@@ -65,7 +65,7 @@ Without a configured `DATABASE_URL`, the API uses a SQLite file under `MEDIA_ROO
 
 ## Docker Compose stack
 
-The Compose stack runs PostgreSQL, Valkey, an Alembic migration one-shot, the API, a CPU media worker, a control-queue worker, and Celery Beat. The control worker runs outbox dispatch and stale-job recovery tasks; the CPU worker runs FFmpeg/PySceneDetect media tasks. Only the PostgreSQL service receives bootstrap/migrator/runtime credential material; API, worker, and scheduler receive only the restricted runtime URL, and the migration service receives only the migrator URL. PostgreSQL and Valkey do not publish host ports. The API is bound to `127.0.0.1:8000`. PostgreSQL uses a bootstrap superuser only during first-volume initialization, a separate non-superuser migration owner for Alembic, and a restricted runtime role for the API/workers. The runtime role receives DML privileges on tables and sequences, but no schema DDL rights. Generate strong local secrets and store them only in an ignored local `.env`; never commit `.env`. The `database-init/01-roles.sh` initialization script runs only when PostgreSQL initializes an empty volume.
+The Compose stack runs PostgreSQL, Valkey, an Alembic migration one-shot, the API, a CPU media worker, a control-queue worker, and Celery Beat. The CPU queue performs FFmpeg/PySceneDetect/OTIO jobs; the control queue publishes committed outbox rows and recovers stale jobs. The asset `size_bytes` column is BIGINT so the metadata schema supports the configured multi-gigabyte upload cap. The control worker runs outbox dispatch and stale-job recovery tasks; the CPU worker runs FFmpeg/PySceneDetect media tasks. Only the PostgreSQL service receives bootstrap/migrator/runtime credential material; API, worker, and scheduler receive only the restricted runtime URL, and the migration service receives only the migrator URL. PostgreSQL and Valkey do not publish host ports. The API is bound to `127.0.0.1:8000`. PostgreSQL uses a bootstrap superuser only during first-volume initialization, a separate non-superuser migration owner for Alembic, and a restricted runtime role for the API/workers. The runtime role receives DML privileges on tables and sequences, but no schema DDL rights. Generate strong local secrets and store them only in an ignored local `.env`; never commit `.env`. The `database-init/01-roles.sh` initialization script runs only when PostgreSQL initializes an empty volume.
 
 PowerShell setup:
 
@@ -113,4 +113,6 @@ Back up PostgreSQL and the media volume together. The database stores paths and 
 - Queued cancellation, running cancellation request, failed/cancelled retry, exhausted-attempt rejection, active-operation uniqueness, and stale-worker recovery are tested.
 - Retry/recovery currently reruns the deterministic media operation from its start; it is not true mid-operation resume.
 - End-to-end worker integration creates a synthetic clip, uploads it, executes proxy/scenes/timeline/render jobs, and downloads the output.
+- GitHub Actions run 95 passed on commit `b88b7a81e0e31a3531a79a315276124d9cb29d00`: Ruff, PostgreSQL migration/permissions, FastAPI runtime role, 29 pytest tests, and full Compose-backed Proxy → Scenes → Timeline → Render → MP4 download.
+- Manual Phase 1 Compose acceptance on the user's Windows machine is still pending.
 - Main remains unchanged until the draft PR is reviewed and merged explicitly.
