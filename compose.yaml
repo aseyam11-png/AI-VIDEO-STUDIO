@@ -90,6 +90,25 @@ services:
       - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
     networks: [studio]
 
+  worker-control:
+    build: .
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-AI Video Studio}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MEDIA_ROOT: /srv/video-studio/data
+      DATABASE_URL: postgresql+psycopg://${DATABASE_RUNTIME_USER:-video_studio_runtime}:${DATABASE_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
+      CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
+    command:
+      ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=INFO", "--queues=control", "--concurrency=1"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+    networks: [studio]
+
   scheduler:
     build: .
     restart: unless-stopped

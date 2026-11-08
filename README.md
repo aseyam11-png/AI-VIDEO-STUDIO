@@ -89,7 +89,7 @@ Request cancellation or retry an eligible job:
 
 Supported initial types are `media.proxy`, `media.scenes`, `media.timeline`, and `media.render`. Payloads are allowlisted and validated by job type. Submit requests carry a project-scoped `idempotency_key`; repeating the same request returns the original job, while reusing the key with different request content returns HTTP 409. A partial unique database index also prevents concurrent active jobs of the same operation type on the same asset.
 
-Job rows, job events, and outbox messages are written in one database transaction. Celery workers consume messages via Valkey; PostgreSQL remains the authoritative source for status, progress checkpoints, attempts, heartbeats, results, and errors. Delivery is at-least-once, with database generation checks fencing stale/duplicate deliveries. Progress is an honest stage checkpoint, not a fabricated percentage from FFmpeg.
+Job rows, job events, and outbox messages are written in one database transaction. Celery workers consume messages via Valkey; PostgreSQL remains the authoritative source for status, progress checkpoints, attempts, heartbeats, results, and errors. Separate Celery `control` and `cpu` queues keep scheduling/recovery tasks away from media-processing workers. Delivery is at-least-once, with database generation checks fencing stale/duplicate deliveries. Progress is an honest stage checkpoint, not a fabricated percentage from FFmpeg.
 
 See [Phase 1 Job Engine](docs/14-PHASE-1-JOB-ENGINE.md) for lifecycle, reliability guarantees, migrations, legacy import, and run instructions.
 

@@ -27,7 +27,11 @@ celery_app.conf.update(
     worker_max_tasks_per_child=50,
     task_soft_time_limit=7500,
     task_time_limit=7800,
-    task_routes={"studio.execute_job": {"queue": "cpu"}},
+    task_routes={
+        "studio.execute_job": {"queue": "cpu"},
+        "studio.dispatch_outbox": {"queue": "control"},
+        "studio.recover_stale_jobs": {"queue": "control"},
+    },
     beat_schedule={
         "dispatch-database-outbox": {
             "task": "studio.dispatch_outbox",

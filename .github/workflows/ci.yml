@@ -190,7 +190,7 @@ jobs:
             fi
             if [ "$final_status" = "failed" ] || [ "$final_status" = "cancelled" ]; then
               echo "$job_state"
-              docker compose logs --no-color --tail=120 worker-cpu scheduler api
+              docker compose logs --no-color --tail=120 worker-cpu worker-control scheduler api
               exit 1
             fi
             sleep 2
