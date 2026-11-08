@@ -3,7 +3,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.db.models import OutboxRecord
@@ -13,6 +12,7 @@ from app.media.storage import create_project, ingest_file_stream, project_dir
 from app.schemas.models import CreativePlan
 from app.services import job_runner, workflow_engine
 from app.services.job_runner import run_job_attempt
+from fastapi.testclient import TestClient
 
 
 def _plan(duration: int = 15) -> CreativePlan:

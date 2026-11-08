@@ -1,8 +1,7 @@
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
 from app.schemas.models import CreativePlan
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class WorkflowCreateRequest(BaseModel):

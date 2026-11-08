@@ -3,10 +3,6 @@ import json
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
-
 from app.core.config import settings
 from app.db.models import (
     AssetRecord,
@@ -24,9 +20,12 @@ from app.services.jobs import (
     JobRequestError,
     _create_outbox,
     append_event,
-    normalize_payload,
     job_to_dict,
+    normalize_payload,
 )
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 
 class WorkflowNotFoundError(LookupError):
