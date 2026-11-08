@@ -42,6 +42,9 @@ def readiness() -> dict:
             current = set(revision_rows)
         config_path = Path(__file__).resolve().parents[2] / "alembic.ini"
         migration_config = Config(str(config_path))
+        migration_config.set_main_option(
+            "script_location", str(config_path.parent / "migrations")
+        )
         expected = set(ScriptDirectory.from_config(migration_config).get_heads())
         if current != expected:
             raise HTTPException(

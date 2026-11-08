@@ -5,8 +5,6 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
-
 from app.core.config import settings
 from app.db.models import JobRecord, OutboxRecord
 from app.db.session import session_scope
@@ -27,6 +25,7 @@ from app.media.storage import (
 )
 from app.schemas.jobs import JobType
 from app.services.jobs import append_event, job_to_dict
+from sqlalchemy import select
 
 
 class JobCancelled(RuntimeError):

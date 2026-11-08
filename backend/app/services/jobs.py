@@ -4,14 +4,13 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
-
 from app.core.config import settings
 from app.db.models import AssetRecord, JobEventRecord, JobRecord, OutboxRecord, ProjectRecord
 from app.db.session import session_scope
 from app.schemas.jobs import JobCreate, JobType
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 
 class JobNotFoundError(LookupError):
@@ -218,7 +217,7 @@ def create_job(data: JobCreate) -> tuple[dict[str, Any], bool]:
             append_event(db, job, "created", "Job accepted and queued.")
             _create_outbox(db, job)
             return job_to_dict(job), True
-    except IntegrityError:
+    except IntegrityError as exc:
         # A concurrent duplicate can win the unique constraint between lookup and insert.
         with session_scope() as db:
             existing = db.scalar(
