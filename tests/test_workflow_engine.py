@@ -226,6 +226,21 @@ def test_generated_video_becomes_next_step_input_asset(tmp_path, monkeypatch):
     assert generated_asset.status_code == 200
     assert generated_asset.json()["asset_type"] == "video"
 
+    second_job_id = interpolation["job_id"]
+    second_job = client.get(f"/v1/jobs/{second_job_id}").json()
+    second_result = run_job_attempt(
+        second_job["id"], second_job["dispatch_generation"]
+    )
+    assert second_result["status"] == "succeeded"
+
+    after_interpolation = client.get(
+        f"/v1/workflows/{workflow_id}"
+    ).json()
+    interpolation = after_interpolation["steps"][1]
+    timeline = after_interpolation["steps"][2]
+    assert interpolation["result"]["output_asset_id"]
+    assert timeline["asset_id"] == interpolation["result"]["output_asset_id"]
+
 
 def test_workflow_approval_is_idempotent_and_cancel_stops_pending_steps(
     tmp_path, monkeypatch

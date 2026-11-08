@@ -551,6 +551,7 @@ def advance_workflow_for_job(db: Session, job: JobRecord) -> None:
             run.error_message = None
             run.updated_at = now
             return
+        effective_asset_id = step.asset_id
         if output_asset_id:
             output_asset = db.get(AssetRecord, str(output_asset_id))
             if output_asset is None or output_asset.project_id != run.project_id:
@@ -561,7 +562,8 @@ def advance_workflow_for_job(db: Session, job: JobRecord) -> None:
                 run.finished_at = now
                 run.updated_at = now
                 return
-            next_step.asset_id = output_asset.id
+            effective_asset_id = output_asset.id
+        next_step.asset_id = effective_asset_id
         try:
             _enqueue_step(db, run, next_step)
         except (WorkflowConflictError, WorkflowRequestError, JobRequestError) as exc:
