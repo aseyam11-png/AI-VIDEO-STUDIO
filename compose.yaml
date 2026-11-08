@@ -3,6 +3,8 @@ services:
     profiles: ["ollama"]
     image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     healthcheck:

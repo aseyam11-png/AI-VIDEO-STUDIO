@@ -15,10 +15,10 @@ from app.db.models import (
     WorkflowStepRecord,
 )
 from app.db.session import session_scope
+from app.integrations.ollama import generate_creative_plan
 from app.schemas.jobs import JobType
 from app.schemas.models import CreativePlan
 from app.schemas.workflows import WorkflowCreateRequest, WorkflowFromBriefRequest
-from app.integrations.ollama import generate_creative_plan
 from app.services.jobs import (
     JobRequestError,
     _create_outbox,

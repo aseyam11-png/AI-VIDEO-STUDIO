@@ -1,6 +1,6 @@
 param(
     [string]$ApiBaseUrl = "http://127.0.0.1:8000",
-    [string]$OllamaBaseUrl = "http://host.docker.internal:11434",
+    [string]$OllamaBaseUrl = "http://127.0.0.1:11434",
     [string]$ComfyUIBaseUrl = "http://host.docker.internal:8188",
     [switch]$RunArabicInferenceSmokeTest
 )
