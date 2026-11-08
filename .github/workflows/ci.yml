@@ -227,6 +227,98 @@ jobs:
           submit_job "media.timeline" '{"fps":24}' "compose-timeline-acceptance-0001"
           submit_job "media.render" '{"width":640,"height":360,"fps":24,"crf":24}' "compose-render-acceptance-0001"
 
+          workflow_payload="$(python - "$project_id" "$asset_id" <<'PY'
+import json
+import sys
+
+project_id, asset_id = sys.argv[1:3]
+payload = {
+    "project_id": project_id,
+    "asset_id": asset_id,
+    "idempotency_key": "compose-workflow-acceptance-0001",
+    "brief": "اختبار Workflow عربي متكامل يصل إلى تصدير ملف MP4.",
+    "language": "ar",
+    "creative_plan": {
+        "title": "قبول مسار المونتاج",
+        "logline": "اختبار تسلسل مهام مونتاج عربي داخل الاستديو.",
+        "target_duration_seconds": 2,
+        "audience": "اختبار CI",
+        "visual_style": "واقعي وواضح",
+        "color_palette": ["أسود", "أبيض"],
+        "audio_direction": "الصوت الأصلي",
+        "scenes": [{
+            "index": 1,
+            "duration_seconds": 2,
+            "purpose": "التحقق من التصدير",
+            "visual_description": "لقطة اختبار قصيرة وواضحة",
+            "shot_type": "لقطة عامة",
+            "camera_movement": "ثابتة",
+            "narration": "",
+            "on_screen_text": "اختبار ناجح",
+            "sound_design": "الصوت الأصلي",
+        }],
+        "production_notes": [],
+    },
+}
+print(json.dumps(payload, ensure_ascii=False))
+PY
+)"
+          workflow_response="$(curl --fail --silent --show-error \
+            -H 'Content-Type: application/json' \
+            -d "$workflow_payload" \
+            http://127.0.0.1:8000/v1/workflows)"
+          workflow_id="$(python -c 'import json,sys; print(json.load(sys.stdin)["id"])' <<< "$workflow_response")"
+          workflow_status="$(python -c 'import json,sys; print(json.load(sys.stdin)["status"])' <<< "$workflow_response")"
+          test "$workflow_status" = "awaiting_approval"
+
+          curl --fail --silent --show-error -X POST \
+            "http://127.0.0.1:8000/v1/workflows/$workflow_id/approve" >/dev/null
+
+          final_workflow=""
+          final_workflow_status=""
+          for attempt in $(seq 1 120); do
+            final_workflow="$(curl --fail --silent --show-error \
+              "http://127.0.0.1:8000/v1/workflows/$workflow_id")"
+            final_workflow_status="$(python -c 'import json,sys; print(json.load(sys.stdin)["status"])' <<< "$final_workflow")"
+            if [ "$final_workflow_status" = "succeeded" ]; then
+              break
+            fi
+            if [ "$final_workflow_status" = "failed" ] || [ "$final_workflow_status" = "cancelled" ]; then
+              echo "$final_workflow"
+              docker compose logs --no-color --tail=200 worker-cpu worker-control scheduler api
+              exit 1
+            fi
+            sleep 2
+          done
+          if [ "$final_workflow_status" != "succeeded" ]; then
+            echo "Workflow did not finish. Final state: $final_workflow_status"
+            echo "$final_workflow"
+            docker compose logs --no-color --tail=200 worker-cpu worker-control scheduler api
+            exit 1
+          fi
+
+          python - "$final_workflow" <<'PY'
+import json
+import sys
+
+workflow = json.loads(sys.argv[1])
+steps = workflow["steps"]
+assert steps, "Workflow unexpectedly contains no steps."
+assert all(step["status"] == "succeeded" for step in steps), steps
+print("Durable workflow completed through Celery:", [step["tool_id"] for step in steps])
+PY
+          final_job_id="$(python -c 'import json,sys; print(json.load(sys.stdin)["steps"][-1]["job_id"])' <<< "$final_workflow")"
+          final_job="$(curl --fail --silent --show-error "http://127.0.0.1:8000/v1/jobs/$final_job_id")"
+          workflow_download_url="$(python -c 'import json,sys; print(json.load(sys.stdin)["result"]["download_url"])' <<< "$final_job")"
+          workflow_rendered_path="${RUNNER_TEMP}/studio-compose-workflow-rendered.mp4"
+          workflow_content_type="$(curl --fail --silent --show-error \
+            -o "$workflow_rendered_path" -w '%{content_type}' \
+            "http://127.0.0.1:8000$workflow_download_url")"
+          test "$workflow_content_type" = "video/mp4"
+          test -s "$workflow_rendered_path"
+          ffprobe -v error -show_entries format=duration -of csv=p=0 "$workflow_rendered_path"
+          echo "Full workflow acceptance passed: approved Arabic plan -> durable workflow steps -> real Celery jobs -> generated MP4."
+
           rendered_path="${RUNNER_TEMP}/studio-compose-rendered.mp4"
           content_type="$(curl --fail --silent --show-error \
             -o "$rendered_path" -w '%{content_type}' \
