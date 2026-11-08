@@ -15,9 +15,19 @@ class JobPolicy:
 def validate_generation_request(payload: dict, *, approved: bool) -> None:
     if not approved:
         raise PermissionError("Generation requires explicit user approval.")
+
     duration = payload.get("duration_seconds")
-    if not isinstance(duration, (int, float)) or isinstance(duration, bool) or duration <= 0 or duration > 10:
-        raise ValueError("A single generation shot must be between 0 and 10 seconds in the initial profile.")
+    invalid_duration = (
+        not isinstance(duration, (int, float))
+        or isinstance(duration, bool)
+        or duration <= 0
+        or duration > 10
+    )
+    if invalid_duration:
+        raise ValueError(
+            "A single generation shot must be between 0 and 10 seconds in the initial profile."
+        )
+
     workflow_id = payload.get("workflow_id")
     if workflow_id not in {"wan22_ti2v_5b_v1"}:
         raise ValueError("Unknown or unapproved workflow_id.")
