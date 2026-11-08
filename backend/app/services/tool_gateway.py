@@ -138,7 +138,7 @@ TOOL_SPECS: tuple[dict[str, typing.Any], ...] = (
 )
 
 
-def _readiness(spec: dict[str, Any], capabilities: dict[str, Any]) -> dict[str, Any]:
+def _readiness(spec: dict[str, typing.Any], capabilities: dict[str, typing.Any]) -> dict[str, typing.Any]:
     tool_id = spec["tool_id"]
     models = capabilities.get("models", {})
     runtimes = capabilities.get("runtimes", {})
@@ -207,10 +207,10 @@ def _readiness(spec: dict[str, Any], capabilities: dict[str, Any]) -> dict[str, 
     }
 
 
-def get_tool_catalog() -> dict[str, Any]:
+def get_tool_catalog() -> dict[str, typing.Any]:
     """Return the one public tool catalog, with honest runtime readiness boundaries."""
     capabilities = get_model_capabilities()
-    tools: list[dict[str, Any]] = []
+    tools: list[dict[str, typing.Any]] = []
 
     for spec in TOOL_SPECS:
         item = {
