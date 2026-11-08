@@ -61,7 +61,7 @@ def readiness() -> dict:
 @app.get("/v1/system/capabilities", tags=["system"])
 def capabilities() -> dict:
     return {
-        "phase": "2",
+        "phase": "1",
         "media_ingestion": True,
         "ffprobe": True,
         "proxy_generation": True,
