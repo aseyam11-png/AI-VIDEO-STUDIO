@@ -1,14 +1,18 @@
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.main import app
+from fastapi.testclient import TestClient
 
 
-@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg is required for media integration test")
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None,
+    reason="FFmpeg is required for media integration test",
+)
 def test_video_ingest_proxy_scenes_timeline_and_render(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
     source = tmp_path / "source.mp4"
