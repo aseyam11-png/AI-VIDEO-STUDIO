@@ -40,6 +40,11 @@ jobs:
           docker compose config --quiet
           rm .env
       - name: Validate NVIDIA Compose override syntax
+        env:
+          POSTGRES_BOOTSTRAP_PASSWORD: ci-bootstrap-password
+          DATABASE_MIGRATOR_PASSWORD: ci-migrator-password
+          DATABASE_RUNTIME_PASSWORD: ci-runtime-password
+          VALKEY_PASSWORD: ci-valkey-password
         run: docker compose -f compose.yaml -f compose.gpu.yaml config --quiet
       - name: Provision least-privilege database roles
         run: |
