@@ -28,6 +28,22 @@ class Settings(BaseSettings):
     outbox_lock_timeout_seconds: int = Field(default=30, ge=5, le=600)
     outbox_batch_size: int = Field(default=50, ge=1, le=500)
 
+    ollama_base_url: str | None = None
+    ollama_model: str = "qwen3.5:9b-q4_K_M"
+    ollama_timeout_seconds: int = Field(default=180, ge=5, le=1800)
+    comfyui_base_url: str | None = None
+    comfyui_api_key: str | None = None
+    comfyui_request_timeout_seconds: int = Field(default=120, ge=5, le=1800)
+    comfyui_job_timeout_seconds: int = Field(default=21600, ge=60, le=86400)
+    comfyui_poll_interval_seconds: float = Field(default=2.0, ge=0.5, le=30)
+    max_model_output_bytes: int = Field(default=2147483648, ge=1048576, le=21474836480)
+    model_workflow_registry: str | None = None
+    deepfilter_script: str | None = None
+    deepfilter_model_dir: str | None = None
+    deepfilter_python: str | None = None
+    blender_executable: str | None = None
+    speech_worker_enabled: bool = False
+
     def local_database_url(self) -> str:
         root = Path(self.media_root).expanduser().resolve()
         root.mkdir(parents=True, exist_ok=True)

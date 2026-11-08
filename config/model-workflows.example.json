@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "workflows": {
+    "groundingdino_detect_v1": {
+      "file": "groundingdino_detect_v1.json",
+      "required_inputs": ["source_path", "prompt"],
+      "bindings": {
+        "source_path": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "prompt": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "box_threshold": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "text_threshold": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"}
+      }
+    },
+    "sam2_track_v1": {
+      "file": "sam2_track_v1.json",
+      "required_inputs": ["source_path", "prompt"],
+      "bindings": {
+        "source_path": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "prompt": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "box_threshold": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "text_threshold": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "max_frames": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"}
+      }
+    },
+    "wan22_ti2v_5b_v1": {
+      "file": "wan22_ti2v_5b_v1.json",
+      "required_inputs": ["prompt", "duration_seconds", "width", "height"],
+      "bindings": {
+        "source_path": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "prompt": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "negative_prompt": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "duration_seconds": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "width": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "height": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"}
+      }
+    },
+    "realesrgan_upscale_v1": {
+      "file": "realesrgan_upscale_v1.json",
+      "required_inputs": ["source_path", "scale"],
+      "bindings": {
+        "source_path": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "scale": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"}
+      }
+    },
+    "rife_interpolate_v1": {
+      "file": "rife_interpolate_v1.json",
+      "required_inputs": ["source_path", "factor"],
+      "bindings": {
+        "source_path": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"},
+        "factor": {"node_id": "REPLACE_NODE_ID", "input_name": "REPLACE_INPUT_NAME"}
+      }
+    }
+  }
+}

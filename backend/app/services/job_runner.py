@@ -25,6 +25,12 @@ from app.media.storage import (
 )
 from app.schemas.jobs import JobType
 from app.services.jobs import append_event, job_to_dict
+from app.services.model_jobs import (
+    execute_audio_enhancement,
+    execute_blender_job,
+    execute_comfyui_job,
+    execute_speech_transcription,
+)
 from sqlalchemy import select
 
 
@@ -122,15 +128,63 @@ def _execute_media_job(
     if not asset_id:
         raise ValueError("A media job requires an asset_id.")
     asset = get_asset(project_id, asset_id)
-    if asset.get("asset_type") != "video":
-        raise ValueError("This media operation requires a video asset.")
+    asset_type = asset.get("asset_type")
     source = _safe_source_path(project_id, asset_id, asset["stored_filename"])
     payload = job["payload"]
+    job_type = job["job_type"]
 
     if cancel_check():
         raise JobCancelled("Cancellation requested before execution.")
 
-    if job["job_type"] == JobType.MEDIA_PROXY.value:
+    if job_type == JobType.SPEECH_TRANSCRIBE.value:
+        if asset_type != "video":
+            raise ValueError("Speech transcription requires a video asset with audio.")
+        progress(10, "loading_whisperx", "Preparing the selected WhisperX profile.")
+        result = execute_speech_transcription(
+            project_id, asset_id, job["id"], source, payload, cancel_check=cancel_check
+        )
+        progress(95, "transcription_saved", "WhisperX transcription was saved.")
+        return result
+
+    if job_type == JobType.AUDIO_ENHANCE.value:
+        if asset_type != "video":
+            raise ValueError("Audio enhancement requires a video asset with audio.")
+        progress(10, "extracting_audio", "Extracting the source audio for DeepFilterNet.")
+        result = execute_audio_enhancement(
+            project_id, asset_id, job["id"], source, payload, cancel_check=cancel_check
+        )
+        progress(95, "audio_muxed", "Enhanced audio was muxed into a new video file.")
+        return result
+
+    if job_type in {
+        JobType.VISION_DETECT.value,
+        JobType.VISION_TRACK.value,
+        JobType.VIDEO_GENERATE.value,
+        JobType.VIDEO_UPSCALE.value,
+        JobType.VIDEO_INTERPOLATE.value,
+    }:
+        if job_type in {
+            JobType.VISION_TRACK.value,
+            JobType.VIDEO_INTERPOLATE.value,
+        } and asset_type != "video":
+            raise ValueError("This model workflow requires a video asset.")
+        if asset_type not in {"video", "image"}:
+            raise ValueError("The selected model workflow requires an image or video asset.")
+        progress(10, "preparing_model_workflow", "Preparing the approved ComfyUI workflow.")
+        return execute_comfyui_job(
+            job, source, progress=progress, cancel_check=cancel_check
+        )
+
+    if job_type == JobType.MOTION_BLENDER.value:
+        progress(10, "preparing_blender", "Validating the approved Blender project template.")
+        result = execute_blender_job(job, cancel_check=cancel_check)
+        progress(95, "blender_rendered", "Blender completed the motion graphics render.")
+        return result
+
+    if asset_type != "video":
+        raise ValueError("Deterministic media processing jobs require a video asset.")
+
+    if job_type == JobType.MEDIA_PROXY.value:
         progress(10, "probing", "Checking source streams and proxy settings.")
         result = create_proxy(
             source,
@@ -143,7 +197,7 @@ def _execute_media_job(
         progress(95, "finalizing", "Proxy created and verified.")
         return result
 
-    if job["job_type"] == JobType.MEDIA_SCENES.value:
+    if job_type == JobType.MEDIA_SCENES.value:
         progress(10, "analyzing", "Analyzing video frames for scene boundaries.")
         scenes = detect_scenes(
             source,
@@ -163,7 +217,7 @@ def _execute_media_job(
         progress(95, "finalizing", f"Detected {len(scenes)} candidate scene(s).")
         return manifest
 
-    if job["job_type"] == JobType.MEDIA_TIMELINE.value:
+    if job_type == JobType.MEDIA_TIMELINE.value:
         progress(10, "preparing_timeline", "Preparing scene ranges for the timeline.")
         if cancel_check():
             raise JobCancelled("Cancellation requested.")
@@ -184,7 +238,7 @@ def _execute_media_job(
         progress(95, "finalizing", "OpenTimelineIO and JSON timeline manifests created.")
         return {**manifest, "timeline_path": relative_path}
 
-    if job["job_type"] == JobType.MEDIA_RENDER.value:
+    if job_type == JobType.MEDIA_RENDER.value:
         progress(10, "preparing_render", "Validating the saved timeline and render settings.")
         timeline_path = project_dir(project_id) / "timelines" / f"{asset_id}.json"
         if not timeline_path.is_file():
