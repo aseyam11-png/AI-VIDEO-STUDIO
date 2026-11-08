@@ -233,6 +233,9 @@ class WorkflowRunRecord(Base):
             name="fk_workflow_runs_project_asset_scope",
             ondelete="RESTRICT",
         ),
+        UniqueConstraint(
+            "project_id", "idempotency_key", name="uq_workflow_runs_project_idempotency"
+        ),
         CheckConstraint(
             "status IN ('awaiting_approval', 'queued', 'running', "
             "'cancel_requested', 'succeeded', 'failed', 'cancelled')",
@@ -247,6 +250,8 @@ class WorkflowRunRecord(Base):
         String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
     asset_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     brief: Mapped[str] = mapped_column(Text, nullable=False)
     language: Mapped[str] = mapped_column(String(12), nullable=False, default="ar")
     plan_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)

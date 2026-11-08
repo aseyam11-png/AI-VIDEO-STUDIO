@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -55,6 +56,34 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _request_digest(payload: dict) -> str:
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _existing_workflow(
+    project_id: str,
+    idempotency_key: str,
+    request_hash: str,
+) -> dict | None:
+    with session_scope() as db:
+        run = db.scalar(
+            select(WorkflowRunRecord).where(
+                WorkflowRunRecord.project_id == project_id,
+                WorkflowRunRecord.idempotency_key == idempotency_key,
+            )
+        )
+        if run is None:
+            return None
+        if run.request_hash != request_hash:
+            raise WorkflowConflictError(
+                "Workflow idempotency key was already used with a different request."
+            )
+        return _workflow_to_dict(db, run)
+
+
 def _queue_for(job_type: JobType) -> str:
     if job_type == JobType.SPEECH_TRANSCRIBE:
         return "speech"
@@ -98,6 +127,21 @@ def _step_specs(
             )
         )
 
+    if request.tracking_prompt:
+        if asset_type != "video":
+            raise WorkflowRequestError("SAM 2 tracking requires a video source asset.")
+        steps.append(
+            (
+                JobType.VISION_TRACK,
+                {
+                    "prompt": request.tracking_prompt,
+                    "box_threshold": 0.35,
+                    "text_threshold": 0.25,
+                    "max_frames": 300,
+                },
+            )
+        )
+
     if asset_type == "image":
         if not request.generate_video:
             raise WorkflowRequestError(
@@ -126,6 +170,8 @@ def _step_specs(
         )
         if request.interpolate_generated_video:
             steps.append((JobType.VIDEO_INTERPOLATE, {"factor": 2}))
+        if request.upscale_output:
+            steps.append((JobType.VIDEO_UPSCALE, {"scale": 2}))
     elif asset_type == "video":
         if request.generate_video:
             raise WorkflowRequestError(
@@ -146,6 +192,8 @@ def _step_specs(
             )
         steps.append((JobType.MEDIA_PROXY, {"max_width": 1280, "fps": fps}))
         steps.append((JobType.MEDIA_SCENES, {"threshold": 27.0, "min_scene_len": 15}))
+        if request.upscale_output:
+            steps.append((JobType.VIDEO_UPSCALE, {"scale": 2}))
     else:
         raise WorkflowRequestError("Workflows support image or video source assets only.")
 
@@ -200,8 +248,23 @@ def _workflow_to_dict(db: Session, run: WorkflowRunRecord) -> dict:
     }
 
 
-def create_workflow_run(request: WorkflowCreateRequest) -> dict:
-    with session_scope() as db:
+def create_workflow_run(
+    request: WorkflowCreateRequest,
+    *,
+    request_hash_override: str | None = None,
+) -> dict:
+    request_hash = request_hash_override or _request_digest(
+        request.model_dump(mode="json", exclude={"idempotency_key"})
+    )
+    project_id = str(request.project_id)
+    existing = _existing_workflow(
+        project_id, request.idempotency_key, request_hash
+    )
+    if existing is not None:
+        return existing
+
+    try:
+        with session_scope() as db:
         project = db.get(ProjectRecord, str(request.project_id))
         if project is None:
             raise WorkflowRequestError(
@@ -232,6 +295,8 @@ def create_workflow_run(request: WorkflowCreateRequest) -> dict:
             id=str(uuid4()),
             project_id=str(request.project_id),
             asset_id=str(request.asset_id),
+            idempotency_key=request.idempotency_key,
+            request_hash=request_hash,
             brief=request.brief,
             language=request.language,
             plan_json=request.creative_plan.model_dump(),
@@ -239,6 +304,8 @@ def create_workflow_run(request: WorkflowCreateRequest) -> dict:
                 "transcribe_audio": request.transcribe_audio,
                 "enhance_audio": request.enhance_audio,
                 "detection_prompt": request.detection_prompt,
+                "tracking_prompt": request.tracking_prompt,
+                "upscale_output": request.upscale_output,
                 "generate_video": request.generate_video,
                 "interpolate_generated_video": request.interpolate_generated_video,
             },
@@ -264,7 +331,14 @@ def create_workflow_run(request: WorkflowCreateRequest) -> dict:
                 )
             )
         db.flush()
-        return _workflow_to_dict(db, run)
+            return _workflow_to_dict(db, run)
+    except IntegrityError:
+        existing = _existing_workflow(
+            project_id, request.idempotency_key, request_hash
+        )
+        if existing is not None:
+            return existing
+        raise
 
 
 def _enqueue_step(db: Session, run: WorkflowRunRecord, step: WorkflowStepRecord) -> dict:
@@ -551,6 +625,17 @@ def cancel_workflow(workflow_id: str) -> dict:
 
 def create_workflow_from_brief(request: WorkflowFromBriefRequest) -> dict:
     """Use Qwen to draft a plan, then persist a workflow that awaits explicit approval."""
+    request_hash = _request_digest(
+        request.model_dump(mode="json", exclude={"idempotency_key"})
+    )
+    existing = _existing_workflow(
+        str(request.project_id), request.idempotency_key, request_hash
+    )
+    if existing is not None:
+        existing["plan_model"] = settings.ollama_model
+        existing["approval_required"] = True
+        return existing
+
     plan = generate_creative_plan(
         request.brief,
         target_duration_seconds=request.target_duration_seconds,
@@ -559,16 +644,19 @@ def create_workflow_from_brief(request: WorkflowFromBriefRequest) -> dict:
     create_request = WorkflowCreateRequest(
         project_id=request.project_id,
         asset_id=request.asset_id,
+        idempotency_key=request.idempotency_key,
         brief=request.brief,
         language=request.language,
         creative_plan=CreativePlan.model_validate(plan.model_dump()),
         transcribe_audio=request.transcribe_audio,
         enhance_audio=request.enhance_audio,
         detection_prompt=request.detection_prompt,
+        tracking_prompt=request.tracking_prompt,
+        upscale_output=request.upscale_output,
         generate_video=request.generate_video,
         interpolate_generated_video=request.interpolate_generated_video,
     )
-    result = create_workflow_run(create_request)
+    result = create_workflow_run(create_request, request_hash_override=request_hash)
     result["plan_model"] = settings.ollama_model
     result["approval_required"] = True
     return result

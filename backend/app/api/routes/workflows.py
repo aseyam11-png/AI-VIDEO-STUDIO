@@ -23,6 +23,8 @@ def create_workflow(payload: WorkflowCreateRequest) -> dict:
     """Persist a proposed workflow. Nothing runs until the user approves it."""
     try:
         return create_workflow_run(payload)
+    except WorkflowConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except WorkflowRequestError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -34,6 +36,8 @@ def create_workflow_from_brief_route(payload: WorkflowFromBriefRequest) -> dict:
         return create_workflow_from_brief(payload)
     except OllamaError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except WorkflowConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except WorkflowRequestError as exc:
         status_code = 503 if str(exc).startswith("AI Director could not create a plan:") else 422
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc

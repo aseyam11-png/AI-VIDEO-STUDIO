@@ -23,6 +23,8 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("asset_id", sa.String(36), nullable=False),
+        sa.Column("idempotency_key", sa.String(160), nullable=False),
+        sa.Column("request_hash", sa.String(64), nullable=False),
         sa.Column("brief", sa.Text(), nullable=False),
         sa.Column("language", sa.String(12), nullable=False),
         sa.Column("plan_json", sa.JSON(), nullable=False),
@@ -34,6 +36,9 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
+        sa.UniqueConstraint(
+            "project_id", "idempotency_key", name="uq_workflow_runs_project_idempotency"
+        ),
         sa.ForeignKeyConstraint(
             ["project_id", "asset_id"],
             ["assets.project_id", "assets.id"],
