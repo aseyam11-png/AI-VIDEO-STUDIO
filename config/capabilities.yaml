@@ -1,0 +1,44 @@
+capabilities:
+  media_ingestion:
+    status: scaffold
+    tools: [ffprobe, ffmpeg]
+  scene_detection:
+    status: planned
+    tools: [pyscenedetect, opencv]
+  transcription:
+    status: candidate
+    tools: [whisperx]
+    locale_priority: [ar, en]
+  object_analysis:
+    status: planned
+    tools: [groundingdino, sam2]
+  semantic_asset_search:
+    status: deferred
+    tools: [open_clip, faiss]
+  video_generation:
+    status: candidate_requires_gpu_benchmark
+    tools: [comfyui, wan22_ti2v_5b]
+  motion_graphics:
+    status: planned
+    tools: [blender, svg_renderer]
+  timeline:
+    status: planned
+    tools: [opentimelineio]
+  rendering:
+    status: planned
+    tools: [ffmpeg]
+  audio_cleanup:
+    status: optional
+    tools: [deepfilternet]
+  source_separation:
+    status: deferred
+    tools: [demucs]
+  restoration:
+    status: optional
+    tools: [realesrgan, rife]
+  quality_assurance:
+    status: planned
+    tools: [ffmpeg_checks, vmaf, product_identity_lock]
+  capcut_handoff:
+    status: optional_windows_adapter
+    tools: [opentimelineio_export, srt_export, media_manifest]
