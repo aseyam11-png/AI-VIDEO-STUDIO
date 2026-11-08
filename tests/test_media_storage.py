@@ -1,6 +1,8 @@
 import hashlib
 import io
 
+import pytest
+
 from app.core.config import settings
 from app.media.storage import (
     asset_dir,
@@ -9,7 +11,6 @@ from app.media.storage import (
     get_project,
     ingest_file_stream,
 )
-import pytest
 
 
 def test_project_manifest_is_created_atomically(tmp_path, monkeypatch):
