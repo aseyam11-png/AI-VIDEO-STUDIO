@@ -117,7 +117,7 @@ WhisperX is not installed in the base image because it brings a large ML depende
 | Local Arabic transcription | Optional WhisperX adapter; dependency/model not installed |
 | OpenTimelineIO timeline generation | Implemented with media extra |
 | Simple cut-only FFmpeg preview render | Implemented for one source asset |
-| Automated media integration test | Added; CI result must pass |
+| Automated media integration test | **Passed in GitHub Actions** |
 | PostgreSQL-backed job state | Planned; not yet wired |
 | Durable queue, GPU scheduler and isolated workers | Not implemented |
 | LangGraph live LLM and agents | Placeholder only |
@@ -130,6 +130,10 @@ WhisperX is not installed in the base image because it brings a large ML depende
 
 This repository is public. Keep it free of secrets and private media. A public repository does not automatically grant an open-source license to its own code. The project-level license is intentionally unselected; third-party code, weights, datasets, and extensions retain their separate licenses. See docs/05-LICENSE-REVIEW.md and docs/12-PUBLIC-REPOSITORY-CHECKLIST.md.
 
+## Latest verification
+
+GitHub Actions run 83 passed on 2026-11-08: Ruff succeeded and pytest reported 16 passed, including a synthetic FFmpeg end-to-end media test. This validates the CI Linux environment only; deployment on a GPU server and testing with user-supplied media remain outstanding.
+
 ## Next step
 
-Run and pass the Phase 0.5 media integration test in GitHub Actions, then connect the Arabic UI to the project/media API. Do not provision paid GPU time or download large generation weights until the exact hardware, artifact licenses, and benchmark budget are verified.
+Connect the Arabic UI to the project/media API and move synchronous media work to durable background jobs. Do not provision paid GPU time or download large generation weights until the exact hardware, artifact licenses, and benchmark budget are verified.
