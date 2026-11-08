@@ -153,7 +153,7 @@ WhisperX is not installed in the base image because it brings a large ML depende
 | Wan/ComfyUI/SAM 2 production inference | Not installed or benchmarked |
 | Product Identity Lock | Design requirement; not implemented |
 | Arabic RTL web UI | Visual scaffold; not connected to API |
-| Phase 1 merge / PostgreSQL CI verification | CI passed on reviewed commit bb5f7db; latest concurrency/cleanup/role hardening pending CI |
+| Phase 1 merge / PostgreSQL CI verification | CI run 89 passed on commit 01d2e43; newer Compose secret-isolation change awaiting CI |
 | Production readiness | **Not ready** |
 
 ## Public repository notice
@@ -162,7 +162,7 @@ This repository is public. Keep it free of secrets and private media. A public r
 
 ## Latest verification
 
-GitHub Actions run 83 passed on 2026-11-08: Ruff succeeded and pytest reported 16 passed, including a synthetic FFmpeg end-to-end media test. This validates the CI Linux environment only; deployment on a GPU server and testing with user-supplied media remain outstanding.
+GitHub Actions run 89 passed on 2026-11-08: Ruff, Docker Compose configuration, PostgreSQL migration with a non-superuser migrator, runtime DML/DDL privilege checks, and pytest (29 passed, 2 warnings). This validates the CI Linux environment only; a full Compose lifecycle on Windows, user-media testing, authentication, production deployment, and GPU benchmarking remain outstanding. Phase 0.5 local Windows media acceptance was also completed manually.
 
 ## Next step
 

@@ -18,7 +18,7 @@ Allowed statuses:
 
 `queued → running → succeeded | failed | cancel_requested → cancelled`
 
-A retry is a new dispatch generation on the same job record and is permitted only for failed/cancelled jobs while the configured attempt budget remains.
+A retry is a new dispatch generation on the same job record and is permitted only for failed/cancelled jobs while the configured attempt budget remains. Successful upstream jobs and their output artifacts remain available, so a pipeline controller can continue from the next stage without re-running earlier successful stages. If a worker disappears during one media operation, recovery reruns that operation from its beginning; FFmpeg/PySceneDetect jobs do not yet support restoring an in-process encoder/detector cursor. This is an idempotent operation retry, not true mid-operation checkpoint resume. Step-level checkpoint restore for long-running model workflows is a later milestone.
 
 Progress is an integer checkpoint, not a fabricated FFmpeg percentage. `progress_stage`, `progress_message`, heartbeat timestamps, and append-only `job_events` explain current activity. A job reaches 100 only after the handler has verified its output.
 
@@ -40,11 +40,11 @@ Progress is an integer checkpoint, not a fabricated FFmpeg percentage. `progress
 - `media.timeline`
 - `media.render`
 
-Only validated payload fields are accepted. Arbitrary shell commands, filesystem paths, model URLs, and workflow definitions are not accepted in job payloads. All initial jobs route to the CPU queue; no GPU scheduling is enabled in this phase.
+Only validated payload fields are accepted. Arbitrary shell commands, filesystem paths, model URLs, and workflow definitions are not accepted in job payloads. A partial unique database index permits only one active job of a given operation type per asset. All initial jobs route to the CPU queue; no GPU scheduling is enabled in this phase.
 
 ## API
 
-- `POST /v1/jobs` — create a durable media job; requires `Idempotency-Key` in the request body.
+- `POST /v1/jobs` — create a durable media job; requires the `idempotency_key` JSON field.
 - `GET /v1/jobs?project_id=...` — list jobs with bounded pagination and optional status filter.
 - `GET /v1/jobs/{job_id}` — inspect state and progress checkpoints.
 - `GET /v1/jobs/{job_id}/events` — read the event history.
@@ -65,7 +65,7 @@ Without a configured `DATABASE_URL`, the API uses a SQLite file under `MEDIA_ROO
 
 ## Docker Compose stack
 
-The Compose stack runs PostgreSQL, Valkey, an Alembic migration one-shot, the API, a CPU worker, and Celery Beat. PostgreSQL and Valkey do not publish host ports. The API is bound to `127.0.0.1:8000`. PostgreSQL uses a bootstrap superuser only during first-volume initialization, a separate non-superuser migration owner for Alembic, and a restricted runtime role for the API/workers. The runtime role receives DML privileges on tables and sequences, but no schema DDL rights. Generate strong local secrets and store them only in an ignored local `.env`; never commit `.env`. The `database-init/01-roles.sh` initialization script runs only when PostgreSQL initializes an empty volume.
+The Compose stack runs PostgreSQL, Valkey, an Alembic migration one-shot, the API, a CPU worker, and Celery Beat. Only the PostgreSQL service receives bootstrap/migrator/runtime credential material; API, worker, and scheduler receive only the restricted runtime URL, and the migration service receives only the migrator URL. PostgreSQL and Valkey do not publish host ports. The API is bound to `127.0.0.1:8000`. PostgreSQL uses a bootstrap superuser only during first-volume initialization, a separate non-superuser migration owner for Alembic, and a restricted runtime role for the API/workers. The runtime role receives DML privileges on tables and sequences, but no schema DDL rights. Generate strong local secrets and store them only in an ignored local `.env`; never commit `.env`. The `database-init/01-roles.sh` initialization script runs only when PostgreSQL initializes an empty volume.
 
 PowerShell setup:
 

@@ -38,7 +38,6 @@ services:
   migrate:
     build: .
     restart: "no"
-    env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg://${DATABASE_MIGRATOR_USER:-video_studio_migrator}:${DATABASE_MIGRATOR_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
     command: ["python", "-m", "alembic", "upgrade", "head"]
@@ -50,8 +49,12 @@ services:
   api:
     build: .
     restart: unless-stopped
-    env_file: .env
     environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-AI Video Studio}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MEDIA_ROOT: /srv/video-studio/data
+      MAX_UPLOAD_GB: ${MAX_UPLOAD_GB:-20}
       DATABASE_URL: postgresql+psycopg://${DATABASE_RUNTIME_USER:-video_studio_runtime}:${DATABASE_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
       CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
     ports:
@@ -68,8 +71,12 @@ services:
   worker-cpu:
     build: .
     restart: unless-stopped
-    env_file: .env
     environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-AI Video Studio}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MEDIA_ROOT: /srv/video-studio/data
+      MAX_UPLOAD_GB: ${MAX_UPLOAD_GB:-20}
       DATABASE_URL: postgresql+psycopg://${DATABASE_RUNTIME_USER:-video_studio_runtime}:${DATABASE_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
       CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
     command:
@@ -86,8 +93,11 @@ services:
   scheduler:
     build: .
     restart: unless-stopped
-    env_file: .env
     environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-AI Video Studio}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MEDIA_ROOT: /srv/video-studio/data
       DATABASE_URL: postgresql+psycopg://${DATABASE_RUNTIME_USER:-video_studio_runtime}:${DATABASE_RUNTIME_PASSWORD}@postgres:5432/${POSTGRES_DB:-video_studio}
       CELERY_BROKER_URL: redis://:${VALKEY_PASSWORD}@valkey:6379/0
     command:

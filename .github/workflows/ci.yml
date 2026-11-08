@@ -70,6 +70,38 @@ jobs:
             echo "Runtime role unexpectedly has DDL privileges."
             exit 1
           fi
+      - name: Verify FastAPI with restricted PostgreSQL runtime role
+        env:
+          DATABASE_URL: postgresql+psycopg://video_studio_runtime:ci-runtime-password@localhost:5432/video_studio_ci
+          MEDIA_ROOT: ${{ runner.temp }}/ai-video-studio-runtime-media
+        run: |
+          python - <<'PY'
+          from fastapi.testclient import TestClient
+
+          from app.main import app
+
+          client = TestClient(app)
+          ready = client.get("/ready")
+          assert ready.status_code == 200, ready.text
+
+          created = client.post(
+              "/v1/projects",
+              json={
+                  "name": "Least privilege runtime test",
+                  "target_duration_seconds": 5,
+                  "target_resolution": "640x360",
+                  "target_fps": 24,
+                  "language": "ar",
+                  "brief": "Verify FastAPI writes using the restricted runtime role.",
+              },
+          )
+          assert created.status_code == 201, created.text
+          project_id = created.json()["id"]
+          fetched = client.get(f"/v1/projects/{project_id}")
+          assert fetched.status_code == 200, fetched.text
+          assert fetched.json()["id"] == project_id
+          print("FastAPI readiness, project create, and project read passed with runtime role.")
+          PY
       - name: Verify code quality
         run: ruff check backend tests
       - name: Run test suite

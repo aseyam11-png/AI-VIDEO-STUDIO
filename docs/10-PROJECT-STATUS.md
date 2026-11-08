@@ -2,14 +2,26 @@
 
 Last updated: 2026-11-08.
 
-## Verified latest CI
+## Verified CI
 
-- GitHub Actions workflow run: 83
+### Phase 1 latest verified run
+- GitHub Actions run: 89
+- Run URL: https://github.com/aseyam11-png/AI-VIDEO-STUDIO/actions/runs/42497165099
+- Commit: `01d2e43ce384dfdfb9a6879a3c6e49af92dec4f2`
+- Ruff: passed
+- PostgreSQL migration: passed using a non-superuser migrator role
+- Runtime privilege check: DML passed; schema DDL denied as intended
+- Docker Compose configuration: passed
+- Pytest: 29 passed, 2 warnings
+- This CI run verifies the implementation state on GitHub's Linux runner, not a full Docker Compose lifecycle on Windows, production deployment, or GPU benchmark.
+
+### Phase 0.5 baseline run
+- GitHub Actions run: 83
 - Run URL: https://github.com/aseyam11-png/AI-VIDEO-STUDIO/actions/runs/42487114504
 - Ruff: passed
 - Pytest: 16 passed
 - End-to-end fixture: synthetic video generated with FFmpeg, uploaded through the API, probed, proxied, scene-detected, converted to OTIO, rendered, and downloaded.
-- This is CI validation on GitHub's Linux runner, not a deployment or GPU benchmark.
+- Manual Windows acceptance: local user verified project creation, upload, proxy, scenes, OTIO, MP4 render, and MP4 download.
 
 ## Phase 1 implementation branch
 
@@ -20,7 +32,7 @@ Last updated: 2026-11-08.
 - Added PostgreSQL-backed metadata with filesystem media bytes retained under MEDIA_ROOT, plus an idempotent legacy manifest importer.
 - Added job submit/list/detail/events/cancel/retry APIs, strict per-operation payload allowlists, request hashing, and idempotency conflict handling.
 - Added transactional outbox dispatcher, Celery CPU worker, heartbeat-based stale job recovery, cancellation checkpoints, and dispatch-generation fencing.
-- Added synthetic background worker end-to-end test and PostgreSQL migration step to CI. CI result is pending until the branch push/PR workflow completes.
+- Added synthetic background worker end-to-end test, PostgreSQL migration validation, runtime least-privilege role validation, and Compose config validation to CI. Run 89 passed (29 tests, 2 warnings).
 - Progress is reported as stage checkpoints; actual encoder percentage is not yet measured.
 - This branch remains a local/private development surface without production authentication or public deployment hardening.
 
@@ -39,14 +51,16 @@ Last updated: 2026-11-08.
 | Preview render | Implemented | Cut-only render from one source asset using FFmpeg |
 | Media end-to-end test | **Passed** | GitHub Actions run 83; plus local Windows manual test of project/upload/proxy/scenes/OTIO/render/download |
 | FastAPI control plane | Phase 1 API on feature branch | Job API added; no production authentication yet |
-| PostgreSQL / Alembic | Implemented on Phase 1 branch | Schema + readiness check; CI migration check pending | 
-| Valkey / Celery | Implemented on Phase 1 branch | Transactional outbox, CPU worker, scheduler, retry/recovery; CI pending |
+| PostgreSQL / Alembic | Implemented on Phase 1 branch | Schema + readiness check; migration passed using a non-superuser migrator role |
+| Runtime DB role | Implemented on Phase 1 branch | Runtime DML allowed; DDL denied in CI |
+| Valkey / Celery | Implemented on Phase 1 branch | Transactional outbox, CPU worker, scheduler, retry/recovery; CI passed |
 | Arabic RTL web UI | Visual scaffold | Media upload and live API integration not wired |
 | GPU scheduler and isolated workers | Not implemented | Needed before CUDA transcription or generation |
 | Qwen / LangGraph agents | Placeholder/design | No live LLM connected |
 | Wan / ComfyUI / SAM 2 / Grounding DINO | Candidate only | Not installed or benchmarked |
 | Product Identity Lock | Design requirement | Not implemented |
 | CapCut handoff | Design only | Optional Windows-side adapter |
-| Production readiness | **Not ready** | Complete Phase 1+ and full end-to-end acceptance |
+| Phase 1 local Compose acceptance | Pending | Start PostgreSQL/Valkey/API/worker/scheduler on Windows and verify /ready plus a broker-backed job |
+| Production readiness | **Not ready** | Complete Phase 1+, authentication, operational recovery, security review, and full end-to-end acceptance |
 
 The Phase 0.5 API is a local/private development surface. Do not expose it to the public Internet; authentication and private-network deployment are required before remote use.
