@@ -11,7 +11,7 @@ from app.db.session import configure_database, get_engine, session_scope
 from app.main import app
 from app.services.legacy_import import import_legacy_manifests
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect
+from sqlalchemy import BigInteger, inspect
 from sqlalchemy.exc import IntegrityError
 
 
@@ -40,6 +40,8 @@ def test_alembic_upgrade_creates_phase1_schema(tmp_path, monkeypatch):
     assert "uq_jobs_active_asset_operation" in {
         item["name"] for item in inspector.get_indexes("jobs")
     }
+    asset_columns = {column["name"]: column for column in inspector.get_columns("assets")}
+    assert isinstance(asset_columns["size_bytes"]["type"], BigInteger)
     ready = TestClient(app).get("/ready")
     assert ready.status_code == 200, ready.text
 

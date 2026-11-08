@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.Column("original_filename", sa.String(240), nullable=False),
         sa.Column("stored_filename", sa.String(255), nullable=False),
         sa.Column("relative_path", sa.String(600), nullable=False),
-        sa.Column("size_bytes", sa.Integer(), nullable=False),
+        sa.Column("size_bytes", sa.BigInteger(), nullable=False),
         sa.Column("sha256", sa.String(64), nullable=False),
         sa.Column("status", sa.String(32), nullable=False),
         sa.Column("metadata_json", sa.JSON(), nullable=False),
