@@ -66,5 +66,4 @@ volumes:
   studio_data:
 
 networks:
-  studio:
-    internal: true
+  studio: {}
