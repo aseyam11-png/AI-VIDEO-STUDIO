@@ -318,6 +318,9 @@ def _finish_job(
             append_event(db, job, "succeeded", job.progress_message)
         job.finished_at = _now()
         job.heartbeat_at = _now()
+        from app.services.workflow_engine import advance_workflow_for_job
+
+        advance_workflow_for_job(db, job)
 
 
 def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
@@ -333,6 +336,9 @@ def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
             job.progress_stage = "cancelled"
             job.progress_message = "Cancelled before the worker claimed the job."
             append_event(db, job, "cancelled", job.progress_message)
+            from app.services.workflow_engine import advance_workflow_for_job
+
+            advance_workflow_for_job(db, job)
             return {"status": "cancelled"}
         if job.attempt_count >= job.max_attempts:
             job.status = "failed"
@@ -340,6 +346,9 @@ def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
             job.error_message = "The configured attempt budget has been exhausted."
             job.finished_at = _now()
             append_event(db, job, "failed", job.error_message)
+            from app.services.workflow_engine import advance_workflow_for_job
+
+            advance_workflow_for_job(db, job)
             return {"status": "failed"}
         job.status = "running"
         job.attempt_count += 1
@@ -357,6 +366,9 @@ def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
             job.progress_message,
             details={"attempt": job.attempt_count},
         )
+        from app.services.workflow_engine import mark_workflow_job_running
+
+        mark_workflow_job_running(db, job)
         snapshot = job_to_dict(job)
 
     stop_event = threading.Event()
@@ -450,5 +462,9 @@ def recover_stale_jobs() -> int:
                         created_at=_now(),
                     )
                 )
+            if job.status in {"failed", "cancelled"}:
+                from app.services.workflow_engine import advance_workflow_for_job
+
+                advance_workflow_for_job(db, job)
             recovered += 1
     return recovered
