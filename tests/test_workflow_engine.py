@@ -302,6 +302,7 @@ def test_workflow_request_replays_same_idempotency_key_and_rejects_changed_body(
 def test_workflow_can_plan_grounding_dino_and_sam2_before_video_editing(
     tmp_path, monkeypatch
 ):
+    monkeypatch.setattr(settings, "comfyui_base_url", "http://comfyui.test:8188")
     project, asset, _ = _project_asset(
         tmp_path, monkeypatch, filename="source.mp4", content=b"synthetic-video"
     )
