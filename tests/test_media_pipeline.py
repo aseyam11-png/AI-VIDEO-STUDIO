@@ -10,6 +10,11 @@ from app.media.storage import create_project
 def test_build_timeline_writes_otio_and_json(tmp_path, monkeypatch):
     pytest.importorskip("opentimelineio")
     monkeypatch.setattr(settings, "media_root", str(tmp_path))
+    monkeypatch.setattr(
+        pipeline,
+        "probe_media",
+        lambda _source: {"format": {"duration": "5.0"}, "streams": [{"codec_type": "video"}]},
+    )
     project = create_project(
         {
             "name": "Timeline test",
