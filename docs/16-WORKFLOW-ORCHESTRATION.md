@@ -22,6 +22,7 @@ A failure stops the run. Retrying the child job re-opens its workflow step. Canc
     {
       "project_id": "PROJECT_UUID",
       "asset_id": "VIDEO_ASSET_UUID",
+      "idempotency_key": "workflow-demo-ar-0001",
       "brief": "أنشئ إعلانًا سينمائيًا قصيرًا، اكتشف المشاهد المهمة، ثم صدّر MP4.",
       "language": "ar",
       "target_duration_seconds": 30,
@@ -48,7 +49,40 @@ A failure stops the run. Retrying the child job re-opens its workflow step. Canc
 
 6. When the workflow reports succeeded, its final render Job result contains the MP4 download URL.
 
-For a previously reviewed plan, use POST /v1/workflows with a creative_plan object rather than calling Qwen again.
+For a previously reviewed plan, use `POST /v1/workflows` with the same identifiers, a unique `idempotency_key`, and the complete `creative_plan` object rather than calling Qwen again. The required body shape is:
+
+```json
+{
+  "project_id": "PROJECT_UUID",
+  "asset_id": "VIDEO_ASSET_UUID",
+  "idempotency_key": "workflow-reviewed-plan-0001",
+  "brief": "خطة إنتاج تمت مراجعتها واعتمادها يدويًا.",
+  "language": "ar",
+  "creative_plan": {
+    "title": "عنوان الفيديو",
+    "logline": "وصف موجز للفكرة.",
+    "target_duration_seconds": 15,
+    "audience": "الجمهور المستهدف",
+    "visual_style": "أسلوب بصري واضح",
+    "color_palette": ["أسود", "ذهبي"],
+    "audio_direction": "اتجاه الصوت",
+    "scenes": [{
+      "index": 1,
+      "duration_seconds": 15,
+      "purpose": "تقديم الفكرة",
+      "visual_description": "وصف اللقطة",
+      "shot_type": "لقطة متوسطة",
+      "camera_movement": "حركة بطيئة",
+      "narration": "",
+      "on_screen_text": "",
+      "sound_design": "الصوت الأصلي"
+    }],
+    "production_notes": []
+  }
+}
+```
+
+For an image source, set `generate_video=true` and provide exactly one scene of at most 10 seconds. The first workflow version does not assemble several Wan-generated shots into a multi-scene film.
 
 ## Start Ollama without automatic weight downloads
 
