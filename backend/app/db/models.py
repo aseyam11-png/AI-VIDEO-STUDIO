@@ -4,8 +4,8 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
-    Boolean,
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
