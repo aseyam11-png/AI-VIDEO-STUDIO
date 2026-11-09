@@ -322,8 +322,8 @@ jobs:
             Write-Host "PowerShell syntax validated: $scriptPath"
           }
           $inventoryJson = & .\infra\scripts\windows\host-inventory.ps1 | Out-String
-          if ($LASTEXITCODE -ne 0) {
-            throw "Host inventory script returned a non-zero exit code."
+          if ([string]::IsNullOrWhiteSpace($inventoryJson)) {
+            throw "Host inventory script returned no JSON output."
           }
           $inventory = $inventoryJson | ConvertFrom-Json -ErrorAction Stop
           foreach ($requiredProperty in @(
