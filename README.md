@@ -116,7 +116,7 @@ Requirements: Python 3.11, FFmpeg/FFprobe, and the media extra.
 3. Copy .env.example to .env only if you need to override settings; replace placeholders with unique secrets.
 4. Set MEDIA_ROOT to a private directory outside the Git checkout.
 5. Run uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000.
-6. Open http://127.0.0.1:8000/docs.
+6. Open the Arabic Studio at http://127.0.0.1:8000/studio/ (API documentation remains at http://127.0.0.1:8000/docs).
 
 Docker Compose local development:
 
