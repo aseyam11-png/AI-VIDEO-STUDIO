@@ -523,10 +523,14 @@
         brief,
         language: $("plan-language").value,
         target_duration_seconds: Number($("target-duration").value),
-        transcribe_audio: $("transcribe-audio").checked,
-        enhance_audio: $("enhance-audio").checked,
-        detection_prompt: $("detection-prompt").value.trim() || null,
-        tracking_prompt: $("tracking-prompt").value.trim() || null,
+        transcribe_audio: !$("transcribe-audio").disabled && $("transcribe-audio").checked,
+        enhance_audio: !$("enhance-audio").disabled && $("enhance-audio").checked,
+        detection_prompt: $("detection-prompt").disabled
+          ? null
+          : $("detection-prompt").value.trim() || null,
+        tracking_prompt: $("tracking-prompt").disabled
+          ? null
+          : $("tracking-prompt").value.trim() || null,
         generate_video: false,
         interpolate_generated_video: false
       };
