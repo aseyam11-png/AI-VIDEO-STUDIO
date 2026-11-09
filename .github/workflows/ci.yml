@@ -291,3 +291,33 @@ jobs:
       - name: Stop Compose stack and remove CI volumes
         if: always()
         run: docker compose down -v --remove-orphans
+
+  windows-script-checks:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse Windows PowerShell scripts
+        shell: pwsh
+        run: |
+          $scriptPaths = @(
+            "infra/scripts/windows/host-inventory.ps1",
+            "infra/scripts/windows/model-runtime-preflight.ps1"
+          )
+          foreach ($scriptPath in $scriptPaths) {
+            if (-not (Test-Path -LiteralPath $scriptPath)) {
+              throw "Missing PowerShell script: $scriptPath"
+            }
+            $tokens = $null
+            $parseErrors = $null
+            $fullPath = (Resolve-Path -LiteralPath $scriptPath).Path
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $fullPath,
+              [ref]$tokens,
+              [ref]$parseErrors
+            ) | Out-Null
+            if ($parseErrors.Count -gt 0) {
+              $parseErrors | Format-List | Out-String | Write-Error
+              throw "PowerShell syntax validation failed: $scriptPath"
+            }
+            Write-Host "PowerShell syntax validated: $scriptPath"
+          }
