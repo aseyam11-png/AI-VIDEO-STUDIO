@@ -321,3 +321,36 @@ jobs:
             }
             Write-Host "PowerShell syntax validated: $scriptPath"
           }
+          $inventoryJson = & .\infra\scripts\windows\host-inventory.ps1 | Out-String
+          if ($LASTEXITCODE -ne 0) {
+            throw "Host inventory script returned a non-zero exit code."
+          }
+          $inventory = $inventoryJson | ConvertFrom-Json -ErrorAction Stop
+          foreach ($requiredProperty in @(
+            "generated_at_utc",
+            "operating_system",
+            "processor",
+            "memory",
+            "windows_gpu_devices",
+            "nvidia_smi_query",
+            "fixed_drives",
+            "docker",
+            "wsl_status"
+          )) {
+            if ($null -eq $inventory.PSObject.Properties[$requiredProperty]) {
+              throw "Host inventory is missing '$requiredProperty'."
+            }
+          }
+          foreach ($forbiddenProperty in @(
+            "password",
+            "secret",
+            "token",
+            "serial_number",
+            "ip_address",
+            "username"
+          )) {
+            if ($null -ne $inventory.PSObject.Properties[$forbiddenProperty]) {
+              throw "Host inventory must not include '$forbiddenProperty'."
+            }
+          }
+          Write-Host "Windows host inventory executed and returned valid, minimized JSON."
