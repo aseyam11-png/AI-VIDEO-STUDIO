@@ -358,3 +358,26 @@ def test_whisperx_adapter_honors_cancellation_before_loading(tmp_path, monkeypat
             cache_dir=tmp_path / "cache",
             cancel_check=lambda: True,
         )
+
+
+def test_system_capabilities_report_phase3_without_claiming_unverified_inference(monkeypatch):
+    from app.main import capabilities as system_capabilities
+
+    monkeypatch.setattr(settings, "ollama_base_url", "http://ollama.test:11434")
+    monkeypatch.setattr(settings, "comfyui_base_url", "http://comfyui.test:8188")
+
+    result = system_capabilities()
+
+    assert result["phase"] == "3"
+    assert result["implemented_phases"] == ["0.5", "1", "2", "3"]
+    assert result["workflow_engine"] == {
+        "implemented": True,
+        "execution_mode": "sequential_v1",
+        "approval_required_before_execution": True,
+        "general_branching_dag": False,
+    }
+    assert result["model_runtimes"]["ollama_configured"] is True
+    assert result["model_runtimes"]["comfyui_configured"] is True
+    assert result["model_runtimes"]["real_inference_verified"] is False
+    assert result["video_generation_adapter"] is True
+    assert result["video_generation_inference_verified"] is False
