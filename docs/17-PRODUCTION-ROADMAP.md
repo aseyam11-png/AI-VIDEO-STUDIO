@@ -34,6 +34,8 @@ The following gaps remain open:
 
 ## 3. Phase 4 — target-host model runtime acceptance
 
+The read-only Windows inventory helper and its Windows-runner execution test are merged in [PR #6](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/6). The remaining entry gate is to run it on the actual target machine and use that report to choose runtime placement and model sizes.
+
 Do not download every checkpoint at once. Use the following order:
 
 1. Run `infra/scripts/windows/host-inventory.ps1` and record the host OS, CPU, RAM, GPU/VRAM, driver, free disk space, Docker and WSL versions. Use `-MediaPath` to identify the drive reserved for private media/model storage.
