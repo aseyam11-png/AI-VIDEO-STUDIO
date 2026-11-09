@@ -4,6 +4,7 @@
   const $ = (id) => document.getElementById(id);
   const state = {
     projects: [],
+    modelStatus: null,
     project: null,
     assets: [],
     selectedAsset: null,
@@ -107,11 +108,67 @@
   }
 
   function setProjectControls() {
-    const ready = Boolean(state.project && state.selectedAsset && !state.uploading);
+    const qwenReady = Boolean(state.modelStatus?.models?.["qwen3.5-9b-q4_K_M"]?.ready);
+    const ready = Boolean(state.project && state.selectedAsset && !state.uploading && qwenReady);
     $("generate-plan").disabled = !ready;
     $("project-summary").textContent = state.project
       ? `${state.project.name} · ${state.project.target_resolution || "الدقة الافتراضية"} · ${state.project.language === "en" ? "English" : "العربية"}`
       : "اختر مشروعًا أو أنشئ مشروعًا جديدًا.";
+  }
+
+  async function loadModelStatus() {
+    const director = $("director-readiness");
+    const summary = $("model-readiness");
+    try {
+      const status = await api("/v1/models/status", { signal: AbortSignal.timeout(10000) });
+      state.modelStatus = status;
+      const models = status.models || {};
+      const qwen = models["qwen3.5-9b-q4_K_M"] || {};
+      if (qwen.ready) {
+        director.textContent = "Qwen موجود في Ollama. لم يُعتمد الاستدلال الحقيقي بعد؛ اختبر الخطة الأولى قبل الإنتاج.";
+        director.className = "hint readiness-good";
+      } else {
+        director.textContent = "المخرج الذكي غير جاهز: شغّل Ollama وثبّت النموذج qwen3.5:9b-q4_K_M ثم أعد تحميل الصفحة.";
+        director.className = "hint readiness-warning";
+      }
+
+      const whisper = models.whisperx || {};
+      const deepfilter = models.deepfilternet || {};
+      const grounding = models["grounding-dino"] || {};
+      const sam2 = models.sam2 || {};
+      const optional = [
+        { id: "transcribe-audio", ready: Boolean(whisper.worker_enabled), label: "WhisperX" },
+        { id: "enhance-audio", ready: Boolean(deepfilter.configured), label: "DeepFilterNet" },
+        { id: "detection-prompt", ready: Boolean(grounding.workflow_configured), label: "Grounding DINO" },
+        { id: "tracking-prompt", ready: Boolean(sam2.workflow_configured), label: "SAM 2" }
+      ];
+      optional.forEach((item) => {
+        const input = $(item.id);
+        input.disabled = !item.ready;
+        const label = input.closest("label") || input.parentElement;
+        if (label) label.classList.toggle("option-disabled", !item.ready);
+      });
+      const readyNames = optional.filter((item) => item.ready).map((item) => item.label);
+      const missingNames = optional.filter((item) => !item.ready).map((item) => item.label);
+      const messages = [];
+      messages.push(qwen.ready ? "Qwen: النموذج موجود" : "Qwen: غير جاهز");
+      if (readyNames.length) messages.push("خيارات مهيأة: " + readyNames.join("، "));
+      if (missingNames.length) messages.push("غير مهيأ: " + missingNames.join("، "));
+      messages.push("جاهزية الإعداد لا تعني إثبات جودة الاستدلال.");
+      summary.textContent = messages.join(" · ");
+      summary.className = "hint readiness-summary";
+      setProjectControls();
+    } catch (error) {
+      state.modelStatus = null;
+      director.textContent = "تعذّر فحص Ollama. تأكد من تشغيل الـAPI والاتصال بخدمة النماذج.";
+      director.className = "hint readiness-warning";
+      summary.textContent = "حالة الخدمات غير معروفة. لم يتم تمكين الخيارات الاختيارية.";
+      summary.className = "hint readiness-warning";
+      ["transcribe-audio","enhance-audio","detection-prompt","tracking-prompt"].forEach((id) => {
+        $(id).disabled = true;
+      });
+      setProjectControls();
+    }
   }
 
   async function healthCheck() {
@@ -441,6 +498,11 @@
       notice("اختر مشروعًا وارفع فيديو أولًا.", "error");
       return;
     }
+    const qwenReady = Boolean(state.modelStatus?.models?.["qwen3.5-9b-q4_K_M"]?.ready);
+    if (!qwenReady) {
+      notice("لا يمكن إنشاء الخطة قبل تشغيل Ollama وتثبيت نموذج Qwen المحدد.", "error");
+      return;
+    }
     const brief = $("creative-brief").value.trim();
     if (brief.length < 20) {
       notice("اكتب وصفًا من 20 حرفًا على الأقل حتى يستطيع المخرج فهم المطلوب.", "error");
@@ -628,6 +690,7 @@
     $("stop-workflow").addEventListener("click", cancelWorkflow);
     bindUpload();
     await healthCheck();
+    await loadModelStatus();
     try {
       await loadProjects();
       if (!state.projects.length) notice("ابدأ بإنشاء مشروع جديد من القائمة الجانبية.", "info");
