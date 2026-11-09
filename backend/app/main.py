@@ -13,8 +13,8 @@ app = FastAPI(
     title=settings.app_name,
     version="0.4.0",
     description=(
-        "Phase 2 adapters for local model runtimes and specialist media jobs over the durable "
-        "Phase 1 control plane."
+        "Arabic-first video production API with durable sequential workflows, "
+        "approved local model adapters, and deterministic media processing."
     ),
 )
 app.include_router(api_router)
@@ -60,8 +60,10 @@ def readiness() -> dict:
 
 @app.get("/v1/system/capabilities", tags=["system"])
 def capabilities() -> dict:
+    """Report implemented control-plane features without overstating model readiness."""
     return {
-        "phase": "1",
+        "phase": "3",
+        "implemented_phases": ["0.5", "1", "2", "3"],
         "media_ingestion": True,
         "ffprobe": True,
         "proxy_generation": True,
@@ -71,19 +73,29 @@ def capabilities() -> dict:
         "database_backed_projects_and_assets": True,
         "durable_job_api": True,
         "transactional_outbox": True,
-        "worker_execution": "Celery CPU and model queues; requires workers and scheduler",
+        "worker_execution": "Celery control, CPU, speech and single-concurrency model queues; workers must be running",
+        "workflow_engine": {
+            "implemented": True,
+            "execution_mode": "sequential_v1",
+            "approval_required_before_execution": True,
+            "general_branching_dag": False,
+        },
         "model_adapters": True,
-        "local_qwen_director": bool(settings.ollama_base_url),
-        "comfyui_workflow_runtime": bool(settings.comfyui_base_url),
+        "model_runtimes": {
+            "ollama_configured": bool(settings.ollama_base_url),
+            "comfyui_configured": bool(settings.comfyui_base_url),
+            "real_inference_verified": False,
+        },
         "database_migrations_required": True,
-        "local_whisperx": "optional_not_installed_by_default",
-        "gpu_worker_enabled": False,
-        "video_generation_enabled": False,
+        "local_whisperx": "optional_worker_and_model_required",
+        "gpu_scheduling": "single_concurrency_model_queue; target_hardware_not_benchmarked",
+        "video_generation_adapter": True,
+        "video_generation_inference_verified": False,
         "external_model_apis_enabled": False,
+        "model_weights_downloaded_automatically": False,
         "note": (
-            "Phase 2 adds specialist model adapters and an isolated model-job queue. Actual "
-            "inference requires private runtimes, reviewed workflow files and "
-            "explicitly provisioned "
-            "weights; the application and CI never download model weights automatically."
+            "A configured runtime or implemented adapter is not proof of a successful model run. "
+            "Real inference, output validation and target-GPU acceptance must be recorded "
+            "separately for every enabled model."
         ),
     }
