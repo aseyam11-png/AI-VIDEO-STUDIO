@@ -94,7 +94,13 @@ def get_model_capabilities() -> dict:
         )
 
     return {
-        "phase": "3",\n        "workflow_engine": {\n            "implemented": True,\n            "execution_mode": "sequential_v1",\n            "approval_required_before_execution": True,\n            "general_branching_dag": False,\n        },
+        "phase": "3",
+        "workflow_engine": {
+            "implemented": True,
+            "execution_mode": "sequential_v1",
+            "approval_required_before_execution": True,
+            "general_branching_dag": False,
+        },
         "weight_policy": "No model weights are downloaded by application startup or CI.",
         "runtimes": {"ollama": ollama, "comfyui": comfyui},
         "models": {
