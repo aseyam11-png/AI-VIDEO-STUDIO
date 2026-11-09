@@ -88,7 +88,10 @@ def capabilities() -> dict:
         "database_backed_projects_and_assets": True,
         "durable_job_api": True,
         "transactional_outbox": True,
-        "worker_execution": "Celery control, CPU, speech and single-concurrency model queues; workers must be running",
+        "worker_execution": (
+            "Celery control, CPU, speech and single-concurrency model queues; "
+            "workers must be running"
+        ),
         "workflow_engine": {
             "implemented": True,
             "execution_mode": "sequential_v1",
