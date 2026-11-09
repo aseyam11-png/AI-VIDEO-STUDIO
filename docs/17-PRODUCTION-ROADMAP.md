@@ -24,7 +24,7 @@ The following gaps remain open:
 - No accepted end-to-end test using the target machine's real Ollama model, ComfyUI server, exported workflows, custom nodes and checkpoints.
 - No recorded GPU memory/performance benchmark for the selected hardware.
 - The five ComfyUI workflow registry entries must be populated from actual API-exported workflow JSON; placeholder node IDs/input names must not be guessed.
-- An initial connected Arabic RTL UI is under review in [PR #5](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/5). It covers project creation/history, video upload, Qwen plan review/approval, workflow monitoring and MP4 preview/download; it is not yet merged or accepted on the target host.
+- An initial connected Arabic RTL UI is merged in [PR #5](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/5). It covers project creation/history, video upload, Qwen plan review/approval, workflow monitoring, model-readiness indicators and MP4 preview/download. Browser acceptance on the target host remains open.
 - The Workflow Engine v1 is sequential. It is not a general branching DAG or autonomous multi-agent editing director.
 - Wan image-to-video workflow v1 is limited to one generated shot up to 10 seconds; multi-shot assembly is not implemented.
 - Current deterministic timeline rendering is cut-only and single-source. Layered timelines, transitions, titles/subtitles, motion graphics, multi-source editing and audio mix automation remain incomplete.
