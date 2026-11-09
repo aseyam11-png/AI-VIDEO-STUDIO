@@ -21,6 +21,7 @@ from app.media.storage import (
     get_asset,
     project_dir,
     read_json,
+    register_generated_video_asset,
     update_asset_manifest,
 )
 from app.schemas.jobs import JobType
@@ -154,6 +155,19 @@ def _execute_media_job(
             project_id, asset_id, job["id"], source, payload, cancel_check=cancel_check
         )
         progress(95, "audio_muxed", "Enhanced audio was muxed into a new video file.")
+        generated_path = project_dir(project_id) / result["relative_path"]
+        output_asset = register_generated_video_asset(
+            project_id,
+            job["id"],
+            generated_path,
+            max_bytes=settings.max_model_output_bytes,
+        )
+        result["output_asset_id"] = output_asset["id"]
+        result["output_asset"] = {
+            "id": output_asset["id"],
+            "asset_type": output_asset["asset_type"],
+            "relative_path": output_asset["relative_path"],
+        }
         return result
 
     if job_type in {
@@ -171,13 +185,70 @@ def _execute_media_job(
         if asset_type not in {"video", "image"}:
             raise ValueError("The selected model workflow requires an image or video asset.")
         progress(10, "preparing_model_workflow", "Preparing the approved ComfyUI workflow.")
-        return execute_comfyui_job(
+        result = execute_comfyui_job(
             job, source, progress=progress, cancel_check=cancel_check
         )
+        if job_type in {
+            JobType.VIDEO_GENERATE.value,
+            JobType.VIDEO_INTERPOLATE.value,
+            JobType.VIDEO_UPSCALE.value,
+        }:
+            video_output = next(
+                (
+                    output
+                    for output in result.get("outputs", [])
+                    if any(
+                        stream.get("codec_type") == "video"
+                        for stream in (output.get("metadata", {}).get("streams", []))
+                    )
+                ),
+                None,
+            )
+            if (
+                job_type == JobType.VIDEO_UPSCALE.value
+                and asset_type == "video"
+                and video_output is None
+            ):
+                raise ValueError(
+                    "The configured Real-ESRGAN workflow did not return a video. "
+                    "Video output is required before a downstream timeline/export step."
+                )
+            if video_output is not None:
+                generated_path = (
+                    project_dir(project_id)
+                    / result["files_directory"]
+                    / video_output["saved_as"]
+                )
+                output_asset = register_generated_video_asset(
+                    project_id,
+                    job["id"],
+                    generated_path,
+                    max_bytes=settings.max_model_output_bytes,
+                )
+                result["output_asset_id"] = output_asset["id"]
+                result["output_asset"] = {
+                    "id": output_asset["id"],
+                    "asset_type": output_asset["asset_type"],
+                    "relative_path": output_asset["relative_path"],
+                }
+        return result
 
     if job_type == JobType.MOTION_BLENDER.value:
         progress(10, "preparing_blender", "Validating the approved Blender project template.")
         result = execute_blender_job(job, cancel_check=cancel_check)
+        generated_path = project_dir(project_id) / result["relative_path"]
+        output_asset = register_generated_video_asset(
+            project_id,
+            job["id"],
+            generated_path,
+            max_bytes=settings.max_model_output_bytes,
+        )
+        result["output_asset_id"] = output_asset["id"]
+        result["output_asset"] = {
+            "id": output_asset["id"],
+            "asset_type": output_asset["asset_type"],
+            "relative_path": output_asset["relative_path"],
+        }
         progress(95, "blender_rendered", "Blender completed the motion graphics render.")
         return result
 
@@ -318,6 +389,9 @@ def _finish_job(
             append_event(db, job, "succeeded", job.progress_message)
         job.finished_at = _now()
         job.heartbeat_at = _now()
+        from app.services.workflow_engine import advance_workflow_for_job
+
+        advance_workflow_for_job(db, job)
 
 
 def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
@@ -333,6 +407,9 @@ def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
             job.progress_stage = "cancelled"
             job.progress_message = "Cancelled before the worker claimed the job."
             append_event(db, job, "cancelled", job.progress_message)
+            from app.services.workflow_engine import advance_workflow_for_job
+
+            advance_workflow_for_job(db, job)
             return {"status": "cancelled"}
         if job.attempt_count >= job.max_attempts:
             job.status = "failed"
@@ -340,6 +417,9 @@ def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
             job.error_message = "The configured attempt budget has been exhausted."
             job.finished_at = _now()
             append_event(db, job, "failed", job.error_message)
+            from app.services.workflow_engine import advance_workflow_for_job
+
+            advance_workflow_for_job(db, job)
             return {"status": "failed"}
         job.status = "running"
         job.attempt_count += 1
@@ -357,6 +437,9 @@ def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
             job.progress_message,
             details={"attempt": job.attempt_count},
         )
+        from app.services.workflow_engine import mark_workflow_job_running
+
+        mark_workflow_job_running(db, job)
         snapshot = job_to_dict(job)
 
     stop_event = threading.Event()
@@ -450,5 +533,13 @@ def recover_stale_jobs() -> int:
                         created_at=_now(),
                     )
                 )
+            if job.status in {"failed", "cancelled"}:
+                from app.services.workflow_engine import advance_workflow_for_job
+
+                advance_workflow_for_job(db, job)
+            elif job.status == "queued":
+                from app.services.workflow_engine import mark_workflow_job_queued
+
+                mark_workflow_job_queued(db, job)
             recovered += 1
     return recovered

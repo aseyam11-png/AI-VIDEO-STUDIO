@@ -5,7 +5,14 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from app.core.config import settings
-from app.db.models import AssetRecord, JobEventRecord, JobRecord, OutboxRecord, ProjectRecord
+from app.db.models import (
+    AssetRecord,
+    JobEventRecord,
+    JobRecord,
+    OutboxRecord,
+    ProjectRecord,
+    WorkflowStepRecord,
+)
 from app.db.session import session_scope
 from app.schemas.jobs import JobCreate, JobType
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -454,6 +461,10 @@ def cancel_job(job_id: str) -> dict[str, Any]:
             pass
         else:
             raise JobConflictError(f"Cannot cancel a job in state '{job.status}'.")
+        if job.status == "cancelled":
+            from app.services.workflow_engine import advance_workflow_for_job
+
+            advance_workflow_for_job(db, job)
         return job_to_dict(job)
 
 
@@ -505,6 +516,20 @@ def retry_job(job_id: str) -> dict[str, Any]:
                 details={"retry_count": job.retry_count},
             )
             _create_outbox(db, job)
+            workflow_step = db.scalar(
+                select(WorkflowStepRecord).where(WorkflowStepRecord.job_id == job.id)
+            )
+            if workflow_step is not None:
+                from app.db.models import WorkflowRunRecord
+
+                workflow_step.status = "queued"
+                workflow_step.error_message = None
+                workflow_step.finished_at = None
+                workflow_run = db.get(WorkflowRunRecord, workflow_step.workflow_id)
+                if workflow_run is not None:
+                    workflow_run.status = "queued"
+                    workflow_run.error_message = None
+                    workflow_run.finished_at = None
             result = job_to_dict(job)
         return result
     except IntegrityError as exc:

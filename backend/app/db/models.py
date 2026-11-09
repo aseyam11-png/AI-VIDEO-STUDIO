@@ -222,3 +222,89 @@ class OutboxRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )
+
+
+class WorkflowRunRecord(Base):
+    __tablename__ = "workflow_runs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "asset_id"],
+            ["assets.project_id", "assets.id"],
+            name="fk_workflow_runs_project_asset_scope",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "project_id", "idempotency_key", name="uq_workflow_runs_project_idempotency"
+        ),
+        CheckConstraint(
+            "status IN ('awaiting_approval', 'queued', 'running', "
+            "'cancel_requested', 'succeeded', 'failed', 'cancelled')",
+            name="ck_workflow_runs_status",
+        ),
+        Index("ix_workflow_runs_project_created", "project_id", "created_at"),
+        Index("ix_workflow_runs_status_updated", "status", "updated_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    asset_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(160), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    brief: Mapped[str] = mapped_column(Text, nullable=False)
+    language: Mapped[str] = mapped_column(String(12), nullable=False, default="ar")
+    plan_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    options_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="awaiting_approval"
+    )
+    current_step_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WorkflowStepRecord(Base):
+    __tablename__ = "workflow_steps"
+    __table_args__ = (
+        UniqueConstraint("workflow_id", "sequence", name="uq_workflow_steps_sequence"),
+        UniqueConstraint("job_id", name="uq_workflow_steps_job"),
+        CheckConstraint(
+            "status IN ('planned', 'queued', 'running', 'succeeded', "
+            "'failed', 'cancel_requested', 'cancelled')",
+            name="ck_workflow_steps_status",
+        ),
+        Index("ix_workflow_steps_workflow_status", "workflow_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    workflow_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workflow_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False)
+    tool_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    asset_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("assets.id", ondelete="RESTRICT"), nullable=False
+    )
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="planned")
+    job_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("jobs.id", ondelete="SET NULL"), nullable=True
+    )
+    result_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
