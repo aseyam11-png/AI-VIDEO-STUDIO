@@ -118,6 +118,8 @@ Requirements: Python 3.11, FFmpeg/FFprobe, and the media extra.
 5. Run uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000.
 6. Open the Arabic Studio at http://127.0.0.1:8000/studio/ (API documentation remains at http://127.0.0.1:8000/docs).
 
+For target-machine specifications before model setup, see [Windows Host Inventory](docs/18-WINDOWS-HOST-INVENTORY.md).
+
 Docker Compose local development:
 
 1. Copy .env.example to .env.
@@ -166,7 +168,7 @@ This repository is public. Keep it free of secrets and private media. A public r
 
 ## Next step
 
-The first connected Arabic UI is merged in [PR #5](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/5). validate the browser flow on the target host, then provision and smoke-test Ollama/Qwen and ComfyUI. Complete real-media, GPU, security, backup and restore acceptance before calling the studio production-ready. Do not download large weights until the actual GPU, disk budget and artifact licenses have been checked.
+The connected Arabic UI is merged. The next step is to run the [Windows Host Inventory](docs/18-WINDOWS-HOST-INVENTORY.md), then provision and smoke-test Ollama/Qwen and ComfyUI. Complete real-media, GPU, security, backup and restore acceptance before calling the studio production-ready. Do not download large weights until the actual GPU, disk budget and artifact licenses have been checked.
 
 
 ## Phase 2 specialist model integrations
