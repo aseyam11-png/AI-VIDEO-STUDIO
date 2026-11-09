@@ -1,108 +1,88 @@
-# Project Status
+# AI Video Studio — Project Status
 
-Last updated: 2026-11-08.
+**Last updated:** 2026-11-09  
+**Repository:** `aseyam11-png/AI-VIDEO-STUDIO`  
+**Default branch:** `main`  
+**Release state:** Not production-ready
 
-## Verified CI
+## Current verified baseline
 
-### Phase 1 latest verified run
-- GitHub Actions run: 95
-- Run URL: https://github.com/aseyam11-png/AI-VIDEO-STUDIO/actions/runs/42498886302
-- Commit: `b88b7a81e0e31a3531a79a315276124d9cb29d00`
-- Ruff: passed
-- PostgreSQL migration: passed using a non-superuser migrator role
-- Runtime privilege check: DML passed; schema DDL denied as intended
-- FastAPI readiness, project creation, and project read: passed using the restricted runtime role
-- Docker Compose configuration: passed
-- Pytest: 29 passed in 3.68 seconds
-- Full Compose integration: passed through PostgreSQL → transactional outbox → Valkey → control worker → CPU worker; Proxy, Scenes, Timeline, Render, MP4 download and FFprobe validation all succeeded.
-- This CI run verifies the implementation on GitHub's Linux runner, not yet a full Compose lifecycle on the user's Windows machine, production deployment, or GPU benchmark.
+| Phase | Scope | Status |
+|---|---|---|
+| 0.5 | Project/media API, secure upload, proxy, scene detection, OTIO and simple FFmpeg export | Implemented; local Windows acceptance is recorded in the project history |
+| 1 | PostgreSQL metadata, durable jobs/events, transactional outbox, Celery/Valkey and CPU worker recovery | Merged into `main` |
+| 2 | Ollama and specialist model adapters, dedicated model/speech queues and unified Tools API | Merged into `main`; actual model runtimes and weights are not yet accepted |
+| 3 | Durable sequential Workflow Engine, Qwen plan approval and job/asset handoff | Merged into `main` by PR #4 |
 
-### Phase 0.5 baseline run
-- GitHub Actions run: 83
-- Run URL: https://github.com/aseyam11-png/AI-VIDEO-STUDIO/actions/runs/42487114504
-- Ruff: passed
-- Pytest: 16 passed
-- End-to-end fixture: synthetic video generated with FFmpeg, uploaded through the API, probed, proxied, scene-detected, converted to OTIO, rendered, and downloaded.
-- Manual Windows acceptance: local user verified project creation, upload, proxy, scenes, OTIO, MP4 render, and MP4 download.
+### Phase 3 CI evidence
 
-## Phase 1 implementation branch
+- Pull request: [#4 — Durable AI workflow orchestration](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/4)
+- Workflow run: [GitHub Actions #120](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/actions/runs/42519328429)
+- Tested commit: `91c62b87110f86e2bfd211a744039260c1f63ad5`
+- `python-checks`: passed
+- `compose-integration`: passed
+- Merge commit: `29bc06bf334c329eb0396c0f821cc20b6eaaffe1`
 
-- Branch: `feat/phase-1-durable-job-engine`
-- Base: `bcbcc941f4bf9967c16c5b9f6d67e4b810c2c8ef` (Phase 0.5 verified baseline)
-- Main is unchanged; Phase 1 is under review on its feature branch.
-- Added Alembic schema for projects, assets, jobs, job events, and transactional outbox records.
-- Added PostgreSQL-backed metadata with filesystem media bytes retained under MEDIA_ROOT, plus an idempotent legacy manifest importer.
-- Added job submit/list/detail/events/cancel/retry APIs, strict per-operation payload allowlists, request hashing, and idempotency conflict handling.
-- Added transactional outbox dispatcher, dedicated Celery `control` and `cpu` queues/workers, heartbeat-based stale job recovery, cancellation checkpoints, and dispatch-generation fencing.
-- Media sizes use PostgreSQL BIGINT to match the configured upload size range.
-- Added synthetic background worker end-to-end test, PostgreSQL migration validation, runtime least-privilege role validation, and full Compose broker-backed media pipeline validation. Run 95 passed (29 tests plus all four media jobs in Compose).
-- Progress is reported as stage checkpoints; actual encoder percentage is not yet measured.
-- This branch remains a local/private development surface without production authentication or public deployment hardening.
+This proves the tested Python and Linux Compose paths only. It does not prove target-Windows Compose acceptance, real Ollama/ComfyUI inference, GPU compatibility, output quality or a production deployment.
+
+### Phase 1 CI evidence
+
+- Workflow run: [GitHub Actions #95](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/actions/runs/42498886302)
+- PostgreSQL migration under a non-superuser migrator: passed.
+- Runtime DML allowed and schema DDL denied: passed.
+- FastAPI readiness and project create/read using the restricted runtime role: passed.
+- Full Linux Compose media path: Outbox → Valkey → Celery → Proxy → Scenes → Timeline → Render → MP4 download/FFprobe: passed.
+- Pytest: 29 passed.
+
+### Phase 0.5 baseline
+
+- Workflow run: [GitHub Actions #83](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/actions/runs/42487114504)
+- Pytest: 16 passed.
+- Synthetic video upload, probing, proxy, scene detection, OTIO, render and download: passed.
+- Manual Windows acceptance for the local Phase 0.5 flow is recorded in the prior project status.
 
 ## Component status
 
-| Area | Status | Evidence / next action |
+| Area | Current status | Remaining acceptance |
 |---|---|---|
-| GitHub repository | Public repository populated | Keep secrets and private media out |
-| Architecture, roadmap, risk register | Drafted | Implement and attach acceptance evidence |
-| Project creation | Implemented on Phase 1 branch | PostgreSQL record plus JSON compatibility manifest |
-| Video/image upload | Implemented on Phase 1 branch | Filesystem bytes plus PostgreSQL metadata, extension allowlist, SHA-256 and FFprobe validation |
-| Proxy generation | Implemented | FFmpeg H.264 proxy; covered by end-to-end test |
-| Scene detection | Implemented | PySceneDetect ContentDetector; covered by end-to-end test |
-| Arabic transcription | Optional adapter | WhisperX not installed by default; CPU-only in Phase 0.5 |
-| Timeline | Implemented | OpenTimelineIO file plus JSON manifest |
-| Preview render | Implemented | Cut-only render from one source asset using FFmpeg |
-| Media end-to-end test | **Passed** | GitHub Actions run 83; plus local Windows manual test of project/upload/proxy/scenes/OTIO/render/download |
-| FastAPI control plane | Phase 1 API on feature branch | Job API added; no production authentication yet |
-| PostgreSQL / Alembic | Implemented on Phase 1 branch | Schema + readiness check; migration passed using a non-superuser migrator role; asset sizes are BIGINT |
-| Runtime DB role | Implemented on Phase 1 branch | Runtime DML allowed; DDL denied in CI; FastAPI create/read verified |
-| Valkey / Celery | Implemented on Phase 1 branch | Transactional outbox, control + CPU workers, scheduler, retry/recovery; full Compose media pipeline passed |
-| Arabic RTL web UI | Visual scaffold | Media upload and live API integration not wired |
-| GPU scheduler and isolated workers | Not implemented | Needed before CUDA transcription or generation |
-| Qwen / LangGraph agents | Placeholder/design | No live LLM connected |
-| Wan / ComfyUI / SAM 2 / Grounding DINO | Candidate only | Not installed or benchmarked |
-| Product Identity Lock | Design requirement | Not implemented |
-| CapCut handoff | Design only | Optional Windows-side adapter |
-| Phase 1 local Compose acceptance | Pending on Windows | Run the feature branch in a separate clone; verify /ready, import old manifests, then submit a broker-backed media job |
-| Production readiness | **Not ready** | Complete Phase 1+, authentication, operational recovery, security review, and full end-to-end acceptance |
+| Project and asset API | Implemented | Real user-media testing at configured size limits |
+| Media validation and storage | Implemented | Windows host volume/permissions and disk exhaustion tests |
+| Proxy and scene detection | Implemented | More codecs, frame rates and varied real media |
+| Timeline and rendering | Cut-only, one-source implementation | Multi-source, layers, transitions, titles, subtitles and audio mix |
+| PostgreSQL/Alembic | Implemented | Fresh production DB upgrade and restore drill |
+| Durable jobs and outbox | Implemented | Target-host restart/failure/recovery acceptance |
+| Model adapters and Tools API | Implemented | Real runtime provisioning and successful inference |
+| Qwen/Ollama | Adapter and schema validation implemented | Install exact model, Arabic inference, schema/output review and GPU/RAM measurement |
+| ComfyUI / Grounding DINO / SAM 2 / Wan / Real-ESRGAN / RIFE | Allowlisted adapters implemented | Actual API-exported workflow JSON, node/input registry, custom nodes, checkpoints and smoke jobs |
+| WhisperX | Optional dedicated speech worker adapter | Enable worker, explicit model load and Arabic transcription test |
+| DeepFilterNet | CPU adapter | Install explicit script/checkpoint and validate audio output |
+| Blender | Reviewed-template adapter | Install executable/template and perform actual render |
+| Workflow Engine | Durable sequential v1 merged | Real runtime chain; general branching DAG is future work |
+| Wan multi-shot assembly | Not implemented | Multi-shot planning, generation, assembly and QA |
+| Arabic RTL UI | Not connected to backend API | Implement complete upload → plan → approval → status → preview/download flow |
+| Product Identity Lock | Not implemented | Product reference preservation and logo/label QA |
+| Automated technical/creative QA | Not implemented | Video/audio validation plus human-reviewed quality suite |
+| Security and operations | Local/private development posture | Authentication before remote access, secret/path isolation, monitoring, backups and restore |
 
-The Phase 0.5 API is a local/private development surface. Do not expose it to the public Internet; authentication and private-network deployment are required before remote use.
+## Current architecture boundaries
 
+- PostgreSQL is the source of truth for projects, assets, jobs and workflow state.
+- Media files, generated outputs, workflow exports and model caches remain under the private media volume, not in Git or database blobs.
+- Valkey transports Celery work; it is not the authoritative job-state store.
+- The Workflow Engine v1 executes a persisted ordered sequence. It is not a general-purpose branching DAG.
+- Qwen proposes a typed plan; the application validates it and waits for explicit user approval before execution.
+- ComfyUI workflows are fixed allowlisted IDs. Actual API workflow exports, node IDs, custom nodes and checkpoints are provisioned separately.
+- The models worker has single-process concurrency. This serializes Studio-originated model jobs but is not a multi-GPU scheduler.
+- Model adapters, runtime configuration and a passing CI test are not proof of actual model inference.
+- The initial product target remains a private single-user installation. Do not expose the API, Ollama, ComfyUI, PostgreSQL or Valkey publicly.
 
-## Phase 2 — specialist model/tool adapters (2026-11-08)
+## Immediate next steps
 
-- Implementation branch: feat/phase-2-model-integrations
-- Base: Phase 1 verified commit 0f0ae09baee4a2122b20f5e1e487eed443e3481b
-- This branch is stacked on the Phase 1 feature branch. Neither PR is merged into main.
+1. Run the Windows runtime preflight and record exact host/GPU/VRAM/driver/disk information.
+2. Start one Ollama runtime and test Qwen Arabic plan generation with real weights.
+3. Provision ComfyUI and configure each API workflow from an actual export; do not guess node IDs or checkpoint names.
+4. Execute low-resolution real smoke jobs for the enabled models and record memory, time, logs and FFprobe results.
+5. Connect the Arabic UI to project, asset, workflow and job APIs.
+6. Complete real-media quality tests, authentication/private-access review, backup/restore and restart/recovery acceptance.
 
-### Adapter and orchestration work
-
-| Component | Integration added | Runtime activation still required |
-|---|---|---|
-| Qwen3.5-9B | Ollama REST adapter, schema-constrained creative plan, LangGraph director endpoint | One manually installed qwen3.5:9b model in private Ollama |
-| WhisperX | Dedicated optional speech queue and worker image | speech profile, speech flag, selected small profile on explicit transcription |
-| Grounding DINO | Allowlisted ComfyUI workflow adapter and vision.detect job | Actual API-exported workflow, required custom node and checkpoints |
-| SAM 2 | Allowlisted ComfyUI workflow adapter and vision.track job | Actual API-exported workflow, required custom node and checkpoints |
-| Wan2.2 TI2V-5B | Allowlisted generation workflow, 1–10 second validation and approval gate | Actual workflow, only its required model artifacts, GPU benchmark |
-| DeepFilterNet | CPU CLI adapter, explicit checkpoint directory, new-file audio remux | Installed script and checkpoint directory |
-| Real-ESRGAN | Allowlisted ComfyUI upscaling workflow and video.upscale job | Actual API workflow, custom node and required checkpoint |
-| RIFE | Allowlisted ComfyUI interpolation workflow and video.interpolate job | Actual API workflow, custom node and required checkpoint |
-| Blender | Dedicated model-queue adapter and reviewed .blend template renderer | Blender executable and project template |
-
-### New interfaces and routing
-
-- GET /v1/models/status: reports external runtime and workflow configuration without downloading weights.
-- POST /v1/director/plan: produces a typed Arabic/English draft plan; it stops at awaiting_approval.
-- Added job types: speech.transcribe, audio.enhance, vision.detect, vision.track, video.generate, video.upscale, video.interpolate, motion.blender.
-- Heavy ComfyUI/Blender jobs use the separate models queue with one worker process. WhisperX and DeepFilterNet use the CPU queue.
-- Generation and Blender render require an explicit approval field. Wan is capped at 10 seconds per initial shot.
-- ComfyUI workflows are fixed IDs plus private node/input binding configuration. Arbitrary workflow IDs, arbitrary Blender scripts and agent shell access are not allowed.
-
-### Weight policy and verification boundary
-
-- No neural weights, model cache, ComfyUI custom nodes, Blender project templates or generated media are committed to Git.
-- Docker builds and GitHub Actions do not download neural weights.
-- Qwen is not pulled automatically. WhisperX weights are loaded only after an explicit transcription job. DeepFilterNet requires an existing checkpoint folder. ComfyUI must already contain the precise artifacts required by exported workflows.
-- CI tests adapter contracts, strict job schemas, approval gates and workflow input binding using synthetic workflow data. It does not run actual model inference or certify output quality, GPU fit, runtime licensing or hardware performance.
-- A ComfyUI integration is not operational until the five actual API workflows, custom-node revisions and required checkpoints are installed and pass an end-to-end job on the target GPU.
-- A Phase 2 CI run must pass before its PR can be considered for merge. Production readiness remains unverified.
+See [docs/17-PRODUCTION-ROADMAP.md](17-PRODUCTION-ROADMAP.md) for phase exit gates and the first-release scope.
