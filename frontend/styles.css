@@ -96,6 +96,10 @@ textarea.control{resize:vertical;min-height:78px;line-height:1.65}
 .check-option{display:flex;align-items:center;gap:9px;font-size:12px;color:#cbd1d4}
 .check-option input{accent-color:var(--accent)}
 .hint{font-size:10px;line-height:1.6;margin:12px 0 0}
+.readiness-summary{padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#171a1d;margin:10px 0;color:var(--muted)}
+.readiness-warning{color:#e5b779!important}
+.readiness-good{color:var(--success)!important}
+.option-disabled{opacity:.42;cursor:not-allowed}
 .notice{padding:12px 15px;border:1px solid var(--line);border-radius:10px;margin:0 0 17px;font-size:12px;line-height:1.7}
 .notice.error{border-color:#734343;color:#edaaaa;background:#3b202018}
 .notice.success{border-color:#416c57;color:#a9dfbf;background:#1d3d2c20}
