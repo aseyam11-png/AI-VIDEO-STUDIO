@@ -15,7 +15,7 @@
 | Motion graphics/compositing | Blender | Background CLI using an admin-provisioned .blend template |
 | Timeline and final delivery | OpenTimelineIO + FFmpeg | Existing deterministic media engine |
 
-LangGraph remains the control-flow layer. The model proposes typed plans; the application validates them. No model receives arbitrary shell access or may submit a workflow outside the allowlist.
+The Phase 3 PostgreSQL-backed Workflow Engine is the control-flow layer for v1 and executes validated sequential steps. Qwen proposes a typed creative plan; the application validates it and waits for explicit user approval before creating jobs. A general branching DAG, LangGraph supervisor agents and autonomous quality decisions are future work. No model receives arbitrary shell access or may submit a workflow outside the allowlist.
 
 ## Weight and dependency policy
 
