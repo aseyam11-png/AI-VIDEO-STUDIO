@@ -126,7 +126,7 @@ if ($OutputPath) {
             New-Item -ItemType Directory -Path $parent -Force | Out-Null
         }
         Set-Content -LiteralPath $OutputPath -Value $json -Encoding UTF8
-        Write-Host "Inventory saved to: $OutputPath" -ForegroundColor Green
+        Write-Host "Inventory report saved." -ForegroundColor Green
     } catch {
         Write-Warning "Could not save inventory output: $($_.Exception.Message)"
     }
