@@ -36,8 +36,8 @@ The following gaps remain open:
 
 Do not download every checkpoint at once. Use the following order:
 
-1. Record exact host OS, CPU, RAM, NVIDIA GPU model/VRAM, driver, CUDA visibility, free disk space and Docker/WSL2 versions.
-2. Run `infra/scripts/windows/model-runtime-preflight.ps1` on Windows. Preserve the full output as an acceptance artifact.
+1. Run `infra/scripts/windows/host-inventory.ps1` and record the host OS, CPU, RAM, GPU/VRAM, driver, free disk space, Docker and WSL versions. Use `-MediaPath` to identify the drive reserved for private media/model storage.
+2. Then run `infra/scripts/windows/model-runtime-preflight.ps1` on Windows. Preserve both outputs as acceptance artifacts.
 3. Start one Ollama runtime only (host-installed Windows service or Compose profile, not both). Install the configured Qwen tag explicitly after confirming disk and memory budget.
 4. Run the Arabic inference smoke test and verify the response matches the CreativePlan schema. Record model tag, quantization, load time, prompt duration, peak VRAM/RAM and whether GPU offload actually occurred.
 5. Provision private ComfyUI with the selected custom-node revisions and exact checkpoint files. Keep its API on a private network.
