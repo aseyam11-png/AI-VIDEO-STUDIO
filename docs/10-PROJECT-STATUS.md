@@ -59,7 +59,7 @@ This proves the tested Python and Linux Compose paths only. It does not prove ta
 | Blender | Reviewed-template adapter | Install executable/template and perform actual render |
 | Workflow Engine | Durable sequential v1 merged | Real runtime chain; general branching DAG is future work |
 | Wan multi-shot assembly | Not implemented | Multi-shot planning, generation, assembly and QA |
-| Arabic RTL UI | Initial connected video workflow UI in PR #5 (Draft; CI pending) | Browser acceptance on the target Windows host remains required |
+| Arabic RTL UI | Initial connected video workflow UI merged in PR #5 | Browser acceptance on the target Windows host remains required |
 | Product Identity Lock | Not implemented | Product reference preservation and logo/label QA |
 | Automated technical/creative QA | Not implemented | Video/audio validation plus human-reviewed quality suite |
 | Security and operations | Local/private development posture | Authentication before remote access, secret/path isolation, monitoring, backups and restore |
@@ -82,7 +82,7 @@ This proves the tested Python and Linux Compose paths only. It does not prove ta
 2. Start one Ollama runtime and test Qwen Arabic plan generation with real weights.
 3. Provision ComfyUI and configure each API workflow from an actual export; do not guess node IDs or checkpoint names.
 4. Execute low-resolution real smoke jobs for the enabled models and record memory, time, logs and FFprobe results.
-5. Complete PR #5 CI/review/merge, then verify the upload → plan → approval → workflow → MP4 flow in a real browser on the target host.
+5. Run the merged Studio UI on the target Windows host and verify the upload → plan → approval → workflow → MP4 flow in a real browser.
 6. Complete real-media quality tests, authentication/private-access review, backup/restore and restart/recovery acceptance.
 
 See [docs/17-PRODUCTION-ROADMAP.md](17-PRODUCTION-ROADMAP.md) for phase exit gates and the first-release scope.
