@@ -52,6 +52,7 @@ This proves the tested Python and Linux Compose paths only. It does not prove ta
 | PostgreSQL/Alembic | Implemented | Fresh production DB upgrade and restore drill |
 | Durable jobs and outbox | Implemented | Target-host restart/failure/recovery acceptance |
 | Model adapters and Tools API | Implemented | Real runtime provisioning and successful inference |
+| Windows host inventory | Script and Windows-runner CI merged in PR #6 | Run it on the target machine and review actual GPU/VRAM/RAM/disk output |
 | Qwen/Ollama | Adapter and schema validation implemented | Install exact model, Arabic inference, schema/output review and GPU/RAM measurement |
 | ComfyUI / Grounding DINO / SAM 2 / Wan / Real-ESRGAN / RIFE | Allowlisted adapters implemented | Actual API-exported workflow JSON, node/input registry, custom nodes, checkpoints and smoke jobs |
 | WhisperX | Optional dedicated speech worker adapter | Enable worker, explicit model load and Arabic transcription test |
