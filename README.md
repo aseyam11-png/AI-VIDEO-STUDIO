@@ -148,7 +148,7 @@ WhisperX is not installed in the base image because it brings a large ML depende
 | Durable sequential Workflow Engine | Merged into `main` (Phase 3); GitHub Actions run 120 passed before merge |
 | General branching DAG / autonomous editing and QA agents | Not implemented |
 | Target GPU scheduling and performance benchmarks | Not accepted; model queue is single-concurrency |
-| Arabic RTL Studio UI | Initial connected UI in PR #5 (Draft; CI pending) |
+| Arabic RTL Studio UI | Initial connected video workflow UI merged in PR #5; target-host/browser acceptance pending |
 | Product Identity Lock and automated creative/visual QA | Not implemented |
 | Production authentication, deployment hardening and restore drill | Not accepted |
 | Production readiness | **Not ready** |
@@ -166,7 +166,7 @@ This repository is public. Keep it free of secrets and private media. A public r
 
 ## Next step
 
-The first connected Arabic UI is under review in [PR #5](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/5). After its CI passes, validate the browser flow on the target host, then provision and smoke-test Ollama/Qwen and ComfyUI. Complete real-media, GPU, security, backup and restore acceptance before calling the studio production-ready. Do not download large weights until the actual GPU, disk budget and artifact licenses have been checked.
+The first connected Arabic UI is merged in [PR #5](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/5). validate the browser flow on the target host, then provision and smoke-test Ollama/Qwen and ComfyUI. Complete real-media, GPU, security, backup and restore acceptance before calling the studio production-ready. Do not download large weights until the actual GPU, disk budget and artifact licenses have been checked.
 
 
 ## Phase 2 specialist model integrations
