@@ -31,8 +31,13 @@ def test_create_project_and_read_capabilities(tmp_path, monkeypatch):
 
     capabilities = client.get("/v1/system/capabilities")
     assert capabilities.status_code == 200
-    assert capabilities.json()["phase"] == "1"
-    assert capabilities.json()["external_model_apis_enabled"] is False
+    capability_data = capabilities.json()
+    assert capability_data["phase"] == "3"
+    assert capability_data["implemented_phases"] == ["0.5", "1", "2", "3"]
+    assert capability_data["workflow_engine"]["implemented"] is True
+    assert capability_data["workflow_engine"]["execution_mode"] == "sequential_v1"
+    assert capability_data["model_runtimes"]["real_inference_verified"] is False
+    assert capability_data["external_model_apis_enabled"] is False
 
 
 def test_unsupported_upload_is_rejected_without_saving(tmp_path, monkeypatch):

@@ -3,6 +3,8 @@ from pathlib import Path
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
 from app.api.router import api_router
@@ -18,6 +20,18 @@ app = FastAPI(
     ),
 )
 app.include_router(api_router)
+
+STUDIO_UI_DIR = Path(__file__).resolve().parents[2] / "frontend"
+app.mount(
+    "/studio",
+    StaticFiles(directory=str(STUDIO_UI_DIR), html=True),
+    name="studio-ui",
+)
+
+
+@app.get("/", include_in_schema=False)
+def studio_home() -> RedirectResponse:
+    return RedirectResponse(url="/studio/", status_code=307)
 
 
 @app.get("/health", tags=["system"])
@@ -73,7 +87,10 @@ def capabilities() -> dict:
         "database_backed_projects_and_assets": True,
         "durable_job_api": True,
         "transactional_outbox": True,
-        "worker_execution": "Celery control, CPU, speech and single-concurrency model queues; workers must be running",
+        "worker_execution": (
+            "Celery control, CPU, speech and single-concurrency model queues; "
+            "workers must be running"
+        ),
         "workflow_engine": {
             "implemented": True,
             "execution_mode": "sequential_v1",

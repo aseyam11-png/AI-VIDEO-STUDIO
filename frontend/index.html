@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#17191c">
+  <meta name="description" content="استديو إنتاج الفيديو بالذكاء الاصطناعي — واجهة عربية خاصة">
+  <title>AI Video Studio — الاستديو</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="/studio/" aria-label="العودة إلى الاستديو">
+        <span class="brand-mark" aria-hidden="true">S</span>
+        <span>
+          <strong>VIDEO STUDIO</strong>
+          <small>استديو الإنتاج الذكي</small>
+        </span>
+      </a>
+      <div class="topbar-meta">
+        <span class="private-label"><span class="dot"></span> تشغيل محلي خاص</span>
+        <a class="docs-link" href="/docs" target="_blank" rel="noreferrer">توثيق API</a>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="sidebar">
+        <div class="sidebar-heading">
+          <span class="eyebrow">مساحة العمل</span>
+          <h1>مشاريعك</h1>
+        </div>
+        <label class="field-label" for="project-select">المشروع الحالي</label>
+        <select id="project-select" class="control">
+          <option value="">تحميل المشاريع…</option>
+        </select>
+        <div id="project-summary" class="project-summary muted">اختر مشروعًا أو أنشئ مشروعًا جديدًا.</div>
+
+        <div class="sidebar-divider"></div>
+        <div class="section-heading">
+          <h2>مشروع جديد</h2>
+          <span class="section-index">01</span>
+        </div>
+        <form id="project-form" class="stack">
+          <label class="field-label" for="project-name">اسم المشروع</label>
+          <input id="project-name" name="name" class="control" maxlength="160" required value="مشروع فيديو جديد">
+          <label class="field-label" for="project-description">وصف المشروع</label>
+          <textarea id="project-description" name="brief" class="control textarea-small" maxlength="12000" required>إنتاج فيديو قصير بأسلوب سينمائي احترافي.</textarea>
+          <div class="form-grid">
+            <div>
+              <label class="field-label" for="project-duration">المدة المستهدفة</label>
+              <select id="project-duration" class="control" name="target_duration_seconds">
+                <option value="30">30 ثانية</option>
+                <option value="60" selected>60 ثانية</option>
+                <option value="90">90 ثانية</option>
+                <option value="120">دقيقتان</option>
+                <option value="180">3 دقائق</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label" for="project-resolution">الدقة</label>
+              <select id="project-resolution" class="control" name="target_resolution">
+                <option value="1280x720">HD</option>
+                <option value="1920x1080" selected>Full HD</option>
+                <option value="2560x1440">2K</option>
+              </select>
+            </div>
+          </div>
+          <button class="button button-secondary button-full" type="submit">
+            <span aria-hidden="true">＋</span> إنشاء المشروع
+          </button>
+        </form>
+        <div class="sidebar-footer">
+          <span class="status-led"></span>
+          <span>البيانات محفوظة في مساحة التخزين الخاصة</span>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <section class="welcome-row">
+          <div>
+            <span class="eyebrow">AI VIDEO STUDIO / WORKSPACE</span>
+            <h2>حوّل فكرتك إلى <span class="accent-text">فيديو</span></h2>
+            <p>ارفع المادة الخام، اكتب رؤيتك، راجع خطة المخرج الذكي، ثم ابدأ التنفيذ بموافقتك.</p>
+          </div>
+          <div class="welcome-status">
+            <span class="status-led"></span>
+            <span id="api-status">جاري فحص الاستديو</span>
+          </div>
+        </section>
+
+        <nav class="stepper" aria-label="مراحل الإنتاج">
+          <div class="step active" data-step="1"><span>1</span><b>المادة الخام</b></div>
+          <i></i>
+          <div class="step" data-step="2"><span>2</span><b>الخطة الإبداعية</b></div>
+          <i></i>
+          <div class="step" data-step="3"><span>3</span><b>التنفيذ</b></div>
+          <i></i>
+          <div class="step" data-step="4"><span>4</span><b>التصدير</b></div>
+        </nav>
+
+        <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <span class="eyebrow">01 — SOURCE MEDIA</span>
+              <h3>أضف الفيديو</h3>
+              <p>ارفع ملف الفيديو الذي تريد العمل عليه. تتم معالجة الملف داخل مساحة الاستديو الخاصة.</p>
+            </div>
+            <span class="panel-number">01</span>
+          </div>
+
+          <div id="upload-zone" class="upload-zone">
+            <input id="media-file" type="file" accept=".mp4,.mov,.mkv,.webm,.m4v,video/mp4,video/quicktime,video/x-matroska,video/webm" hidden>
+            <div class="upload-icon" aria-hidden="true">↑</div>
+            <strong>اسحب ملف الفيديو هنا أو اختره من جهازك</strong>
+            <span>MP4 · MOV · MKV · WEBM · M4V</span>
+            <button id="choose-file" class="button button-outline" type="button">اختيار فيديو</button>
+          </div>
+          <div id="upload-progress-wrap" class="progress-wrap" hidden>
+            <div class="progress-meta"><span id="upload-filename">رفع الملف</span><b id="upload-percent">0%</b></div>
+            <div class="progress-track"><div id="upload-progress" class="progress-fill"></div></div>
+          </div>
+
+          <div class="asset-row">
+            <div class="asset-details">
+              <span class="asset-icon">▶</span>
+              <div>
+                <strong id="asset-name">لم يتم رفع فيديو بعد</strong>
+                <small id="asset-meta">ارفع فيديو لبدء إنشاء خطة الإنتاج</small>
+              </div>
+            </div>
+            <select id="asset-select" class="control asset-select" disabled aria-label="اختيار فيديو من المشروع">
+              <option value="">لا توجد ملفات</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <div>
+              <span class="eyebrow">02 — CREATIVE DIRECTION</span>
+              <h3>صف رؤيتك للمخرج الذكي</h3>
+              <p>اكتب وصفًا واضحًا بالعربية. سيحوّله Qwen إلى خطة ومشاهد قابلة للمراجعة.</p>
+            </div>
+            <span class="panel-number">02</span>
+          </div>
+          <form id="director-form" class="stack">
+            <label class="field-label" for="creative-brief">ماذا تريد أن ينتج الاستديو؟</label>
+            <textarea id="creative-brief" class="control brief-control" minlength="20" maxlength="12000" required placeholder="مثال: أنشئ إعلانًا سينمائيًا لمنتجي، ابدأ بلقطة قريبة تكشف التفاصيل، ثم انتقل إلى لقطات استخدام المنتج، مع إيقاع هادئ وإضاءة فاخرة ونهاية قوية."></textarea>
+            <p id="director-readiness" class="hint readiness-warning">جارٍ فحص جاهزية Qwen المحلي…</p>
+            <button id="refresh-model-status" class="button button-outline readiness-refresh" type="button">إعادة فحص خدمات النماذج</button>
+            <div class="form-grid form-grid-wide">
+              <div>
+                <label class="field-label" for="target-duration">مدة الفيديو النهائية</label>
+                <select id="target-duration" class="control">
+                  <option value="30">30 ثانية</option>
+                  <option value="60" selected>60 ثانية</option>
+                  <option value="90">90 ثانية</option>
+                  <option value="120">دقيقتان</option>
+                  <option value="180">3 دقائق</option>
+                  <option value="240">4 دقائق</option>
+                  <option value="300">5 دقائق</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label" for="plan-language">لغة الخطة</label>
+                <select id="plan-language" class="control">
+                  <option value="ar" selected>العربية</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+            </div>
+
+            <details class="advanced-options">
+              <summary>خيارات المعالجة المتقدمة</summary>
+              <p id="model-readiness" class="hint readiness-summary">جارٍ فحص خدمات النماذج المحلية…</p>
+              <div class="advanced-grid">
+                <label class="check-option"><input id="transcribe-audio" type="checkbox"><span>تفريغ الكلام باستخدام WhisperX</span></label>
+                <label class="check-option"><input id="enhance-audio" type="checkbox"><span>تحسين الصوت باستخدام DeepFilterNet</span></label>
+                <div>
+                  <label class="field-label" for="detection-prompt">عنصر تريد اكتشافه (اختياري)</label>
+                  <input id="detection-prompt" class="control" maxlength="500" placeholder="مثال: the main product">
+                </div>
+                <div>
+                  <label class="field-label" for="tracking-prompt">عنصر تريد تتبعه (اختياري)</label>
+                  <input id="tracking-prompt" class="control" maxlength="500" placeholder="مثال: the main product">
+                </div>
+              </div>
+              <p class="hint">تتطلب هذه الخيارات تثبيت وتشغيل الخدمات والنماذج المرتبطة بها. تركها دون تحديد هو الخيار المناسب لأول تجربة.</p>
+            </details>
+
+            <button id="generate-plan" class="button button-primary" type="submit" disabled>
+              <span>✦</span> إنشاء خطة الإنتاج بالذكاء الاصطناعي
+            </button>
+          </form>
+        </section>
+
+        <section id="plan-panel" class="panel" hidden>
+          <div class="panel-header">
+            <div>
+              <span class="eyebrow">03 — STORYBOARD REVIEW</span>
+              <h3>مراجعة الخطة الإبداعية</h3>
+              <p>لن يبدأ أي تنفيذ قبل موافقتك الصريحة على الخطة.</p>
+            </div>
+            <span id="plan-status" class="state-pill">بانتظار المراجعة</span>
+          </div>
+          <div id="plan-content"></div>
+          <div id="approval-actions" class="action-row">
+            <button id="approve-workflow" class="button button-primary" type="button">اعتماد الخطة وبدء التنفيذ</button>
+            <button id="cancel-workflow" class="button button-danger-outline" type="button">إلغاء الخطة</button>
+          </div>
+        </section>
+
+        <section id="execution-panel" class="panel" hidden>
+          <div class="panel-header">
+            <div>
+              <span class="eyebrow">04 — WORKFLOW EXECUTION</span>
+              <h3>متابعة التنفيذ</h3>
+              <p>كل خطوة لها حالة مستقلة. النتائج محفوظة في سجل المهام.</p>
+            </div>
+            <span id="workflow-state" class="state-pill">قيد الانتظار</span>
+          </div>
+          <div id="workflow-steps" class="workflow-steps"></div>
+          <div id="execution-actions" class="action-row">
+            <button id="stop-workflow" class="button button-danger-outline" type="button">إيقاف التنفيذ</button>
+          </div>
+          <div id="render-result" class="render-result" hidden>
+            <div class="success-mark">✓</div>
+            <div class="render-copy">
+              <strong>اكتمل تصدير الفيديو</strong>
+              <span id="render-meta">تم إنشاء ملف MP4 بنجاح.</span>
+            </div>
+            <a id="download-video" class="button button-primary" href="#" download>تحميل الفيديو</a>
+          </div>
+          <div id="video-preview-wrap" class="video-preview-wrap" hidden>
+            <video id="video-preview" controls playsinline></video>
+          </div>
+        </section>
+
+        <footer class="main-footer">
+          <span>AI VIDEO STUDIO</span>
+          <span>نسخة تشغيل محلية أولية · لا ترفع ملفاتك إلى خدمات خارجية</span>
+        </footer>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

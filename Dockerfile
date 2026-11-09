@@ -16,6 +16,7 @@ RUN apt-get update && \
 COPY pyproject.toml README.md alembic.ini ./
 COPY migrations ./migrations
 COPY backend ./backend
+COPY frontend ./frontend
 ARG INSTALL_EXTRAS=media
 RUN pip install --no-cache-dir ".[${INSTALL_EXTRAS}]"
 EXPOSE 8000
