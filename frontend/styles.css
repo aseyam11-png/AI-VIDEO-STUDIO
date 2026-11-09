@@ -97,6 +97,7 @@ textarea.control{resize:vertical;min-height:78px;line-height:1.65}
 .check-option input{accent-color:var(--accent)}
 .hint{font-size:10px;line-height:1.6;margin:12px 0 0}
 .readiness-summary{padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:#171a1d;margin:10px 0;color:var(--muted)}
+.readiness-refresh{min-height:34px;padding:7px 11px;font-size:11px;margin:2px 0 8px}
 .readiness-warning{color:#e5b779!important}
 .readiness-good{color:var(--success)!important}
 .option-disabled{opacity:.42;cursor:not-allowed}
