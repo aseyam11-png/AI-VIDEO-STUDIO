@@ -3,6 +3,8 @@ from pathlib import Path
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
 from app.api.router import api_router
@@ -18,6 +20,19 @@ app = FastAPI(
     ),
 )
 app.include_router(api_router)
+
+STUDIO_UI_DIR = Path(__file__).resolve().parents[2] / "frontend"
+app.mount(
+    "/studio",
+    StaticFiles(directory=str(STUDIO_UI_DIR), html=True),
+    name="studio-ui",
+)
+
+
+@app.get("/", include_in_schema=False)
+def studio_home() -> RedirectResponse:
+    return RedirectResponse(url="/studio/", status_code=307)
+
 
 
 @app.get("/health", tags=["system"])
