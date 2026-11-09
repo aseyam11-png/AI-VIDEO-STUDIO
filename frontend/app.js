@@ -119,8 +119,10 @@
   async function loadModelStatus() {
     const director = $("director-readiness");
     const summary = $("model-readiness");
+    const refreshButton = $("refresh-model-status");
+    if (refreshButton) refreshButton.disabled = true;
     try {
-      const status = await api("/v1/models/status", { signal: AbortSignal.timeout(10000) });
+      const status = await api("/v1/models/status", { signal: AbortSignal.timeout(310000) });
       state.modelStatus = status;
       const models = status.models || {};
       const qwen = models["qwen3.5-9b-q4_K_M"] || {};
@@ -168,6 +170,8 @@
         $(id).disabled = true;
       });
       setProjectControls();
+    } finally {
+      if (refreshButton) refreshButton.disabled = false;
     }
   }
 
@@ -689,8 +693,9 @@
     $("cancel-workflow").addEventListener("click", cancelDraft);
     $("stop-workflow").addEventListener("click", cancelWorkflow);
     bindUpload();
+    $("refresh-model-status").addEventListener("click", () => loadModelStatus());
     await healthCheck();
-    await loadModelStatus();
+    void loadModelStatus();
     try {
       await loadProjects();
       if (!state.projects.length) notice("ابدأ بإنشاء مشروع جديد من القائمة الجانبية.", "info");
