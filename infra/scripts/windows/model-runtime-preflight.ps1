@@ -2,6 +2,8 @@ param(
     [string]$ApiBaseUrl = "http://127.0.0.1:8000",
     [string]$OllamaBaseUrl = "http://127.0.0.1:11434",
     [string]$ComfyUIBaseUrl = "http://127.0.0.1:8188",
+    [ValidateRange(5, 7200)]
+    [int]$ModelStatusTimeoutSec = 320,
     [switch]$RunArabicInferenceSmokeTest
 )
 
@@ -45,7 +47,7 @@ try {
 
     Write-Section "Model runtime status"
     try {
-        $models = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/models/status" -TimeoutSec 30
+        $models = Invoke-RestMethod -Uri "$ApiBaseUrl/v1/models/status" -TimeoutSec $ModelStatusTimeoutSec
         $models | ConvertTo-Json -Depth 10
     } catch {
         Write-Warning "Model status endpoint failed: $($_.Exception.Message)"
