@@ -1,7 +1,6 @@
-from fastapi.testclient import TestClient
-
 from app.core.config import settings
 from app.main import app
+from fastapi.testclient import TestClient
 
 
 def test_studio_ui_and_static_assets_are_served():
