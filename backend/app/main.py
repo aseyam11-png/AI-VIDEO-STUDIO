@@ -34,7 +34,6 @@ def studio_home() -> RedirectResponse:
     return RedirectResponse(url="/studio/", status_code=307)
 
 
-
 @app.get("/health", tags=["system"])
 def health() -> dict:
     return {"status": "ok", "service": settings.app_name, "environment": settings.app_env}
