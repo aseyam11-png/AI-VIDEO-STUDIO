@@ -23,7 +23,7 @@ def test_studio_ui_and_static_assets_are_served():
     assert script.status_code == 200
     assert "/v1/workflows/from-brief" in script.text
     assert "/v1/models/status" in script.text
-    assert "inference_verified" not in script.text or "Qwen" in script.text
+    assert "لم يُعتمد الاستدلال الحقيقي بعد" in script.text
 
 
 def test_project_history_endpoint_lists_created_projects(tmp_path, monkeypatch):
