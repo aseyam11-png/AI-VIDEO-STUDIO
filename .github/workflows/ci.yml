@@ -113,6 +113,8 @@ jobs:
         run: ruff check backend tests
       - name: Run test suite
         run: pytest -q
+      - name: Validate Studio JavaScript
+        run: node --check frontend/app.js
 
   compose-integration:
     runs-on: ubuntu-latest
