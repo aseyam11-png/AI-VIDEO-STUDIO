@@ -78,7 +78,7 @@ This proves the tested Python and Linux Compose paths only. It does not prove ta
 
 ## Immediate next steps
 
-1. Run the Windows runtime preflight and record exact host/GPU/VRAM/driver/disk information.
+1. Run `infra/scripts/windows/host-inventory.ps1` to record exact host/GPU/VRAM/driver/disk information, then run the Windows runtime preflight.
 2. Start one Ollama runtime and test Qwen Arabic plan generation with real weights.
 3. Provision ComfyUI and configure each API workflow from an actual export; do not guess node IDs or checkpoint names.
 4. Execute low-resolution real smoke jobs for the enabled models and record memory, time, logs and FFprobe results.
