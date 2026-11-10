@@ -1,8 +1,8 @@
 # Phase 6.8 — Bounded video enhancement
 
 **Repository:** `aseyam11-png/AI-VIDEO-STUDIO`  
-**Branch:** `feat/phase-6.8-video-enhancement-sync`  
-**Status:** Implementation submitted for review; CI and target-host inference acceptance remain open.
+**Merged:** [PR #16](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/16) into `main`  
+**Status:** Code and CI merged; real target-host inference acceptance remains open.
 
 ## Goal
 
@@ -48,7 +48,7 @@ A source that exceeds any bound is rejected instead of silently truncated or ren
 
 ## Test evidence and limitations
 
-The automated tests use synthetic FFmpeg-generated clips and a mocked ComfyUI client. They verify bounded extraction, sequential frame dispatch, output path/dimension validation, project-asset registration and MP4 reassembly with audio streams. This does **not** prove real Real-ESRGAN inference, visual quality or GPU performance.
+PR #16 passed Python/Ruff tests, Windows script checks and Compose integration before merge. The automated tests use synthetic FFmpeg-generated clips and a mocked ComfyUI client. They verify bounded extraction, sequential frame dispatch, output path/dimension validation, project-asset registration and MP4 reassembly with audio streams. This does **not** prove real Real-ESRGAN inference, visual quality or GPU performance.
 
 Before enabling this feature in a release, provision and record the real API-exported workflow JSON, ComfyUI node IDs/input bindings, custom-node revisions, checkpoint hashes/licenses and shared media path. Then run a real smoke test on the target host and review the result visually and audibly.
 
