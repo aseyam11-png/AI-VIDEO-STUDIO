@@ -280,8 +280,22 @@ def test_video_sequence_executes_wan_shots_registers_assets_and_assembles_mp4(
         "asset_id": image_asset["id"],
         "payload": {
             "shots": [
-                {"prompt": "Product close-up. Canonical product identity lock: preserve the exact product.", "negative_prompt": "", "duration_seconds": 2},
-                {"prompt": "Slow side movement. Canonical product identity lock: preserve the exact product.", "negative_prompt": "", "duration_seconds": 2},
+                {
+                    "prompt": (
+                        "Product close-up. Canonical product identity lock: "
+                        "preserve the exact product."
+                    ),
+                    "negative_prompt": "",
+                    "duration_seconds": 2,
+                },
+                {
+                    "prompt": (
+                        "Slow side movement. Canonical product identity lock: "
+                        "preserve the exact product."
+                    ),
+                    "negative_prompt": "",
+                    "duration_seconds": 2,
+                },
             ],
             "generation_width": 832,
             "generation_height": 480,
@@ -363,8 +377,16 @@ def test_product_identity_reference_fingerprint_is_verified_before_wan_jobs(
         "asset_id": image_asset["id"],
         "payload": {
             "shots": [
-                {"prompt": "Identity locked shot one", "negative_prompt": "", "duration_seconds": 2},
-                {"prompt": "Identity locked shot two", "negative_prompt": "", "duration_seconds": 2},
+                {
+                    "prompt": "Identity locked shot one",
+                    "negative_prompt": "",
+                    "duration_seconds": 2,
+                },
+                {
+                    "prompt": "Identity locked shot two",
+                    "negative_prompt": "",
+                    "duration_seconds": 2,
+                },
             ],
             "generation_width": 832,
             "generation_height": 480,
