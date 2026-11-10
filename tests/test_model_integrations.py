@@ -241,6 +241,7 @@ def test_model_job_queue_routing_is_separate_from_cpu_queue():
     assert JobType.SPEECH_TRANSCRIBE in _SPEECH_QUEUE_TYPES
     assert JobType.VISION_DETECT in _MODEL_QUEUE_TYPES
     assert JobType.VIDEO_GENERATE in _MODEL_QUEUE_TYPES
+    assert JobType.VIDEO_GENERATE_SEQUENCE in _MODEL_QUEUE_TYPES
     assert JobType.MOTION_BLENDER in _MODEL_QUEUE_TYPES
     assert JobType.SPEECH_TRANSCRIBE not in _MODEL_QUEUE_TYPES
     assert JobType.AUDIO_ENHANCE not in _MODEL_QUEUE_TYPES
