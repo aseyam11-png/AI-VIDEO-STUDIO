@@ -277,7 +277,12 @@ def render_timeline(
         _check_cancel(cancel_check)
         start = float(clip["start_seconds"])
         duration = float(clip["duration_seconds"])
-        if not math.isfinite(start) or not math.isfinite(duration) or start < 0 or duration <= 0:
+        if (
+            not math.isfinite(start)
+            or not math.isfinite(duration)
+            or start < 0
+            or duration <= 0
+        ):
             raise ValueError("Timeline contains an invalid clip range.")
         if source_duration is not None and start + duration > source_duration + (1.0 / fps):
             raise ValueError("Timeline clip exceeds the source video duration.")
@@ -354,7 +359,10 @@ def build_multi_source_timeline(
         raise ValueError("A multi-source timeline requires 1–100 clips and an FPS from 1 to 60.")
 
     safe_project_id = str(UUID(project_id))
-    normalized_sources = {str(UUID(key)): Path(value).expanduser().resolve() for key, value in sources.items()}
+    normalized_sources = {
+        str(UUID(key)): Path(value).expanduser().resolve()
+        for key, value in sources.items()
+    }
     source_metadata: dict[str, dict] = {}
     video_track = otio.schema.Track(name="V1", kind=otio.schema.TrackKind.Video)
     audio_track = otio.schema.Track(name="A1", kind=otio.schema.TrackKind.Audio)
@@ -369,11 +377,17 @@ def build_multi_source_timeline(
     for index, item in enumerate(clips, start=1):
         try:
             asset_id = str(UUID(str(item["asset_id"])))
-            clip_id = str(UUID(str(item["clip_id"]))) if item.get("clip_id") else f"clip_{index:04d}"
+            clip_id = (
+                str(UUID(str(item["clip_id"])))
+                if item.get("clip_id")
+                else f"clip_{index:04d}"
+            )
             start = float(item["source_start_seconds"])
             duration = float(item["duration_seconds"])
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
-            raise ValueError("Each timeline clip requires a valid asset_id, source start and duration.") from exc
+            raise ValueError(
+                "Each timeline clip requires a valid asset_id, source start and duration."
+            ) from exc
 
         if asset_id not in normalized_sources:
             raise ValueError("Every clip must reference a video asset in the same project.")
@@ -386,7 +400,10 @@ def build_multi_source_timeline(
         metadata = source_metadata.get(asset_id)
         if metadata is None:
             metadata = probe_media(source)
-            if not any(stream.get("codec_type") == "video" for stream in metadata.get("streams", [])):
+            if not any(
+                stream.get("codec_type") == "video"
+                for stream in metadata.get("streams", [])
+            ):
                 raise ValueError("Every timeline source must contain a video stream.")
             source_metadata[asset_id] = metadata
 
@@ -480,7 +497,11 @@ def render_multi_source_timeline(
     if fps < 1 or fps > 60 or crf < 0 or crf > 35:
         raise ValueError("Render settings are outside the supported range.")
     clips = timeline_manifest.get("clips", [])
-    if timeline_manifest.get("schema_version") != 2 or not clips or len(clips) > 100:
+    if (
+        timeline_manifest.get("schema_version") != 2
+        or not clips
+        or len(clips) > 100
+    ):
         raise ValueError("A valid multi-source timeline with 1–100 clips is required.")
 
     normalized_sources = {str(UUID(key)): Path(value).expanduser().resolve() for key, value in sources.items()}
@@ -495,9 +516,13 @@ def render_multi_source_timeline(
             start = float(clip["source_start_seconds"])
             duration = float(clip["duration_seconds"])
         except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError("Timeline contains an invalid source reference or clip range.") from exc
+            raise ValueError(
+                "Timeline contains an invalid source reference or clip range."
+            ) from exc
         if asset_id not in normalized_sources:
-            raise ValueError("Timeline references a source asset outside the supplied project assets.")
+            raise ValueError(
+                "Timeline references a source asset outside the supplied project assets."
+            )
         if not math.isfinite(start) or not math.isfinite(duration) or start < 0 or duration <= 0:
             raise ValueError("Timeline contains an invalid clip range.")
 

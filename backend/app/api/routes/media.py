@@ -317,7 +317,9 @@ def download_render(project_id: str, asset_id: str) -> FileResponse:
 def get_project_timeline(project_id: str) -> dict:
     try:
         get_project(project_id)
-        timeline_path = project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
+        timeline_path = (
+            project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
+        )
         if not timeline_path.is_file():
             raise HTTPException(status_code=404, detail="Project timeline not found.")
         return read_json(timeline_path)
@@ -369,7 +371,9 @@ async def render_project_timeline_route(
 ) -> dict:
     try:
         get_project(project_id)
-        timeline_path = project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
+        timeline_path = (
+            project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
+        )
         if not timeline_path.is_file():
             raise HTTPException(status_code=404, detail="Save the project timeline before rendering.")
         timeline = read_json(timeline_path)
@@ -389,7 +393,11 @@ async def render_project_timeline_route(
                 )
             sources[asset_id] = source
 
-        destination = project_dir(project_id) / "exports" / f"project-{UUID(project_id)}-preview.mp4"
+        destination = (
+            project_dir(project_id)
+            / "exports"
+            / f"project-{UUID(project_id)}-preview.mp4"
+        )
         result = await run_in_threadpool(
             render_multi_source_timeline,
             sources=sources,
@@ -409,7 +417,9 @@ async def render_project_timeline_route(
     except (ValueError, MediaToolError, KeyError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Project or timeline source not found.") from exc
+        raise HTTPException(
+            status_code=404, detail="Project or timeline source not found."
+        ) from exc
 
 
 @router.get("/timeline/rendered")
