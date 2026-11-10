@@ -610,7 +610,10 @@ def get_project_audio_mix(project_id: str) -> dict:
         get_project(project_id)
         timeline_path = project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
         if not timeline_path.is_file():
-            raise HTTPException(status_code=404, detail="Save the video timeline before editing audio.")
+            raise HTTPException(
+                status_code=404,
+                detail="Save the video timeline before editing audio.",
+            )
         timeline = read_json(timeline_path)
         path = _audio_mix_path(project_id)
         if not path.is_file():
@@ -638,9 +641,16 @@ def save_project_audio_mix(project_id: str, payload: ProjectAudioMixRequest) -> 
             raise HTTPException(status_code=404, detail="Save the video timeline before editing audio.")
         timeline = read_json(timeline_path)
         if timeline.get("project_id") != str(UUID(project_id)):
-            raise HTTPException(status_code=409, detail="Video timeline belongs to another project.")
+            raise HTTPException(
+                status_code=409,
+                detail="Video timeline belongs to another project.",
+            )
         timeline_duration = float(timeline.get("duration_seconds", 0))
-        if not math.isfinite(timeline_duration) or timeline_duration < 0 or timeline_duration > 3600:
+        if (
+            not math.isfinite(timeline_duration)
+            or timeline_duration < 0
+            or timeline_duration > 3600
+        ):
             raise HTTPException(status_code=409, detail="Video timeline duration is invalid.")
 
         clips: list[dict] = []
@@ -649,7 +659,10 @@ def save_project_audio_mix(project_id: str, payload: ProjectAudioMixRequest) -> 
             clip_id = str(clip.clip_id)
             asset_id = str(clip.asset_id)
             if clip_id in seen_clip_ids:
-                raise HTTPException(status_code=422, detail="Audio clip identifiers must be unique.")
+                raise HTTPException(
+                    status_code=422,
+                    detail="Audio clip identifiers must be unique.",
+                )
             seen_clip_ids.add(clip_id)
             if not timeline.get("clips"):
                 raise HTTPException(
