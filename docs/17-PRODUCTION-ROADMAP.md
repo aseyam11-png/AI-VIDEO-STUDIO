@@ -68,24 +68,28 @@ Keep credentials out of browser bundles. The API currently binds to localhost in
 
 ## 5. Phase 6 — editing and production features
 
-### Phase 6.1 — Multi-source sequential timeline (implemented in this branch)
+### Phase 6.1 — Multi-source sequential timeline (merged)
 
-The first increment adds project-scoped multi-source timelines, with replaceable ordered clip lists for trim/remove/reorder operations, OpenTimelineIO serialization, and an FFmpeg MP4 preview renderer. See [Phase 6.1 — Multi-source Timeline](19-PHASE-6.1-MULTI-SOURCE-TIMELINE.md).
+Merged in [PR #7](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/7). Adds project-scoped clip manifests, OpenTimelineIO serialization, validated trim/reorder/remove operations and FFmpeg MP4 previews. The renderer is one sequential video lane; overlapping tracks and effects remain outside 6.1.
 
-The 6.1 renderer is intentionally limited to sequential cuts on one video lane. It does not yet provide overlapping tracks, transitions, titles, subtitles, advanced audio mixing, or durable background rendering. Target-host output-quality acceptance remains separate.
+### Phase 6.2 — Arabic timeline editor UI (implemented in this branch)
+
+Adds an RTL timeline workspace to the served `/studio/` application. Users can add video assets from the selected project, edit source in-points and clip durations, reorder and remove clips, save the ordered manifest through the Phase 6.1 API, render a preview and download the MP4. The API also supports an explicitly empty saved timeline, so removing the last clip is a valid edit.
+
+See [Phase 6.2 — Arabic Timeline Editor](20-PHASE-6.2-ARABIC-TIMELINE-EDITOR.md). Automated checks validate the UI integration and JavaScript syntax; real browser and media acceptance on the target Windows host remain separate.
 
 ### Remaining Phase 6 increments
 
 Deliver in independently testable increments:
 
-- Scene/shot selection using actual scene, transcript and detection outputs.
-- Subtitle/caption generation with Arabic RTL, timing and font tests.
-- Audio mixing, voice/music levels, denoise and synchronization.
-- Transitions, titles, overlays and motion graphics using reviewed Blender/ComfyUI templates.
-- Multi-shot generation and deterministic assembly of generated clips.
-- Video enhancement pipeline with frame extraction/reassembly only after output and storage validation.
-- Product Identity Lock for product ads: reference preservation, logo/label checks and human review.
-- Technical and visual QA: black/frozen frame detection, audio clipping/silence, duration/resolution/FPS checks, missing files and corrupt exports.
+- Scene/shot selection using actual scene, transcript and detection outputs (6.3).
+- Subtitle/caption generation with Arabic RTL, timing and font tests (6.4).
+- Audio mixing, voice/music levels, denoise and synchronization (6.5).
+- Transitions, titles, overlays and motion graphics using reviewed Blender/ComfyUI templates (6.6).
+- Multi-shot generation and deterministic assembly of generated clips (6.7).
+- Video enhancement pipeline with frame extraction/reassembly only after output and storage validation (6.8).
+- Product Identity Lock for product ads: reference preservation, logo/label checks and human review (6.9).
+- Technical and visual QA: black/frozen frame detection, audio clipping/silence, duration/resolution/FPS checks, missing files and corrupt exports (6.10).
 
 Do not claim "professional automatic editing" until these paths are exercised on varied real videos and reviewed output samples.
 
