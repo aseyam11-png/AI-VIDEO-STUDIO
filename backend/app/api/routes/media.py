@@ -77,7 +77,7 @@ class ProjectTimelineRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     fps: int = Field(default=30, ge=1, le=60)
-    clips: list[MultiSourceClipRequest] = Field(default_factory=list, max_length=100)
+    clips: list[MultiSourceClipRequest] = Field(max_length=100)
 
 
 class ProjectTimelineRenderRequest(BaseModel):
