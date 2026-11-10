@@ -242,6 +242,7 @@ def get_tool_catalog() -> dict[str, typing.Any]:
                     JobType.VISION_DETECT,
                     JobType.VISION_TRACK,
                     JobType.VIDEO_GENERATE,
+                    JobType.VIDEO_GENERATE_SEQUENCE,
                     JobType.VIDEO_UPSCALE,
                     JobType.VIDEO_INTERPOLATE,
                     JobType.MOTION_BLENDER,
@@ -260,7 +261,11 @@ def get_tool_catalog() -> dict[str, typing.Any]:
         "execution_policy": {
             "long_running_operations": "durable_jobs",
             "idempotency_required": True,
-            "user_approval_required_for": ["video.generate", "motion.blender"],
+            "user_approval_required_for": [
+                "video.generate",
+                "video.generate_sequence",
+                "motion.blender",
+            ],
             "model_weights_downloaded_automatically": False,
             "inference_verification": (
                 "A successful real job is required; "
