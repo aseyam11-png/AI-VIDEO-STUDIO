@@ -146,7 +146,7 @@ def execute_comfyui_job(
             and any(stream.get("codec_type") == "video" for stream in streams)
         ):
             video_stream_found = True
-            if job["job_type"] == "video.generate" and output_path.suffix.lower() in {
+            if job["job_type"] in {"video.generate", "video.interpolate"} and output_path.suffix.lower() in {
                 ".mp4", ".mov", ".mkv", ".webm"
             }:
                 generated_video_path = output_path
@@ -156,10 +156,10 @@ def execute_comfyui_job(
         )
     if job["job_type"] in {"video.generate", "video.interpolate"} and not video_stream_found:
         raise ComfyUIError(f"ComfyUI workflow {workflow_id} did not produce a video file.")
-    if job["job_type"] == "video.generate":
+    if job["job_type"] in {"video.generate", "video.interpolate"}:
         if generated_video_path is None:
             raise ComfyUIError(
-                "Video generation must produce a supported MP4/MOV/MKV/WEBM asset."
+                "Video generation/interpolation must produce a supported MP4/MOV/MKV/WEBM asset."
             )
         output_asset = register_generated_video_asset(
             job["project_id"],
