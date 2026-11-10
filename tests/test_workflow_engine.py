@@ -398,6 +398,12 @@ def _create_identity_locked_workflow_at_review(tmp_path, monkeypatch, *, idempot
     assert approved.status_code == 202, approved.text
     generation_step = approved.json()["steps"][0]
     job = client.get(f"/v1/jobs/{generation_step['job_id']}").json()
+    assert job["payload"]["product_identity_lock"] is True
+    assert job["payload"]["identity_reference_sha256"] == reference_asset["sha256"]
+    assert all(
+        "Canonical product identity lock" in shot["prompt"]
+        for shot in job["payload"]["shots"]
+    )
     execution = run_job_attempt(job["id"], job["dispatch_generation"])
     assert execution["status"] == "succeeded"
 
