@@ -163,6 +163,82 @@ def test_workflow_upscale_option_adds_video_enhancement_and_rejects_long_sources
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg is required")
+def test_single_shot_generation_registers_video_asset_for_next_workflow_step(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
+    project = create_project(
+        {
+            "name": "Generated video handoff",
+            "target_duration_seconds": 4,
+            "target_resolution": "640x480",
+            "target_fps": 24,
+            "language": "ar",
+            "brief": "توليد فيديو قصير لتسليمه إلى خطوة تحسين الفيديو.",
+        }
+    )
+    reference_path = tmp_path / "reference.png"
+    subprocess.run(
+        [
+            shutil.which("ffmpeg"),
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:s=320x240",
+            "-frames:v",
+            "1",
+            str(reference_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    image_asset, source = ingest_file_stream(
+        project["id"],
+        "reference.png",
+        io.BytesIO(reference_path.read_bytes()),
+        max_bytes=2 * 1024 * 1024,
+    )
+    generated_fixture = tmp_path / "generated.mp4"
+    _make_source_video(generated_fixture, duration=1)
+
+    class FakeComfyUIClient:
+        def run_workflow(
+            self, workflow_id, values, output_dir, *, progress, cancel_check
+        ):
+            assert workflow_id == "wan22_ti2v_5b_v1"
+            assert values["source_path"]
+            output_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(generated_fixture, output_dir / "generated.mp4")
+            progress(90, "generated", "synthetic generated video")
+            return {"outputs": [{"saved_as": "generated.mp4"}]}
+
+    monkeypatch.setattr(model_jobs, "ComfyUIClient", FakeComfyUIClient)
+    job_id = str(uuid4())
+    result = model_jobs.execute_comfyui_job(
+        {
+            "id": job_id,
+            "project_id": project["id"],
+            "asset_id": image_asset["id"],
+            "job_type": JobType.VIDEO_GENERATE.value,
+            "payload": {"prompt": "A short neutral scene", "approved": True},
+        },
+        source,
+        progress=lambda *_: None,
+        cancel_check=lambda: False,
+    )
+    assert result["output_asset_id"] == result["output_asset"]["id"]
+    assert result["output_asset"]["asset_type"] == "video"
+    registered_path = project_dir(project["id"]) / result["output_asset"]["relative_path"]
+    assert registered_path.is_file()
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg is required")
 def test_extract_and_assemble_upscaled_frames_preserves_audio(tmp_path):
     source = tmp_path / "source.mp4"
     _make_source_video(source, duration=1)
