@@ -109,7 +109,10 @@ TOOL_SPECS: tuple[dict[str, typing.Any], ...] = (
         "name": "Multi-Shot Video Generation",
         "category": "generation",
         "runtime": "ComfyUI / Wan 2.2 TI2V 5B + FFmpeg",
-        "description": "Generate 2–8 approved shots from a project image reference and assemble them in order.",
+        "description": (
+            "Generate 2–8 approved shots from a project image reference "
+            "and assemble them in order."
+        ),
         "execution": "durable_job",
         "approval_required": True,
         "workflow_id": "wan22_ti2v_5b_v1",
