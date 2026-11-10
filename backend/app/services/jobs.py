@@ -2,7 +2,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Any, Literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from app.core.config import settings
 from app.db.models import (
@@ -15,7 +15,7 @@ from app.db.models import (
 )
 from app.db.session import session_scope
 from app.schemas.jobs import JobCreate, JobType
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -94,6 +94,34 @@ class _VideoInterpolateOptions(_StrictOptions):
     factor: int = Field(default=2, ge=2, le=4)
 
 
+class _VideoAssembleOptions(_StrictOptions):
+    generated_asset_ids: list[str] = Field(default_factory=list, max_length=8)
+    scene_durations_seconds: list[int] = Field(min_length=2, max_length=8)
+    width: int = Field(default=1280, ge=320, le=3840)
+    height: int = Field(default=720, ge=240, le=2160)
+    fps: int = Field(default=24, ge=1, le=60)
+    crf: int = Field(default=20, ge=0, le=35)
+
+    @model_validator(mode="after")
+    def validate_assembly_inputs(self):
+        if self.generated_asset_ids:
+            if len(self.generated_asset_ids) < 2:
+                raise ValueError("Multi-shot assembly requires at least two generated video assets.")
+            if len(self.generated_asset_ids) != len(self.scene_durations_seconds):
+                raise ValueError("Each generated video must have one matching scene duration.")
+            if len(set(self.generated_asset_ids)) != len(self.generated_asset_ids):
+                raise ValueError("Generated video asset identifiers must be unique.")
+            try:
+                for asset_id in self.generated_asset_ids:
+                    if str(UUID(asset_id)) != asset_id.lower():
+                        raise ValueError("Generated asset IDs must be canonical UUIDs.")
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Generated video asset identifiers must be valid UUIDs.") from exc
+        if any(duration < 1 or duration > 10 for duration in self.scene_durations_seconds):
+            raise ValueError("Each generated scene must be between one and ten seconds.")
+        return self
+
+
 class _BlenderOptions(_StrictOptions):
     template_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
     frame_start: int = Field(default=1, ge=1, le=10000)
@@ -116,6 +144,7 @@ _OPTION_MODELS = {
     JobType.VIDEO_GENERATE: _VideoGenerateOptions,
     JobType.VIDEO_UPSCALE: _VideoUpscaleOptions,
     JobType.VIDEO_INTERPOLATE: _VideoInterpolateOptions,
+    JobType.VIDEO_ASSEMBLE: _VideoAssembleOptions,
     JobType.MOTION_BLENDER: _BlenderOptions,
 }
 
@@ -139,6 +168,7 @@ _VIDEO_REQUIRED_TYPES = {
     JobType.AUDIO_ENHANCE,
     JobType.VISION_TRACK,
     JobType.VIDEO_INTERPOLATE,
+    JobType.VIDEO_ASSEMBLE,
 }
 
 
@@ -284,6 +314,8 @@ def _request_hash(data: JobCreate, normalized_payload: dict[str, Any]) -> str:
 
 def create_job(data: JobCreate) -> tuple[dict[str, Any], bool]:
     normalized = normalize_payload(data.job_type, data.payload)
+    if data.job_type == JobType.VIDEO_ASSEMBLE and len(normalized["generated_asset_ids"]) < 2:
+        raise JobRequestError("Multi-shot assembly requires at least two generated video assets.")
     digest = _request_hash(data, normalized)
 
     try:
