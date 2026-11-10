@@ -204,10 +204,11 @@ def test_audio_mix_rejects_foreign_assets_invalid_ranges_and_non_audio_sources(
     assert save_clip(audio["id"], start=0, duration=20).status_code == 422
     assert save_clip(video["id"]).status_code == 200
 
-    non_audio_probe = lambda _path: {
-        "format": {"duration": "12"},
-        "streams": [{"codec_type": "video", "width": 320, "height": 240}],
-    }
+    def non_audio_probe(_path):
+        return {
+            "format": {"duration": "12"},
+            "streams": [{"codec_type": "video", "width": 320, "height": 240}],
+        }
     monkeypatch.setattr(media_route, "probe_media", non_audio_probe)
     response = save_clip(video["id"])
     assert response.status_code == 422
