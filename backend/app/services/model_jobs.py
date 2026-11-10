@@ -196,7 +196,6 @@ def execute_video_enhancement(
 
     client = ComfyUIClient()
     output_bytes = 0
-    enhanced_frames: list[Path] = []
     frame_count = extraction["frame_count"]
     for index in range(1, frame_count + 1):
         if cancel_check():
@@ -222,10 +221,16 @@ def execute_video_enhancement(
                 cancel_check=cancel_check,
             )
         except ComfyUICancelled as exc:
-            raise MediaJobCancelled("Video enhancement was cancelled during frame inference.") from exc
+            raise MediaJobCancelled(
+                "Video enhancement was cancelled during frame inference."
+            ) from exc
         selected = None
         for output in result.get("outputs", []):
-            output_path = frame_output_dir / output["saved_as"]
+            output_path = (frame_output_dir / output["saved_as"]).resolve()
+            if not output_path.is_relative_to(frame_output_dir.resolve()):
+                raise ComfyUIError(
+                    "Real-ESRGAN returned an output path outside its frame directory."
+                )
             if output_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
                 continue
             metadata = probe_media(output_path)
@@ -254,7 +259,6 @@ def execute_video_enhancement(
             raise ComfyUIError("Enhanced frame sequence exceeded the configured output size limit.")
         enhanced_frame = enhanced_dir / f"frame-{index:06d}.png"
         shutil.copyfile(selected, enhanced_frame)
-        enhanced_frames.append(enhanced_frame)
         if index == frame_count or index % 10 == 0:
             progress(
                 min(88, 10 + int(index / frame_count * 78)),
