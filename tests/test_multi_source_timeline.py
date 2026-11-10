@@ -213,9 +213,6 @@ def test_project_timeline_api_saves_reads_and_renders_assets(
     assert download.status_code == 200
     assert download.content == b"project-preview"
 
-from fastapi.testclient import TestClient
-
-
 @pytest.mark.skipif(
     shutil.which("ffmpeg") is None,
     reason="FFmpeg is required for multi-source render integration test",
