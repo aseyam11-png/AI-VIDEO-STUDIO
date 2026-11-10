@@ -155,7 +155,7 @@ def test_visual_effects_reject_last_clip_boundary_and_out_of_range_title(tmp_pat
     assert invalid_title.status_code == 422
 
 
-def test_visual_effects_reject_assets_from_other_projects_and_non_image_assets(tmp_path, monkeypatch):
+def test_visual_effects_reject_foreign_and_non_image_assets(tmp_path, monkeypatch):
     project = _project(tmp_path, monkeypatch, "First project")
     other = _project(tmp_path, monkeypatch, "Other project")
     video, _ = _asset(project["id"], "source.mp4")
@@ -169,7 +169,15 @@ def test_visual_effects_reject_assets_from_other_projects_and_non_image_assets(t
 
     foreign = client.put(
         f"/v1/projects/{project['id']}/visual-effects",
-        json={"overlays": [{"asset_id": other_logo["id"], "start_seconds": 0, "duration_seconds": 2}]},
+        json={
+            "overlays": [
+                {
+                    "asset_id": other_logo["id"],
+                    "start_seconds": 0,
+                    "duration_seconds": 2,
+                }
+            ]
+        },
     )
     assert foreign.status_code == 404
 
