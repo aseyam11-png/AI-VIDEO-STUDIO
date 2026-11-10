@@ -652,8 +652,25 @@
               </div>
               <span class="state-pill">مراجعة مطلوبة</span>
             </div>
-            <video id="identity-review-preview" controls playsinline></video>
+            <div class="identity-review-comparison">
+              <div>
+                <strong>الصورة المرجعية المعتمدة</strong>
+                <img id="identity-review-reference-image" alt="صورة المنتج المرجعية" loading="lazy">
+              </div>
+              <div>
+                <strong>الفيديو الناتج</strong>
+                <video id="identity-review-preview" controls playsinline></video>
+              </div>
+            </div>
             <p id="identity-review-reference" class="hint"></p>
+            <div class="identity-review-checklist">
+              <strong>تحقق من العناصر التالية قبل الموافقة:</strong>
+              <label class="check-option"><input id="identity-check-silhouette" type="checkbox"><span>شكل المنتج ونِسَبه الهندسية مطابقان للصورة المرجعية</span></label>
+              <label class="check-option"><input id="identity-check-colors" type="checkbox"><span>الألوان والخامات والتفاصيل السطحية متسقة</span></label>
+              <label class="check-option"><input id="identity-check-logo" type="checkbox"><span>الشعار والعلامة التجارية والنصوص والملصقات لم تتغير</span></label>
+              <label class="check-option"><input id="identity-check-components" type="checkbox"><span>المكونات والقطع والتغليف موجودة ولم تُضف تفاصيل مختلقة</span></label>
+              <label class="check-option"><input id="identity-check-consistency" type="checkbox"><span>هوية المنتج متسقة بين جميع اللقطات</span></label>
+            </div>
             <label class="field-label" for="identity-review-notes">ملاحظات المراجعة (اختياري)</label>
             <textarea id="identity-review-notes" class="control" rows="3" maxlength="2000" placeholder="مثال: تحقق من شكل الساعة والشعار واللون والتفاصيل."></textarea>
             <div class="action-row">
