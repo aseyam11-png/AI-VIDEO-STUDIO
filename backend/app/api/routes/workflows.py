@@ -3,7 +3,11 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 
 from app.integrations.ollama import OllamaError
-from app.schemas.workflows import WorkflowCreateRequest, WorkflowFromBriefRequest
+from app.schemas.workflows import (
+    WorkflowCreateRequest,
+    WorkflowFromBriefRequest,
+    WorkflowIdentityReviewRequest,
+)
 from app.services.workflow_engine import (
     WorkflowConflictError,
     WorkflowNotFoundError,
@@ -13,6 +17,7 @@ from app.services.workflow_engine import (
     create_workflow_from_brief,
     create_workflow_run,
     get_workflow,
+    review_product_identity,
 )
 
 router = APIRouter(prefix="/v1/workflows", tags=["workflows"])
@@ -55,6 +60,26 @@ def get_workflow_route(workflow_id: UUID) -> dict:
 def approve_workflow_route(workflow_id: UUID) -> dict:
     try:
         return approve_workflow(str(workflow_id))
+    except WorkflowNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except WorkflowConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except WorkflowRequestError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/{workflow_id}/identity-review", status_code=status.HTTP_202_ACCEPTED)
+def review_workflow_identity_route(
+    workflow_id: UUID,
+    payload: WorkflowIdentityReviewRequest,
+) -> dict:
+    """Require a human identity decision before timeline and export steps are queued."""
+    try:
+        return review_product_identity(
+            str(workflow_id),
+            approved=payload.approved,
+            notes=payload.notes,
+        )
     except WorkflowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except WorkflowConflictError as exc:
