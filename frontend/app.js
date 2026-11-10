@@ -2119,6 +2119,19 @@
       $("identity-review-reference").textContent =
         "الصورة المرجعية: " + (referenceAsset?.original_filename || identityReview.reference_asset_id) +
         " · SHA-256: " + String(identityReview.reference_sha256 || "").slice(0, 16) + "…";
+      const referenceImage = $("identity-review-reference-image");
+      const referenceUrl = new URL(
+        `/v1/projects/${encodeURIComponent(workflow.project_id)}/assets/${encodeURIComponent(identityReview.reference_asset_id)}/file`,
+        window.location.origin
+      );
+      referenceImage.src = referenceUrl.pathname;
+      [
+        "identity-check-silhouette",
+        "identity-check-colors",
+        "identity-check-logo",
+        "identity-check-components",
+        "identity-check-consistency"
+      ].forEach((id) => { $(id).checked = false; });
       const previewUrl = identityReview.preview_url;
       const preview = $("identity-review-preview");
       if (previewUrl) {
@@ -2137,6 +2150,7 @@
       $("identity-review-preview").pause();
       $("identity-review-preview").removeAttribute("src");
       $("identity-review-preview").load();
+      $("identity-review-reference-image").removeAttribute("src");
     }
 
     const terminal = ["succeeded", "failed", "cancelled"].includes(workflow.status);
@@ -2257,6 +2271,17 @@
 
   async function submitIdentityReview(approved) {
     if (!state.workflow?.id) return;
+    const checks = [
+      "identity-check-silhouette",
+      "identity-check-colors",
+      "identity-check-logo",
+      "identity-check-components",
+      "identity-check-consistency"
+    ];
+    if (approved && !checks.every((id) => $(id).checked)) {
+      notice("أكد جميع بنود فحص هوية المنتج قبل الموافقة.", "error");
+      return;
+    }
     const buttons = ["identity-review-approve", "identity-review-reject"];
     buttons.forEach((id) => { $(id).disabled = true; });
     try {
@@ -2266,7 +2291,14 @@
           method: "POST",
           body: JSON.stringify({
             approved,
-            notes: $("identity-review-notes").value.trim()
+            notes: $("identity-review-notes").value.trim(),
+            checks: {
+              silhouette_and_proportions: $("identity-check-silhouette").checked,
+              colors_and_materials: $("identity-check-colors").checked,
+              logo_and_labels: $("identity-check-logo").checked,
+              components_and_packaging: $("identity-check-components").checked,
+              consistency_across_shots: $("identity-check-consistency").checked
+            }
           })
         }
       );
