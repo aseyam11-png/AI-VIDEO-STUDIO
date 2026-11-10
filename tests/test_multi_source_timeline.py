@@ -212,6 +212,31 @@ def test_project_timeline_api_saves_reads_and_renders_assets(
     assert download.status_code == 200
     assert download.content == b"project-preview"
 
+    resaved = client.put(f"/v1/projects/{project['id']}/timeline", json=payload)
+    assert resaved.status_code == 200, resaved.text
+    stale_after_edit = client.get(f"/v1/projects/{project['id']}/timeline/rendered")
+    assert stale_after_edit.status_code == 404
+
+    rendered_again = client.post(
+        f"/v1/projects/{project['id']}/timeline/render",
+        json={"width": 640, "height": 360, "fps": 24},
+    )
+    assert rendered_again.status_code == 200, rendered_again.text
+
+    missing_clips = client.put(f"/v1/projects/{project['id']}/timeline", json={"fps": 24})
+    assert missing_clips.status_code == 422
+
+    cleared = client.put(f"/v1/projects/{project['id']}/timeline", json={"fps": 24, "clips": []})
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["clips"] == []
+    assert cleared.json()["duration_seconds"] == 0
+    empty_timeline = client.get(f"/v1/projects/{project['id']}/timeline")
+    assert empty_timeline.status_code == 200
+    assert empty_timeline.json()["clips"] == []
+    stale_preview = client.get(f"/v1/projects/{project['id']}/timeline/rendered")
+    assert stale_preview.status_code == 404
+
+
 @pytest.mark.skipif(
     shutil.which("ffmpeg") is None,
     reason="FFmpeg is required for multi-source render integration test",

@@ -26,6 +26,12 @@ def test_studio_ui_and_static_assets_are_served():
     assert "لم يُعتمد الاستدلال الحقيقي بعد" in script.text
     assert "void loadModelStatus();" in script.text
     assert "refresh-model-status" in script.text
+    assert 'id="timeline-panel"' in page.text
+    assert 'id="timeline-source"' in page.text
+    assert 'id="timeline-save"' in page.text
+    assert 'id="timeline-render"' in page.text
+    assert "saveProjectTimeline" in script.text
+    assert "renderProjectTimeline" in script.text
 
 
 def test_project_history_endpoint_lists_created_projects(tmp_path, monkeypatch):

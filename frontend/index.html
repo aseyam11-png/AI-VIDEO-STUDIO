@@ -93,11 +93,13 @@
         <nav class="stepper" aria-label="مراحل الإنتاج">
           <div class="step active" data-step="1"><span>1</span><b>المادة الخام</b></div>
           <i></i>
-          <div class="step" data-step="2"><span>2</span><b>الخطة الإبداعية</b></div>
+          <div class="step" data-step="2"><span>2</span><b>تحرير المقاطع</b></div>
           <i></i>
-          <div class="step" data-step="3"><span>3</span><b>التنفيذ</b></div>
+          <div class="step" data-step="3"><span>3</span><b>الخطة الإبداعية</b></div>
           <i></i>
-          <div class="step" data-step="4"><span>4</span><b>التصدير</b></div>
+          <div class="step" data-step="4"><span>4</span><b>التنفيذ</b></div>
+          <i></i>
+          <div class="step" data-step="5"><span>5</span><b>التصدير</b></div>
         </nav>
 
         <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
@@ -138,14 +140,86 @@
           </div>
         </section>
 
+        <section id="timeline-panel" class="panel timeline-panel">
+          <div class="panel-header">
+            <div>
+              <span class="eyebrow">02 — EDITING WORKSPACE</span>
+              <h3>محرر الخط الزمني</h3>
+              <p>اجمع فيديوهات المشروع في تسلسل واحد، اضبط نقطة البداية والمدة، ثم احفظ المعاينة أو صدّرها.</p>
+            </div>
+            <span id="timeline-state" class="state-pill">لا توجد مقاطع</span>
+          </div>
+
+          <div class="timeline-add-grid">
+            <div>
+              <label class="field-label" for="timeline-source">مصدر المقطع</label>
+              <select id="timeline-source" class="control" disabled>
+                <option value="">ارفع فيديوهات للمشروع أولاً</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label" for="timeline-in">بداية القص من المصدر (ثانية)</label>
+              <input id="timeline-in" class="control" type="number" min="0" max="3600" step="0.1" value="0" inputmode="decimal">
+            </div>
+            <div>
+              <label class="field-label" for="timeline-duration">مدة المقطع (ثانية)</label>
+              <input id="timeline-duration" class="control" type="number" min="0.01" max="3600" step="0.1" value="5" inputmode="decimal">
+            </div>
+            <div class="timeline-add-action">
+              <button id="timeline-add-clip" class="button button-secondary" type="button" disabled>＋ إضافة إلى الخط الزمني</button>
+            </div>
+          </div>
+
+          <div class="timeline-summary">
+            <span id="timeline-clip-count">0 مقطع</span>
+            <span id="timeline-total-duration">المدة الإجمالية: 0 ثانية</span>
+            <span>حد أقصى 100 مقطع / 60 دقيقة</span>
+          </div>
+          <div id="timeline-empty" class="timeline-empty">
+            لم تتم إضافة مقاطع بعد. اختر فيديو من مصادر المشروع وأضفه إلى الخط الزمني.
+          </div>
+          <div id="timeline-clip-list" class="timeline-clip-list" aria-live="polite"></div>
+
+          <div class="timeline-export">
+            <div class="timeline-export-settings">
+              <div>
+                <label class="field-label" for="timeline-resolution">دقة المعاينة</label>
+                <select id="timeline-resolution" class="control">
+                  <option value="1920x1080" selected>Full HD · 1080p</option>
+                  <option value="1280x720">HD · 720p</option>
+                  <option value="640x360">خفيفة · 360p</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label" for="timeline-fps">معدل الإطارات</label>
+                <select id="timeline-fps" class="control">
+                  <option value="24">24 FPS</option>
+                  <option value="30" selected>30 FPS</option>
+                  <option value="60">60 FPS</option>
+                </select>
+              </div>
+            </div>
+            <div class="action-row">
+              <button id="timeline-save" class="button button-outline" type="button" disabled>حفظ الخط الزمني</button>
+              <button id="timeline-render" class="button button-primary" type="button" disabled>إنشاء معاينة MP4</button>
+              <a id="timeline-download" class="button button-secondary" href="#" download hidden>تحميل المعاينة</a>
+            </div>
+            <p id="timeline-help" class="hint">التغييرات لا تُحفظ تلقائيًا. احفظ ترتيب المقاطع قبل الانتقال إلى مشروع آخر.</p>
+          </div>
+
+          <div id="timeline-preview-wrap" class="video-preview-wrap" hidden>
+            <video id="timeline-preview" controls playsinline preload="metadata"></video>
+          </div>
+        </section>
+
         <section class="panel">
           <div class="panel-header">
             <div>
-              <span class="eyebrow">02 — CREATIVE DIRECTION</span>
+              <span class="eyebrow">03 — CREATIVE DIRECTION</span>
               <h3>صف رؤيتك للمخرج الذكي</h3>
               <p>اكتب وصفًا واضحًا بالعربية. سيحوّله Qwen إلى خطة ومشاهد قابلة للمراجعة.</p>
             </div>
-            <span class="panel-number">02</span>
+            <span class="panel-number">03</span>
           </div>
           <form id="director-form" class="stack">
             <label class="field-label" for="creative-brief">ماذا تريد أن ينتج الاستديو؟</label>
