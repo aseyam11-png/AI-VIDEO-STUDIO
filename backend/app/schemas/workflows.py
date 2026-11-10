@@ -52,9 +52,12 @@ class WorkflowFromBriefRequest(BaseModel):
     upscale_output: bool = False
     generate_video: bool = False
     interpolate_generated_video: bool = False
+    product_identity_lock: bool = False
 
     @model_validator(mode="after")
     def validate_workflow_options(self):
         if self.interpolate_generated_video and not self.generate_video:
             raise ValueError("Frame interpolation requires video generation in this workflow.")
+        if self.product_identity_lock and not self.generate_video:
+            raise ValueError("Product identity lock requires video generation from an image.")
         return self
