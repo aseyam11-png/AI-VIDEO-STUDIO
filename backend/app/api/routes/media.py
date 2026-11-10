@@ -1,4 +1,5 @@
 import math
+import mimetypes
 from pathlib import Path
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
@@ -252,6 +253,17 @@ def get_assets(project_id: str) -> list[dict]:
 def get_asset_route(project_id: str, asset_id: str) -> dict:
     asset, _ = _source_path(project_id, asset_id)
     return asset
+
+
+@router.get("/assets/{asset_id}/file")
+def download_project_asset_file(project_id: str, asset_id: str) -> FileResponse:
+    asset, source = _source_path(project_id, asset_id)
+    media_type, _ = mimetypes.guess_type(asset.get("original_filename", source.name))
+    return FileResponse(
+        source,
+        media_type=media_type or "application/octet-stream",
+        filename=asset.get("original_filename", source.name),
+    )
 
 
 @router.post("/assets/{asset_id}/proxy")
