@@ -964,11 +964,10 @@ def render_multi_source_timeline(
                 f"force_original_aspect_ratio=decrease,format=rgba,"
                 f"colorchannelmixer=aa={overlay['opacity']:.4f}"
             )
-            if overlay["animation"] == "slide_up":
-                overlay_chain += (
-                    f",loop=loop=-1:size=1:start=0,setpts=N/({fps}*TB),fps={fps},"
-                    f"trim=duration={timeline_duration:.6f},setpts=PTS-STARTPTS"
-                )
+            overlay_chain += (
+                f",setpts=PTS-STARTPTS,fps={fps},"
+                f"trim=duration={timeline_duration:.6f},setpts=PTS-STARTPTS"
+            )
             filters.append(overlay_chain + overlay_label)
 
             margin = 32
