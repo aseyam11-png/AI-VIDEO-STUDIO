@@ -22,11 +22,14 @@ class WorkflowCreateRequest(BaseModel):
     upscale_output: bool = False
     generate_video: bool = False
     interpolate_generated_video: bool = False
+    product_identity_lock: bool = False
 
     @model_validator(mode="after")
     def validate_workflow_options(self):
         if self.interpolate_generated_video and not self.generate_video:
             raise ValueError("Frame interpolation requires video generation in this workflow.")
+        if self.product_identity_lock and not self.generate_video:
+            raise ValueError("Product identity lock requires video generation from an image.")
         return self
 
 
@@ -49,9 +52,37 @@ class WorkflowFromBriefRequest(BaseModel):
     upscale_output: bool = False
     generate_video: bool = False
     interpolate_generated_video: bool = False
+    product_identity_lock: bool = False
 
     @model_validator(mode="after")
     def validate_workflow_options(self):
         if self.interpolate_generated_video and not self.generate_video:
             raise ValueError("Frame interpolation requires video generation in this workflow.")
+        if self.product_identity_lock and not self.generate_video:
+            raise ValueError("Product identity lock requires video generation from an image.")
+        return self
+
+
+
+class ProductIdentityReviewChecks(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    silhouette_and_proportions: bool = False
+    colors_and_materials: bool = False
+    logo_and_labels: bool = False
+    components_and_packaging: bool = False
+    consistency_across_shots: bool = False
+
+
+class WorkflowIdentityReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approved: bool
+    notes: str = Field(default="", max_length=2000)
+    checks: ProductIdentityReviewChecks = Field(default_factory=ProductIdentityReviewChecks)
+
+    @model_validator(mode="after")
+    def require_completed_checklist_for_approval(self):
+        if self.approved and not all(self.checks.model_dump().values()):
+            raise ValueError("All five product identity checks must be confirmed before approval.")
         return self

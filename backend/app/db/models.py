@@ -237,7 +237,7 @@ class WorkflowRunRecord(Base):
             "project_id", "idempotency_key", name="uq_workflow_runs_project_idempotency"
         ),
         CheckConstraint(
-            "status IN ('awaiting_approval', 'queued', 'running', "
+            "status IN ('awaiting_approval', 'awaiting_identity_review', 'queued', 'running', "
             "'cancel_requested', 'succeeded', 'failed', 'cancelled')",
             name="ck_workflow_runs_status",
         ),

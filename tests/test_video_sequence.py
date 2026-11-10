@@ -1,4 +1,5 @@
 import io
+import json
 import shutil
 import subprocess
 from pathlib import Path
@@ -263,6 +264,7 @@ def test_video_sequence_executes_wan_shots_registers_assets_and_assembles_mp4(
     class FakeComfyUIClient:
         def run_workflow(self, workflow_id, values, output_dir, *, progress, cancel_check):
             calls.append((workflow_id, values))
+            assert "Canonical product identity lock" in values["prompt"]
             assert cancel_check() is False
             output_dir.mkdir(parents=True, exist_ok=True)
             output = output_dir / f"generated-{len(calls)}.mp4"
@@ -278,8 +280,22 @@ def test_video_sequence_executes_wan_shots_registers_assets_and_assembles_mp4(
         "asset_id": image_asset["id"],
         "payload": {
             "shots": [
-                {"prompt": "Product close-up", "negative_prompt": "", "duration_seconds": 2},
-                {"prompt": "Slow side movement", "negative_prompt": "", "duration_seconds": 2},
+                {
+                    "prompt": (
+                        "Product close-up. Canonical product identity lock: "
+                        "preserve the exact product."
+                    ),
+                    "negative_prompt": "",
+                    "duration_seconds": 2,
+                },
+                {
+                    "prompt": (
+                        "Slow side movement. Canonical product identity lock: "
+                        "preserve the exact product."
+                    ),
+                    "negative_prompt": "",
+                    "duration_seconds": 2,
+                },
             ],
             "generation_width": 832,
             "generation_height": 480,
@@ -289,6 +305,8 @@ def test_video_sequence_executes_wan_shots_registers_assets_and_assembles_mp4(
             "crf": 28,
             "interpolate_factor": 1,
             "approved": True,
+            "product_identity_lock": True,
+            "identity_reference_sha256": image_asset["sha256"],
         },
     }
     progress_events = []
@@ -304,6 +322,7 @@ def test_video_sequence_executes_wan_shots_registers_assets_and_assembles_mp4(
         "wan22_ti2v_5b_v1",
     ]
     assert all(item[1]["source_path"] for item in calls)
+    assert len({item[1]["source_path"] for item in calls}) == 1
     assert result["shot_count"] == 2
     assert result["duration_seconds"] == pytest.approx(4.0)
     assert result["output_asset_id"]
@@ -311,4 +330,82 @@ def test_video_sequence_executes_wan_shots_registers_assets_and_assembles_mp4(
     assert Path(project_dir(project["id"]) / result["relative_path"]).is_file()
     sequence_manifest = Path(project_dir(project["id"]) / result["sequence_manifest_path"])
     assert sequence_manifest.is_file()
+    manifest = json.loads(sequence_manifest.read_text(encoding="utf-8"))
+    assert manifest["product_identity_lock"] is True
+    assert manifest["identity_reference"]["asset_id"] == image_asset["id"]
+    assert manifest["identity_reference"]["sha256"] == image_asset["sha256"]
+    assert manifest["identity_reference"]["integrity_verified"] is True
+    assert manifest["identity_reference"]["human_review_required"] is True
+    assert all(
+        shot["identity_reference_sha256"] == image_asset["sha256"]
+        for shot in manifest["shots"]
+    )
     assert progress_events[-1][0] == 96
+
+
+def test_product_identity_reference_fingerprint_is_verified_before_wan_jobs(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
+    project = create_project(
+        {
+            "name": "Tampered product reference",
+            "target_duration_seconds": 4,
+            "target_resolution": "640x360",
+            "target_fps": 24,
+            "language": "ar",
+            "brief": "اختبار سلامة مرجع المنتج قبل توليد اللقطات.",
+        }
+    )
+    image_asset, reference = ingest_file_stream(
+        project["id"],
+        "reference.png",
+        io.BytesIO(b"original-product-reference"),
+        max_bytes=1024,
+    )
+    reference.write_bytes(b"tampered-product-reference")
+    calls = []
+
+    class FakeComfyUIClient:
+        def run_workflow(self, *args, **kwargs):
+            calls.append(args)
+            raise AssertionError("Wan must not run with a tampered identity reference.")
+
+    monkeypatch.setattr(model_jobs, "ComfyUIClient", FakeComfyUIClient)
+    job = {
+        "id": str(uuid4()),
+        "project_id": project["id"],
+        "asset_id": image_asset["id"],
+        "payload": {
+            "shots": [
+                {
+                    "prompt": "Identity locked shot one",
+                    "negative_prompt": "",
+                    "duration_seconds": 2,
+                },
+                {
+                    "prompt": "Identity locked shot two",
+                    "negative_prompt": "",
+                    "duration_seconds": 2,
+                },
+            ],
+            "generation_width": 832,
+            "generation_height": 480,
+            "output_width": 320,
+            "output_height": 240,
+            "fps": 24,
+            "crf": 28,
+            "interpolate_factor": 1,
+            "approved": True,
+            "product_identity_lock": True,
+            "identity_reference_sha256": image_asset["sha256"],
+        },
+    }
+    with pytest.raises(ValueError, match="SHA-256 integrity verification"):
+        model_jobs.execute_video_sequence(
+            job,
+            reference,
+            progress=lambda *_: None,
+            cancel_check=lambda: False,
+        )
+    assert calls == []

@@ -35,6 +35,7 @@
 
   const statusLabels = {
     awaiting_approval: "بانتظار موافقتك",
+    awaiting_identity_review: "مراجعة هوية المنتج مطلوبة",
     queued: "في قائمة التنفيذ",
     running: "قيد التنفيذ",
     cancel_requested: "جارٍ الإيقاف",
@@ -133,13 +134,62 @@
 
   function setProjectControls() {
     const qwenReady = Boolean(state.modelStatus?.models?.["qwen3.5-9b-q4_K_M"]?.ready);
-    const ready = Boolean(state.project && state.selectedAsset && !state.uploading && qwenReady);
+    const imageSelected = state.selectedAsset?.asset_type === "image";
+    const videoSelected = state.selectedAsset?.asset_type === "video";
+    const wanReady = Boolean(state.modelStatus?.models?.["wan-2.2-ti2v-5b"]?.workflow_configured);
+    const canGenerate = imageSelected && wanReady;
+    const generateVideo = $("generate-video");
+    if (generateVideo) {
+      generateVideo.disabled = !canGenerate;
+      const label = generateVideo.closest("label");
+      if (label) label.classList.toggle("option-disabled", generateVideo.disabled);
+      if (!canGenerate) generateVideo.checked = false;
+    }
+    const identityLock = $("product-identity-lock");
+    if (identityLock) {
+      identityLock.disabled = !canGenerate || !generateVideo?.checked;
+      const label = identityLock.closest("label");
+      if (label) label.classList.toggle("option-disabled", identityLock.disabled);
+      if (identityLock.disabled) identityLock.checked = false;
+    }
+    const interpolation = $("interpolate-generated-video");
+    if (interpolation) {
+      const rifeReady = Boolean(state.modelStatus?.models?.rife?.workflow_configured);
+      interpolation.disabled = !canGenerate || !generateVideo?.checked || !rifeReady;
+      const label = interpolation.closest("label");
+      if (label) label.classList.toggle("option-disabled", interpolation.disabled);
+      if (interpolation.disabled) interpolation.checked = false;
+    }
+    const videoOnlyOptions = {
+      "transcribe-audio": Boolean(state.modelStatus?.models?.whisperx?.worker_enabled),
+      "enhance-audio": Boolean(state.modelStatus?.models?.deepfilternet?.configured),
+      "tracking-prompt": Boolean(state.modelStatus?.models?.sam2?.workflow_configured)
+    };
+    Object.entries(videoOnlyOptions).forEach(([id, configured]) => {
+      const input = $(id);
+      input.disabled = imageSelected || !configured;
+      const label = input.closest("label") || input.parentElement;
+      if (label) label.classList.toggle("option-disabled", input.disabled);
+    });
+    const targetDuration = $("target-duration");
+    if (targetDuration) {
+      [...targetDuration.options].forEach((option) => {
+        option.disabled = Boolean(generateVideo?.checked) && Number(option.value) > 80;
+      });
+      if (generateVideo?.checked && Number(targetDuration.value) > 80) {
+        targetDuration.value = "60";
+      }
+    }
+    const ready = Boolean(
+      state.project && state.selectedAsset && !state.uploading && qwenReady &&
+      (videoSelected || (imageSelected && generateVideo?.checked && wanReady))
+    );
     $("generate-plan").disabled = !ready;
     const enhancement = $("upscale-video");
     if (enhancement) {
       const configured = Boolean(state.modelStatus?.models?.realesrgan?.workflow_configured);
       const duration = Number(state.selectedAsset?.probe?.format?.duration);
-      const supportedDuration = Number.isFinite(duration) && duration > 0 && duration <= 10;
+      const supportedDuration = videoSelected && Number.isFinite(duration) && duration > 0 && duration <= 10;
       enhancement.disabled = !configured || !supportedDuration;
       const label = enhancement.closest("label");
       if (label) label.classList.toggle("option-disabled", enhancement.disabled);
@@ -172,10 +222,14 @@
       const grounding = models["grounding-dino"] || {};
       const sam2 = models.sam2 || {};
       const realesrgan = models.realesrgan || {};
+      const wan = models["wan-2.2-ti2v-5b"] || {};
+      const rife = models.rife || {};
       const optional = [
         { id: "transcribe-audio", ready: Boolean(whisper.worker_enabled), label: "WhisperX" },
         { id: "enhance-audio", ready: Boolean(deepfilter.configured), label: "DeepFilterNet" },
         { id: "upscale-video", ready: Boolean(realesrgan.workflow_configured), label: "Real-ESRGAN" },
+        { id: "generate-video", ready: Boolean(wan.workflow_configured), label: "Wan 2.2" },
+        { id: "interpolate-generated-video", ready: Boolean(rife.workflow_configured), label: "RIFE" },
         { id: "detection-prompt", ready: Boolean(grounding.workflow_configured), label: "Grounding DINO" },
         { id: "tracking-prompt", ready: Boolean(sam2.workflow_configured), label: "SAM 2" }
       ];
@@ -201,7 +255,7 @@
       director.className = "hint readiness-warning";
       summary.textContent = "حالة الخدمات غير معروفة. لم يتم تمكين الخيارات الاختيارية.";
       summary.className = "hint readiness-warning";
-      ["transcribe-audio","enhance-audio","upscale-video","detection-prompt","tracking-prompt"].forEach((id) => {
+      ["transcribe-audio","enhance-audio","upscale-video","generate-video","interpolate-generated-video","detection-prompt","tracking-prompt"].forEach((id) => {
         $(id).disabled = true;
       });
       setProjectControls();
@@ -284,23 +338,28 @@
   function renderAssets() {
     const select = $("asset-select");
     select.replaceChildren();
-    const videos = state.assets.filter((asset) => asset.asset_type === "video");
-    if (!videos.length) {
-      select.add(new Option("لا توجد فيديوهات في هذا المشروع", ""));
+    const sourceAssets = state.assets.filter((asset) =>
+      asset.asset_type === "video" || asset.asset_type === "image"
+    );
+    if (!sourceAssets.length) {
+      select.add(new Option("لا توجد فيديوهات أو صور مرجعية في المشروع", ""));
       select.disabled = true;
       state.selectedAsset = null;
-      $("asset-name").textContent = "لم يتم رفع فيديو بعد";
-      $("asset-meta").textContent = "ارفع فيديو لبدء إنشاء خطة الإنتاج";
+      $("asset-name").textContent = "لم يتم رفع مصدر بعد";
+      $("asset-meta").textContent = "ارفع فيديو للتحرير أو صورة منتج لتوليد فيديو";
     } else {
-      for (const asset of videos) {
-        const label = `${asset.original_filename || asset.stored_filename} · ${formatBytes(asset.size_bytes)}`;
+      sourceAssets.forEach((asset) => {
+        const typeLabel = asset.asset_type === "image" ? "صورة مرجعية" : "فيديو";
+        const label = `${typeLabel} · ${asset.original_filename || asset.stored_filename} · ${formatBytes(asset.size_bytes)}`;
         select.add(new Option(label, asset.id));
-      }
+      });
       select.disabled = false;
-      select.value = state.selectedAsset?.id || videos[0].id;
-      state.selectedAsset = videos.find((asset) => asset.id === select.value) || videos[0];
+      const preferred = sourceAssets.find((asset) => asset.id === state.selectedAsset?.id);
+      state.selectedAsset = preferred || sourceAssets.find((asset) => asset.asset_type === "video") || sourceAssets[0];
+      select.value = state.selectedAsset.id;
       $("asset-name").textContent = state.selectedAsset.original_filename || state.selectedAsset.stored_filename;
-      $("asset-meta").textContent = `${formatBytes(state.selectedAsset.size_bytes)} · ${state.selectedAsset.status || "ready"}`;
+      const typeLabel = state.selectedAsset.asset_type === "image" ? "صورة مرجعية للمنتج" : "فيديو مصدر";
+      $("asset-meta").textContent = `${typeLabel} · ${formatBytes(state.selectedAsset.size_bytes)} · ${state.selectedAsset.status || "ready"}`;
     }
     renderTimelineEditor();
     renderAudioMixEditor();
@@ -1874,10 +1933,13 @@
       notice("أنشئ مشروعًا أو اختر مشروعًا قبل رفع الفيديو.", "error");
       return;
     }
-    const allowed = [".mp4", ".mov", ".mkv", ".webm", ".m4v"];
+    const allowed = [
+      ".mp4", ".mov", ".mkv", ".webm", ".m4v",
+      ".png", ".jpg", ".jpeg", ".webp"
+    ];
     const name = file.name.toLowerCase();
     if (!allowed.some((extension) => name.endsWith(extension))) {
-      notice("صيغة الملف غير مدعومة. استخدم MP4 أو MOV أو MKV أو WEBM أو M4V.", "error");
+      notice("الصيغة غير مدعومة. استخدم فيديو MP4/MOV/MKV/WEBM أو صورة PNG/JPG/WEBP.", "error");
       return;
     }
 
@@ -1890,7 +1952,7 @@
     percent.textContent = "0%";
     state.uploading = true;
     setProjectControls();
-    notice("بدأ رفع الفيديو إلى مساحة التخزين الخاصة…", "info");
+    notice("بدأ رفع الملف إلى مساحة المشروع الخاصة…", "info");
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/v1/projects/${encodeURIComponent(state.project.id)}/assets`);
@@ -1915,7 +1977,7 @@
       }
       progress.style.width = "100%";
       percent.textContent = "100%";
-      notice("تم رفع الفيديو والتحقق من صلاحيته بنجاح.", "success");
+      notice(body.asset_type === "image" ? "تم رفع صورة المنتج والتحقق منها. يمكنك اختيارها كمرجع لهوية المنتج." : "تم رفع الفيديو والتحقق من صلاحيته بنجاح.", "success");
       try {
         await reloadAssets(body.id);
       } catch (error) {
@@ -1938,8 +2000,12 @@
   async function reloadAssets(preferredId) {
     const assets = await api(`/v1/projects/${encodeURIComponent(state.project.id)}/assets`);
     state.assets = Array.isArray(assets) ? assets : [];
-    const preferred = state.assets.find((asset) => asset.id === preferredId && asset.asset_type === "video");
-    state.selectedAsset = preferred || state.assets.find((asset) => asset.asset_type === "video") || null;
+    const preferred = state.assets.find((asset) =>
+      asset.id === preferredId && ["video", "image"].includes(asset.asset_type)
+    );
+    state.selectedAsset = preferred ||
+      state.assets.find((asset) => asset.asset_type === "video") ||
+      state.assets.find((asset) => asset.asset_type === "image") || null;
     if (state.selectedAsset) localStorage.setItem("studio.assetId", state.selectedAsset.id);
     renderAssets();
     await loadAssetScenes($("timeline-source").value);
@@ -2054,15 +2120,67 @@
   }
 
   function renderWorkflow(workflow) {
+    const previousIdentityReviewStatus =
+      state.workflow?.options?.product_identity_review?.status || null;
     state.workflow = workflow;
     $("execution-panel").hidden = false;
     $("workflow-state").textContent = statusLabels[workflow.status] || workflow.status;
     $("plan-status").textContent = statusLabels[workflow.status] || workflow.status;
     $("approval-actions").hidden = workflow.status !== "awaiting_approval";
-    $("execution-actions").hidden = !["queued", "running", "cancel_requested"].includes(workflow.status);
+    $("execution-actions").hidden = !["queued", "running", "cancel_requested", "awaiting_identity_review"].includes(workflow.status);
     renderWorkflowSteps(workflow.steps || []);
     $("plan-panel").hidden = !workflow.creative_plan;
     if (workflow.creative_plan) renderPlan(workflow.creative_plan);
+
+    const reviewPanel = $("identity-review-panel");
+    const identityReview = workflow.options?.product_identity_review;
+    reviewPanel.hidden = workflow.status !== "awaiting_identity_review";
+    if (workflow.status === "awaiting_identity_review" && identityReview) {
+      if (previousIdentityReviewStatus !== "pending") {
+        $("identity-review-notes").value = identityReview.notes || "";
+        [
+          "identity-check-silhouette",
+          "identity-check-colors",
+          "identity-check-logo",
+          "identity-check-components",
+          "identity-check-consistency"
+        ].forEach((id) => { $(id).checked = false; });
+      }
+      const referenceAsset = state.assets.find((asset) => asset.id === identityReview.reference_asset_id);
+      $("identity-review-reference").textContent =
+        "الصورة المرجعية: " + (referenceAsset?.original_filename || identityReview.reference_asset_id) +
+        " · SHA-256: " + String(identityReview.reference_sha256 || "").slice(0, 16) + "…";
+      const referenceImage = $("identity-review-reference-image");
+      const referenceUrl = new URL(
+        `/v1/projects/${encodeURIComponent(workflow.project_id)}/assets/${encodeURIComponent(identityReview.reference_asset_id)}/file`,
+        window.location.origin
+      );
+      if (!referenceImage.src || new URL(referenceImage.src, window.location.origin).pathname !== referenceUrl.pathname) {
+        referenceImage.src = referenceUrl.pathname;
+      }
+      const previewUrl = identityReview.preview_url;
+      const preview = $("identity-review-preview");
+      if (previewUrl) {
+        const safeUrl = new URL(previewUrl, window.location.origin);
+        if (safeUrl.origin === window.location.origin) {
+          const nextPreviewUrl = safeUrl.pathname + safeUrl.search;
+          if (!preview.src || new URL(preview.src, window.location.origin).pathname + new URL(preview.src, window.location.origin).search !== nextPreviewUrl) {
+            preview.src = nextPreviewUrl;
+          }
+        } else {
+          preview.removeAttribute("src");
+          notice("تم رفض رابط معاينة خارج نطاق الاستديو.", "error");
+        }
+      } else {
+        preview.removeAttribute("src");
+      }
+      setStepper(4);
+    } else {
+      $("identity-review-preview").pause();
+      $("identity-review-preview").removeAttribute("src");
+      $("identity-review-preview").load();
+      $("identity-review-reference-image").removeAttribute("src");
+    }
 
     const terminal = ["succeeded", "failed", "cancelled"].includes(workflow.status);
     if (workflow.status === "succeeded") {
@@ -2071,12 +2189,14 @@
     } else {
       $("render-result").hidden = true;
       $("video-preview-wrap").hidden = true;
-      if (workflow.status === "running" || workflow.status === "queued") setStepper(4);
+      if (["running", "queued", "awaiting_identity_review"].includes(workflow.status)) setStepper(4);
     }
     if (workflow.status === "failed") {
       notice(workflow.error_message || "فشل أحد أجزاء التنفيذ. راجع تفاصيل الخطوات ويمكن إعادة محاولة المهمة الفاشلة.", "error");
     } else if (workflow.status === "cancelled") {
       notice("تم إلغاء سير العمل.", "info");
+    } else if (workflow.status === "awaiting_identity_review") {
+      notice("اكتمل التوليد. راجع الفيديو المرجعي والنتيجة ثم وافق أو ارفض قبل التصدير.", "info");
     } else if (workflow.status === "succeeded") {
       notice("اكتمل سير العمل وتم إنشاء ملف الفيديو النهائي.", "success");
     }
@@ -2106,7 +2226,7 @@
     event.preventDefault();
     clearNotice();
     if (!state.project || !state.selectedAsset) {
-      notice("اختر مشروعًا وارفع فيديو أولًا.", "error");
+      notice("اختر مشروعًا ومصدرًا صالحًا: فيديو للتحرير أو صورة مع تفعيل توليد الفيديو.", "error");
       return;
     }
     const qwenReady = Boolean(state.modelStatus?.models?.["qwen3.5-9b-q4_K_M"]?.ready);
@@ -2115,6 +2235,13 @@
       return;
     }
     const brief = $("creative-brief").value.trim();
+    const generateVideo = state.selectedAsset.asset_type === "image" &&
+      !$("generate-video").disabled && $("generate-video").checked;
+    const requestedDuration = Number($("target-duration").value);
+    if (generateVideo && (requestedDuration < 2 || requestedDuration > 80)) {
+      notice("توليد Wan متعدد اللقطات يدعم مدة إجمالية من ثانيتين إلى 80 ثانية فقط.", "error");
+      return;
+    }
     if (brief.length < 20) {
       notice("اكتب وصفًا من 20 حرفًا على الأقل حتى يستطيع المخرج فهم المطلوب.", "error");
       return;
@@ -2127,9 +2254,11 @@
         project_id: state.project.id,
         asset_id: state.selectedAsset.id,
         idempotency_key: `studio-${uuid()}`,
-        brief,
+        brief: generateVideo
+          ? brief + "\n\nWan production constraints: create 2 to 8 scenes, each scene must be 1 to 10 seconds, and all scene durations must sum exactly to the requested total. Use the supplied product image as the canonical reference in every shot. Keep the product design and markings unchanged; prefer simple camera movement over changing product details."
+          : brief,
         language: $("plan-language").value,
-        target_duration_seconds: Number($("target-duration").value),
+        target_duration_seconds: requestedDuration,
         transcribe_audio: !$("transcribe-audio").disabled && $("transcribe-audio").checked,
         enhance_audio: !$("enhance-audio").disabled && $("enhance-audio").checked,
         upscale_output: !$("upscale-video").disabled && $("upscale-video").checked,
@@ -2139,8 +2268,12 @@
         tracking_prompt: $("tracking-prompt").disabled
           ? null
           : $("tracking-prompt").value.trim() || null,
-        generate_video: false,
-        interpolate_generated_video: false
+        generate_video: state.selectedAsset.asset_type === "image" &&
+          !$("generate-video").disabled && $("generate-video").checked,
+        interpolate_generated_video: !$("interpolate-generated-video").disabled &&
+          $("interpolate-generated-video").checked,
+        product_identity_lock: !$("product-identity-lock").disabled &&
+          $("product-identity-lock").checked
       };
       const workflow = await api("/v1/workflows/from-brief", {
         method: "POST",
@@ -2171,6 +2304,54 @@
       notice(`تعذّر اعتماد الخطة: ${error.message}`, "error");
     } finally {
       $("approve-workflow").disabled = false;
+    }
+  }
+
+  async function submitIdentityReview(approved) {
+    if (!state.workflow?.id) return;
+    const checks = [
+      "identity-check-silhouette",
+      "identity-check-colors",
+      "identity-check-logo",
+      "identity-check-components",
+      "identity-check-consistency"
+    ];
+    if (approved && !checks.every((id) => $(id).checked)) {
+      notice("أكد جميع بنود فحص هوية المنتج قبل الموافقة.", "error");
+      return;
+    }
+    const buttons = ["identity-review-approve", "identity-review-reject"];
+    buttons.forEach((id) => { $(id).disabled = true; });
+    try {
+      const workflow = await api(
+        `/v1/workflows/${encodeURIComponent(state.workflow.id)}/identity-review`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            approved,
+            notes: $("identity-review-notes").value.trim(),
+            checks: {
+              silhouette_and_proportions: $("identity-check-silhouette").checked,
+              colors_and_materials: $("identity-check-colors").checked,
+              logo_and_labels: $("identity-check-logo").checked,
+              components_and_packaging: $("identity-check-components").checked,
+              consistency_across_shots: $("identity-check-consistency").checked
+            }
+          })
+        }
+      );
+      renderWorkflow(workflow);
+      if (workflow.status === "queued" || workflow.status === "running") {
+        startPolling(workflow.id);
+        notice("تم اعتماد هوية المنتج. استؤنف بناء الخط الزمني والتصدير.", "success");
+      } else if (workflow.status === "failed") {
+        stopPolling();
+        notice(workflow.error_message || "تم رفض هوية المنتج وإيقاف التصدير.", "error");
+      }
+    } catch (error) {
+      notice(`تعذّرت معالجة مراجعة الهوية: ${error.message}`, "error");
+    } finally {
+      buttons.forEach((id) => { $(id).disabled = false; });
     }
   }
 
@@ -2305,6 +2486,11 @@
       $("execution-panel").hidden = true;
       loadProject(event.target.value);
     });
+    ["generate-video", "product-identity-lock", "interpolate-generated-video"].forEach((id) => {
+      $(id).addEventListener("change", setProjectControls);
+    });
+    $("identity-review-approve").addEventListener("click", () => submitIdentityReview(true));
+    $("identity-review-reject").addEventListener("click", () => submitIdentityReview(false));
     $("asset-select").addEventListener("change", (event) => {
       state.selectedAsset = state.assets.find((asset) => asset.id === event.target.value) || null;
       if (state.selectedAsset) localStorage.setItem("studio.assetId", state.selectedAsset.id);

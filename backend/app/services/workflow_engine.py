@@ -159,6 +159,15 @@ def _step_specs(
                 f"Scene: {scene.visual_description}. "
                 f"Camera: {scene.camera_movement}. Audience: {plan.audience}."
             )[:4000]
+            if request.product_identity_lock:
+                prompt = (
+                    f"{prompt[:2500]} Canonical product identity lock: reproduce the exact product "
+                    "shown in the supplied reference image. Preserve its silhouette, "
+                    "proportions, materials, colors, components, logo, label, packaging and "
+                    "all visible markings. Do not redesign, replace, morph, omit or invent "
+                    "product details. Keep camera motion and lighting subordinate to "
+                    "product fidelity."
+                )[:4000]
             steps.append(
                 (
                     JobType.VIDEO_GENERATE,
@@ -166,11 +175,24 @@ def _step_specs(
                         "prompt": prompt,
                         "negative_prompt": (
                             "low quality, flicker, distorted geometry, unreadable text"
+                            + (
+                                ", changed product identity, altered logo, misspelled label, "
+                                "different product color, wrong material, missing components, "
+                                "product morphing"
+                                if request.product_identity_lock
+                                else ""
+                            )
                         ),
                         "duration_seconds": scene.duration_seconds,
                         "width": 832,
                         "height": 480,
                         "approved": True,
+                        "product_identity_lock": request.product_identity_lock,
+                        "identity_reference_sha256": (
+                            (asset_metadata or {}).get("sha256")
+                            if request.product_identity_lock
+                            else None
+                        ),
                     },
                 )
             )
@@ -195,12 +217,29 @@ def _step_specs(
                     f"Audience: {plan.audience}. "
                     f"On-screen direction: {scene.on_screen_text}."
                 )[:4000]
+                if request.product_identity_lock:
+                    prompt = (
+                        f"{prompt[:2400]} Canonical product identity lock: the supplied reference "
+                        "image is the single source of truth for the product. Preserve the "
+                        "exact silhouette, proportions, geometry, colors, materials, hardware, "
+                        "logo, typography, labels and packaging in every shot. Do not redesign, "
+                        "replace, morph, omit, add or invent product details. Keep the whole "
+                        "product visually consistent across shots; simplify camera movement "
+                        "rather than changing the product."
+                    )[:4000]
                 shots.append(
                     {
                         "prompt": prompt,
                         "negative_prompt": (
                             "low quality, flicker, temporal inconsistency, "
                             "distorted geometry, unreadable text, product deformation"
+                            + (
+                                ", changed product identity, altered logo, misspelled label, "
+                                "different product, changed materials, missing components, "
+                                "extra product, product morphing"
+                                if request.product_identity_lock
+                                else ""
+                            )
                         ),
                         "duration_seconds": scene.duration_seconds,
                     }
@@ -218,6 +257,12 @@ def _step_specs(
                         "crf": 20,
                         "interpolate_factor": 2 if request.interpolate_generated_video else 1,
                         "approved": True,
+                        "product_identity_lock": request.product_identity_lock,
+                        "identity_reference_sha256": (
+                            (asset_metadata or {}).get("sha256")
+                            if request.product_identity_lock
+                            else None
+                        ),
                     },
                 )
             )
@@ -376,11 +421,29 @@ def create_workflow_run(
                     "Source asset does not belong to the requested project."
                 )
 
+            if request.product_identity_lock and asset.asset_type != "image":
+                raise WorkflowRequestError(
+                    "Product identity lock requires an uploaded image asset "
+                    "as the source reference."
+                )
+            if request.product_identity_lock and not (
+                isinstance(asset.sha256, str)
+                and len(asset.sha256) == 64
+                and all(character in "0123456789abcdef" for character in asset.sha256)
+            ):
+                raise WorkflowRequestError(
+                    "The product reference image must have a verified SHA-256 fingerprint."
+                )
+
             specs = _step_specs(
                 asset.asset_type,
                 request,
                 project,
-                asset_metadata=asset.metadata_json or {},
+                asset_metadata={
+                    **(asset.metadata_json or {}),
+                    "sha256": asset.sha256,
+                    "asset_type": asset.asset_type,
+                },
             )
             normalized_specs = []
             for job_type, payload in specs:
@@ -410,6 +473,10 @@ def create_workflow_run(
                     "upscale_output": request.upscale_output,
                     "generate_video": request.generate_video,
                     "interpolate_generated_video": request.interpolate_generated_video,
+                    "product_identity_lock": request.product_identity_lock,
+                    "identity_reference_sha256": (
+                        asset.sha256 if request.product_identity_lock else None
+                    ),
                 },
                 status="awaiting_approval",
                 current_step_index=0,
@@ -655,6 +722,39 @@ def advance_workflow_for_job(db: Session, job: JobRecord) -> None:
                 run.updated_at = now
                 return
             effective_asset_id = output_asset.id
+        if (
+            bool((run.options_json or {}).get("product_identity_lock"))
+            and next_step.tool_id == JobType.MEDIA_TIMELINE.value
+        ):
+            if not output_asset_id:
+                step.status = "failed"
+                step.error_message = (
+                    "Identity-locked generation did not return a reviewable video asset."
+                )
+                run.status = "failed"
+                run.error_message = step.error_message
+                run.finished_at = now
+                run.updated_at = now
+                return
+            review = {
+                "status": "pending",
+                "reference_asset_id": run.asset_id,
+                "reference_sha256": (run.options_json or {}).get("identity_reference_sha256"),
+                "output_asset_id": effective_asset_id,
+                "preview_url": f"/v1/projects/{run.project_id}/assets/{effective_asset_id}/file",
+                "generation_job_id": job.id,
+                "required_before_export": True,
+                "created_at": now.isoformat(),
+                "notes": "",
+            }
+            options = dict(run.options_json or {})
+            options["product_identity_review"] = review
+            run.options_json = options
+            next_step.asset_id = effective_asset_id
+            run.status = "awaiting_identity_review"
+            run.updated_at = now
+            return
+
         next_step.asset_id = effective_asset_id
         try:
             _enqueue_step(db, run, next_step)
@@ -682,6 +782,127 @@ def advance_workflow_for_job(db: Session, job: JobRecord) -> None:
         run.error_message = None
         run.finished_at = now
         run.updated_at = now
+
+
+def review_product_identity(
+    workflow_id: str,
+    *,
+    approved: bool,
+    notes: str = "",
+    checks: dict[str, bool] | None = None,
+) -> dict:
+    """Record a human product-identity decision and gate downstream export."""
+    with session_scope() as db:
+        run = db.scalar(
+            select(WorkflowRunRecord)
+            .where(WorkflowRunRecord.id == workflow_id)
+            .with_for_update()
+        )
+        if run is None:
+            raise WorkflowNotFoundError("Workflow not found.")
+
+        options = dict(run.options_json or {})
+        review = dict(options.get("product_identity_review") or {})
+        if not options.get("product_identity_lock"):
+            raise WorkflowConflictError("This workflow did not request product identity review.")
+
+        review_status = review.get("status")
+        if review_status in {"approved", "rejected"}:
+            if (review_status == "approved") == approved:
+                return _workflow_to_dict(db, run)
+            raise WorkflowConflictError(
+                "A different identity-review decision was already recorded."
+            )
+        if run.status != "awaiting_identity_review" or review_status != "pending":
+            raise WorkflowConflictError("Workflow is not waiting for product identity review.")
+
+        checks = dict(checks or {})
+        required_checks = {
+            "silhouette_and_proportions",
+            "colors_and_materials",
+            "logo_and_labels",
+            "components_and_packaging",
+            "consistency_across_shots",
+        }
+        if approved and (
+            set(checks) != required_checks
+            or not all(checks.get(name) is True for name in required_checks)
+        ):
+            raise WorkflowRequestError(
+                "All five product identity checks must be confirmed before approval."
+            )
+
+        output_asset_id = str(review.get("output_asset_id") or "")
+        output_asset = db.get(AssetRecord, output_asset_id)
+        if output_asset is None or output_asset.project_id != run.project_id:
+            raise WorkflowRequestError(
+                "The generated review video is missing or outside this project."
+            )
+
+        now = _now()
+        review.update(
+            {
+                "status": "approved" if approved else "rejected",
+                "notes": notes.strip()[:2000],
+                "reviewed_at": now.isoformat(),
+                "reviewed_by": "user",
+                "checks": checks,
+            }
+        )
+        options["product_identity_review"] = review
+        run.options_json = options
+        run.updated_at = now
+
+        if not approved:
+            run.status = "failed"
+            run.error_message = (
+                "Product identity review was rejected. Timeline construction "
+                "and export were blocked."
+            )
+            run.finished_at = now
+            pending_steps = db.scalars(
+                select(WorkflowStepRecord)
+                .where(
+                    WorkflowStepRecord.workflow_id == run.id,
+                    WorkflowStepRecord.status == "planned",
+                )
+                .with_for_update()
+            ).all()
+            for pending in pending_steps:
+                pending.status = "cancelled"
+                pending.error_message = "Blocked because product identity review was rejected."
+                pending.finished_at = now
+                pending.updated_at = now
+            return _workflow_to_dict(db, run)
+
+        next_step = db.scalar(
+            select(WorkflowStepRecord)
+            .where(
+                WorkflowStepRecord.workflow_id == run.id,
+                WorkflowStepRecord.status == "planned",
+            )
+            .order_by(WorkflowStepRecord.sequence)
+            .with_for_update()
+        )
+        if next_step is None:
+            run.status = "succeeded"
+            run.finished_at = now
+            run.error_message = None
+            run.updated_at = now
+            return _workflow_to_dict(db, run)
+
+        next_step.asset_id = output_asset.id
+        try:
+            _enqueue_step(db, run, next_step)
+        except (WorkflowConflictError, WorkflowRequestError, JobRequestError) as exc:
+            next_step.status = "failed"
+            next_step.error_message = str(exc)[:2000]
+            next_step.finished_at = now
+            run.status = "failed"
+            run.error_message = str(exc)[:2000]
+            run.finished_at = now
+            run.updated_at = now
+        return _workflow_to_dict(db, run)
 
 
 def get_workflow(workflow_id: str) -> dict:
@@ -781,6 +1002,7 @@ def create_workflow_from_brief(request: WorkflowFromBriefRequest) -> dict:
         upscale_output=request.upscale_output,
         generate_video=request.generate_video,
         interpolate_generated_video=request.interpolate_generated_video,
+        product_identity_lock=request.product_identity_lock,
     )
     result = create_workflow_run(create_request, request_hash_override=request_hash)
     result["plan_model"] = settings.ollama_model

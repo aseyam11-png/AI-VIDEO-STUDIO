@@ -108,18 +108,18 @@
           <div class="panel-header">
             <div>
               <span class="eyebrow">01 — SOURCE MEDIA</span>
-              <h3>أضف الفيديو</h3>
-              <p>ارفع ملف الفيديو الذي تريد العمل عليه. تتم معالجة الملف داخل مساحة الاستديو الخاصة.</p>
+              <h3>أضف فيديو أو صورة المنتج</h3>
+              <p>ارفع فيديو للتحرير أو صورة المنتج لاستخدامها كمرجع ثابت عند توليد لقطات Wan.</p>
             </div>
             <span class="panel-number">01</span>
           </div>
 
           <div id="upload-zone" class="upload-zone">
-            <input id="media-file" type="file" accept=".mp4,.mov,.mkv,.webm,.m4v,video/mp4,video/quicktime,video/x-matroska,video/webm" hidden>
+            <input id="media-file" type="file" accept=".mp4,.mov,.mkv,.webm,.m4v,.png,.jpg,.jpeg,.webp,video/mp4,video/quicktime,video/x-matroska,video/webm,image/png,image/jpeg,image/webp" hidden>
             <div class="upload-icon" aria-hidden="true">↑</div>
-            <strong>اسحب ملف الفيديو هنا أو اختره من جهازك</strong>
-            <span>MP4 · MOV · MKV · WEBM · M4V</span>
-            <button id="choose-file" class="button button-outline" type="button">اختيار فيديو</button>
+            <strong>اسحب الفيديو أو صورة المنتج هنا أو اخترها من جهازك</strong>
+            <span>فيديو: MP4 · MOV · MKV · WEBM · M4V — صورة: PNG · JPG · WEBP</span>
+            <button id="choose-file" class="button button-outline" type="button">اختيار ملف</button>
           </div>
           <div id="upload-progress-wrap" class="progress-wrap" hidden>
             <div class="progress-meta"><span id="upload-filename">رفع الملف</span><b id="upload-percent">0%</b></div>
@@ -134,7 +134,7 @@
                 <small id="asset-meta">ارفع فيديو لبدء إنشاء خطة الإنتاج</small>
               </div>
             </div>
-            <select id="asset-select" class="control asset-select" disabled aria-label="اختيار فيديو من المشروع">
+            <select id="asset-select" class="control asset-select" disabled aria-label="اختيار فيديو أو صورة مرجعية من المشروع">
               <option value="">لا توجد ملفات</option>
             </select>
           </div>
@@ -596,6 +596,9 @@
                 <label class="check-option"><input id="transcribe-audio" type="checkbox"><span>تفريغ الكلام باستخدام WhisperX</span></label>
                 <label class="check-option"><input id="enhance-audio" type="checkbox"><span>تحسين الصوت باستخدام DeepFilterNet</span></label>
                 <label class="check-option"><input id="upscale-video" type="checkbox"><span>تحسين وضوح الفيديو (Real-ESRGAN، حتى 10 ثوانٍ)</span></label>
+                <label class="check-option"><input id="generate-video" type="checkbox" disabled><span>توليد فيديو من صورة المنتج باستخدام Wan 2.2</span></label>
+                <label class="check-option"><input id="product-identity-lock" type="checkbox" disabled><span>قفل هوية المنتج — استخدم الصورة نفسها لكل اللقطات</span></label>
+                <label class="check-option"><input id="interpolate-generated-video" type="checkbox" disabled><span>تحسين سلاسة اللقطات باستخدام RIFE</span></label>
                 <div>
                   <label class="field-label" for="detection-prompt">عنصر تريد اكتشافه (اختياري)</label>
                   <input id="detection-prompt" class="control" maxlength="500" placeholder="مثال: the main product">
@@ -605,7 +608,7 @@
                   <input id="tracking-prompt" class="control" maxlength="500" placeholder="مثال: the main product">
                 </div>
               </div>
-              <p class="hint">تحسين الفيديو متاح للفيديوهات التي لا تتجاوز 10 ثوانٍ، ويعالج الإطارات بالتتابع مع إعادة الصوت الأصلي. يتطلب ComfyUI وReal-ESRGAN. تتطلب الخيارات الأخرى تثبيت وتشغيل الخدمات والنماذج المرتبطة بها.</p>
+              <p class="hint">توليد الفيديو يتطلب اختيار صورة منتج وتهيئة Wan 2.2. عند تفعيل قفل الهوية، تتوقف الخطة بعد التوليد لتراجع الفيديو وتوافق على الهوية قبل بناء الخط الزمني والتصدير. القفل يستخدم الصورة نفسها وبصمتها ومطالبات تثبيت الهوية، لكنه لا يضمن تطابقًا بصريًا كاملًا دون مراجعتك.</p><p class="hint">تحسين Real-ESRGAN متاح للفيديوهات حتى 10 ثوانٍ. الخيارات الاختصاصية لا تعمل إلا بعد تهيئة النموذج وسير العمل المرتبط به.</p>
             </details>
 
             <button id="generate-plan" class="button button-primary" type="submit" disabled>
@@ -640,6 +643,41 @@
             <span id="workflow-state" class="state-pill">قيد الانتظار</span>
           </div>
           <div id="workflow-steps" class="workflow-steps"></div>
+          <section id="identity-review-panel" class="identity-review-panel" hidden>
+            <div class="panel-header">
+              <div>
+                <span class="eyebrow">PRODUCT IDENTITY CHECK</span>
+                <h3>راجع هوية المنتج قبل التصدير</h3>
+                <p>قارن الفيديو بالصورة المرجعية. لن يبدأ الخط الزمني أو التصدير قبل موافقتك.</p>
+              </div>
+              <span class="state-pill">مراجعة مطلوبة</span>
+            </div>
+            <div class="identity-review-comparison">
+              <div>
+                <strong>الصورة المرجعية المعتمدة</strong>
+                <img id="identity-review-reference-image" alt="صورة المنتج المرجعية" loading="lazy">
+              </div>
+              <div>
+                <strong>الفيديو الناتج</strong>
+                <video id="identity-review-preview" controls playsinline></video>
+              </div>
+            </div>
+            <p id="identity-review-reference" class="hint"></p>
+            <div class="identity-review-checklist">
+              <strong>تحقق من العناصر التالية قبل الموافقة:</strong>
+              <label class="check-option"><input id="identity-check-silhouette" type="checkbox"><span>شكل المنتج ونِسَبه الهندسية مطابقان للصورة المرجعية</span></label>
+              <label class="check-option"><input id="identity-check-colors" type="checkbox"><span>الألوان والخامات والتفاصيل السطحية متسقة</span></label>
+              <label class="check-option"><input id="identity-check-logo" type="checkbox"><span>الشعار والعلامة التجارية والنصوص والملصقات لم تتغير</span></label>
+              <label class="check-option"><input id="identity-check-components" type="checkbox"><span>المكونات والقطع والتغليف موجودة ولم تُضف تفاصيل مختلقة</span></label>
+              <label class="check-option"><input id="identity-check-consistency" type="checkbox"><span>هوية المنتج متسقة بين جميع اللقطات</span></label>
+            </div>
+            <label class="field-label" for="identity-review-notes">ملاحظات المراجعة (اختياري)</label>
+            <textarea id="identity-review-notes" class="control" rows="3" maxlength="2000" placeholder="مثال: تحقق من شكل الساعة والشعار واللون والتفاصيل."></textarea>
+            <div class="action-row">
+              <button id="identity-review-approve" class="button button-primary" type="button">أوافق على هوية المنتج والمتابعة للتصدير</button>
+              <button id="identity-review-reject" class="button button-danger-outline" type="button">رفض — أوقف التصدير</button>
+            </div>
+          </section>
           <div id="execution-actions" class="action-row">
             <button id="stop-workflow" class="button button-danger-outline" type="button">إيقاف التنفيذ</button>
           </div>

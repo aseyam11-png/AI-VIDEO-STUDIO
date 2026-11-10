@@ -116,20 +116,28 @@ The same image reference is supplied to every shot. This does not guarantee fram
 
 See [Phase 6.7 — Multi-Shot Generation and Assembly](25-PHASE-6.7-MULTISHOT-GENERATION-ASSEMBLY.md).
 
-### Phase 6.8 — Bounded Real-ESRGAN video enhancement (implementation PR)
+### Phase 6.8 — Bounded Real-ESRGAN video enhancement (merged)
 
-The synchronized Phase 6.8 implementation is submitted in [PR #16](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/16). It adds a durable `video.enhance` model-worker job, per-frame ComfyUI Real-ESRGAN processing, bounded FFmpeg extraction/reassembly, preservation of source audio streams, verified project-asset registration and an Arabic Studio toggle.
+Merged in [PR #16](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/16). Adds a durable `video.enhance` model-worker job, per-frame ComfyUI Real-ESRGAN processing, bounded FFmpeg extraction/reassembly, preservation of all source audio streams, verified project-asset registration and an Arabic Studio toggle.
 
-The job is limited to 10 seconds and 300 frames, applies a 650-million pixel-frame extraction budget, caps extracted and enhanced frame bytes by the configured model-output limit, and requires approval. Synthetic FFmpeg tests and a mocked ComfyUI client validate orchestration, not real enhancement quality or GPU inference. PR CI and target-host Real-ESRGAN acceptance remain open.
+The job is limited to 10 seconds and 300 frames, applies a 650-million pixel-frame extraction budget, caps extracted and enhanced frame bytes by the configured model-output limit, and requires approval. PR #16 passed Python/Ruff, Windows script and Compose integration CI before merge. Synthetic FFmpeg tests and a mocked ComfyUI client validate orchestration, not real enhancement quality or GPU inference; target-host Real-ESRGAN acceptance remains open.
 
 See [Phase 6.8 — Bounded Video Enhancement](26-PHASE-6.8-VIDEO-ENHANCEMENT.md).
+
+### Phase 6.9 — Product Identity Lock (implementation PR)
+
+The implementation is submitted on `feat/phase-6.9-product-identity-lock`. It adds a project-scoped image reference with SHA-256 integrity verification, repeated identity constraints for each Wan shot, a persisted `awaiting_identity_review` state and a five-item human checklist. The workflow stops before timeline construction and export. Only explicit approval with all five checks queues the timeline; rejection blocks the pending export steps.
+
+This is reference conditioning and a human approval gate, not a guarantee of pixel-perfect identity or automated logo/text recognition. CI uses synthetic media and mocked ComfyUI; real Wan inference, cross-shot logo fidelity and target-GPU acceptance remain open.
+
+See [Phase 6.9 — Product Identity Lock](27-PHASE-6.9-PRODUCT-IDENTITY-LOCK.md).
 
 ### Remaining Phase 6 increments
 
 Deliver in independently testable increments:
 
-- Complete Phase 6.8 CI and target-host Real-ESRGAN acceptance; inspect quality and multi-track audio on real samples.
-- Product Identity Lock for product ads: reference preservation, logo/label checks and human review (6.9).
+- Complete Phase 6.8 target-host Real-ESRGAN inference acceptance and review quality/audio on real samples.
+- Complete Phase 6.9 CI, real Wan identity-lock samples and browser review acceptance.
 - Technical and visual QA: black/frozen frame detection, audio clipping/silence, duration/resolution/FPS checks, missing files and corrupt exports (6.10).
 
 Do not claim "professional automatic editing" until these paths are exercised on varied real videos and reviewed output samples.

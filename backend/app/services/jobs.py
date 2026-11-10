@@ -15,7 +15,7 @@ from app.db.models import (
 )
 from app.db.session import session_scope
 from app.schemas.jobs import JobCreate, JobType
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -84,6 +84,16 @@ class _VideoGenerateOptions(_StrictOptions):
     width: int = Field(default=832, ge=256, le=1280, multiple_of=16)
     height: int = Field(default=480, ge=256, le=1280, multiple_of=16)
     approved: bool = False
+    product_identity_lock: bool = False
+    identity_reference_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_identity_reference(self):
+        if self.product_identity_lock and not self.identity_reference_sha256:
+            raise ValueError("Product identity lock requires a verified reference SHA-256.")
+        if not self.product_identity_lock and self.identity_reference_sha256:
+            raise ValueError("Identity reference fingerprint requires product_identity_lock.")
+        return self
 
 
 class _VideoShotOptions(_StrictOptions):
@@ -102,6 +112,16 @@ class _VideoSequenceOptions(_StrictOptions):
     crf: int = Field(default=20, ge=0, le=35)
     interpolate_factor: Literal[1, 2] = 1
     approved: bool = False
+    product_identity_lock: bool = False
+    identity_reference_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_identity_reference(self):
+        if self.product_identity_lock and not self.identity_reference_sha256:
+            raise ValueError("Product identity lock requires a verified reference SHA-256.")
+        if not self.product_identity_lock and self.identity_reference_sha256:
+            raise ValueError("Identity reference fingerprint requires product_identity_lock.")
+        return self
 
 
 class _VideoEnhanceOptions(_StrictOptions):
