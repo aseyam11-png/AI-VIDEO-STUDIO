@@ -368,15 +368,10 @@ def extract_video_frames(
     if video_stream is None:
         raise ValueError("Video enhancement requires a valid video stream.")
     try:
-        duration = float(metadata.get("format", {}).get("duration"))
         width = int(video_stream["width"])
         height = int(video_stream["height"])
     except (TypeError, ValueError, KeyError) as exc:
-        raise ValueError("Source video duration or dimensions are invalid.") from exc
-    if not math.isfinite(duration) or duration <= 0 or duration > max_duration_seconds + 0.001:
-        raise ValueError(
-            f"Video enhancement is limited to {max_duration_seconds} seconds per job."
-        )
+        raise ValueError("Source video dimensions are invalid.") from exc
 
     source_rate = video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")
     try:
@@ -389,8 +384,25 @@ def extract_video_frames(
         source_fps = float(fps)
     if not math.isfinite(source_fps) or source_fps <= 0:
         source_fps = float(fps)
+
+    duration_value = video_stream.get("duration")
+    try:
+        duration = (
+            float(duration_value)
+            if duration_value is not None
+            else float(video_stream.get("nb_frames")) / source_fps
+            if video_stream.get("nb_frames") is not None
+            else float(metadata.get("format", {}).get("duration"))
+        )
+    except (TypeError, ValueError, ZeroDivisionError) as exc:
+        raise ValueError("Source video duration is invalid.") from exc
+    if not math.isfinite(duration) or duration <= 0 or duration > max_duration_seconds + 0.001:
+        raise ValueError(
+            f"Video enhancement is limited to {max_duration_seconds} seconds per job."
+        )
+
     output_fps = min(fps, max(1, round(source_fps)))
-    expected_frames = math.ceil(duration * output_fps)
+    expected_frames = max(1, round(duration * output_fps))
     if expected_frames < 1 or expected_frames > max_frames:
         raise ValueError(
             f"Video would require {expected_frames} frames; "
@@ -416,7 +428,7 @@ def extract_video_frames(
         "-vf",
         f"fps={output_fps}",
         "-frames:v",
-        str(max_frames),
+        str(expected_frames),
         "-start_number",
         "1",
         "-q:v",
