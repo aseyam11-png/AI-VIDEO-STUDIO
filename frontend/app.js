@@ -790,9 +790,15 @@
       .filter((item) => item.after_clip_id === afterClipId)
       .reduce((sum, item) => sum + Number(item.duration_seconds), 0);
     const previousClipId = index > 0 ? state.timelineClips[index - 1].clip_id : null;
-    const nextExisting = state.visualTransitions.find((item) => item.after_clip_id === previousClipId);
-    const usedOnFirst = currentFirst;
-    const usedOnSecond = nextExisting ? Number(nextExisting.duration_seconds) : 0;
+    const nextClipId = state.timelineClips[index + 1].clip_id;
+    const previousBoundary = state.visualTransitions.find(
+      (item) => item.after_clip_id === previousClipId
+    );
+    const nextBoundary = state.visualTransitions.find(
+      (item) => item.after_clip_id === nextClipId
+    );
+    const usedOnFirst = previousBoundary ? Number(previousBoundary.duration_seconds) : 0;
+    const usedOnSecond = nextBoundary ? Number(nextBoundary.duration_seconds) : 0;
     if (duration + usedOnFirst > first + 0.0001 ||
         duration + usedOnSecond > second + 0.0001 ||
         duration > first / 2 || duration > second / 2) {
