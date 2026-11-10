@@ -14,6 +14,9 @@
     timelineRendered: false,
     sceneManifest: null,
     sceneAssetId: null,
+    transcriptionManifest: null,
+    transcriptionAssetId: null,
+    subtitleManifest: null,
     workflow: null,
     pollHandle: null,
     uploading: false
@@ -233,6 +236,8 @@
       renderAssets();
       await loadProjectTimeline(projectId);
       await loadAssetScenes($("timeline-source").value);
+      await loadAssetTranscription($("timeline-source").value);
+      await loadTimelineSubtitleStatus(projectId);
       setProjectControls();
       const savedWorkflow = localStorage.getItem("studio.workflowId");
       if (savedWorkflow && localStorage.getItem("studio.workflowProjectId") === projectId) {
@@ -299,6 +304,10 @@
     state.timelineClips = [];
     state.timelineDirty = false;
     state.timelineRendered = false;
+    state.subtitleManifest = null;
+    $("timeline-subtitles-download").hidden = true;
+    $("timeline-subtitles-download").removeAttribute("href");
+    $("timeline-subtitles-state").textContent = "لم تُنشأ ترجمة لهذا الخط الزمني بعد.";
     const preview = $("timeline-preview");
     if (preview) {
       preview.pause();
@@ -336,6 +345,183 @@
       }
     }
     renderTimelineEditor();
+  }
+
+  function clearTranscriptionPreview() {
+    state.transcriptionManifest = null;
+    state.transcriptionAssetId = null;
+    $("transcription-preview-panel").hidden = true;
+    $("transcription-segments").replaceChildren();
+    $("transcription-segment-count").textContent = "0 مقطع كلام";
+    $("transcription-alignment-status").textContent = "حالة المحاذاة: غير معروفة";
+    $("transcription-state").textContent = "لم يتم التفريغ";
+  }
+
+  function alignmentLabel(status) {
+    if (status === "completed") return "محاذاة الكلمات مكتملة";
+    if (status === "unavailable") return "محاذاة الكلمات غير متاحة؛ استخدم توقيت الجمل";
+    return "توقيت الجمل متاح؛ محاذاة الكلمات غير مطلوبة";
+  }
+
+  function renderTranscriptionPreview() {
+    const manifest = state.transcriptionManifest;
+    const list = $("transcription-segments");
+    list.replaceChildren();
+    if (!manifest) {
+      $("transcription-preview-panel").hidden = true;
+      return;
+    }
+    const segments = Array.isArray(manifest.segments) ? manifest.segments : [];
+    $("transcription-preview-panel").hidden = false;
+    $("transcription-segment-count").textContent = `${segments.length} مقطع كلام · ${manifest.language === "ar" ? "العربية" : "English"}`;
+    $("transcription-alignment-status").textContent = alignmentLabel(manifest.alignment_status);
+    $("transcription-state").textContent = "تم التفريغ";
+    segments.slice(0, 12).forEach((segment) => {
+      const item = document.createElement("div");
+      item.className = "transcription-segment";
+      const timing = document.createElement("small");
+      timing.textContent = `${formatDuration(Number(segment.start) || 0)} – ${formatDuration(Number(segment.end) || 0)}`;
+      const copy = document.createElement("span");
+      copy.textContent = String(segment.text || "").trim();
+      item.append(timing, copy);
+      list.append(item);
+    });
+    if (segments.length > 12) {
+      const more = document.createElement("p");
+      more.className = "transcription-more";
+      more.textContent = `و${segments.length - 12} مقطع إضافي محفوظ في المشروع.`;
+      list.append(more);
+    }
+  }
+
+  async function loadAssetTranscription(assetId) {
+    clearTranscriptionPreview();
+    if (!state.project || !assetId) return;
+    const asset = state.assets.find((item) => item.id === assetId && item.asset_type === "video");
+    if (!asset) return;
+    state.transcriptionAssetId = assetId;
+    $("transcription-state").textContent = "جارٍ تحميل التفريغ المحفوظ…";
+    try {
+      const manifest = await api(
+        `/v1/projects/${encodeURIComponent(state.project.id)}/assets/${encodeURIComponent(assetId)}/transcription`
+      );
+      if (!Array.isArray(manifest.segments) || !["ar", "en"].includes(manifest.language)) {
+        throw new Error("ملف التفريغ المحفوظ غير صالح.");
+      }
+      state.transcriptionManifest = manifest;
+      renderTranscriptionPreview();
+    } catch (error) {
+      if (error.status === 404) {
+        $("transcription-state").textContent = "لم يتم التفريغ بعد";
+      } else {
+        state.transcriptionAssetId = null;
+        $("transcription-state").textContent = "تعذّر تحميل التفريغ";
+        notice(`تعذّر تحميل التفريغ المحفوظ: ${error.message}`, "error");
+      }
+    }
+    updateTimelineSummary();
+  }
+
+  async function transcribeSelectedAsset() {
+    const assetId = $("timeline-source").value;
+    const asset = state.assets.find((item) => item.id === assetId && item.asset_type === "video");
+    if (!state.project || !asset) {
+      notice("اختر فيديو من مصادر المشروع أولاً.", "error");
+      return;
+    }
+    const button = $("transcription-run");
+    button.disabled = true;
+    button.textContent = "جارٍ تفريغ الكلام…";
+    $("transcription-state").textContent = "قيد التفريغ";
+    try {
+      const manifest = await api(
+        `/v1/projects/${encodeURIComponent(state.project.id)}/assets/${encodeURIComponent(assetId)}/transcription`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            language: $("transcription-language").value,
+            model_name: "small",
+            device: "cpu",
+            align: $("transcription-align").checked
+          })
+        }
+      );
+      if (!Array.isArray(manifest.segments)) {
+        throw new Error("لم يُرجع محرك التفريغ مقاطع كلام صالحة.");
+      }
+      state.transcriptionAssetId = assetId;
+      state.transcriptionManifest = manifest;
+      renderTranscriptionPreview();
+      notice(
+        `اكتمل تفريغ الكلام: ${manifest.segments.length} مقطع. ${alignmentLabel(manifest.alignment_status)}.`,
+        "success"
+      );
+    } catch (error) {
+      state.transcriptionState = null;
+      $("transcription-state").textContent = "فشل التفريغ";
+      notice(`تعذّر تفريغ الصوت: ${error.message}`, "error");
+    } finally {
+      button.disabled = false;
+      button.textContent = "تفريغ صوت الفيديو الحالي";
+      updateTimelineSummary();
+    }
+  }
+
+  async function loadTimelineSubtitleStatus(projectId) {
+    state.subtitleManifest = null;
+    $("timeline-subtitles-download").hidden = true;
+    $("timeline-subtitles-download").removeAttribute("href");
+    $("timeline-subtitles-state").textContent = "لم تُنشأ ترجمة لهذا الخط الزمني بعد.";
+    if (!projectId) return;
+    try {
+      const manifest = await api(
+        `/v1/projects/${encodeURIComponent(projectId)}/timeline/subtitles/manifest`
+      );
+      if (manifest.project_id !== projectId || manifest.subtitle_format !== "srt") {
+        throw new Error("ملف الترجمة لا يطابق المشروع الحالي.");
+      }
+      state.subtitleManifest = manifest;
+      $("timeline-subtitles-download").href =
+        `/v1/projects/${encodeURIComponent(projectId)}/timeline/subtitles?download=${Date.now()}`;
+      $("timeline-subtitles-download").hidden = false;
+      $("timeline-subtitles-state").textContent =
+        `ملف SRT جاهز · ${manifest.caption_count} جملة · ${alignmentLabel(manifest.alignment_status)}.`;
+    } catch (error) {
+      if (error.status !== 404) {
+        notice(`تعذّر تحميل حالة الترجمة: ${error.message}`, "error");
+      }
+    }
+  }
+
+  async function createTimelineSubtitles() {
+    if (!state.project || !state.timelineClips.length) return;
+    if (state.timelineDirty) {
+      const saved = await saveProjectTimeline();
+      if (!saved) return;
+    }
+    const button = $("timeline-subtitles-create");
+    button.disabled = true;
+    button.textContent = "جارٍ إنشاء الترجمة…";
+    try {
+      const manifest = await api(`${timelineEndpoint()}/subtitles`, {
+        method: "POST",
+        body: JSON.stringify({ require_alignment: false })
+      });
+      state.subtitleManifest = manifest;
+      $("timeline-subtitles-download").href =
+        `${timelineEndpoint()}/subtitles?download=${Date.now()}`;
+      $("timeline-subtitles-download").hidden = false;
+      $("timeline-subtitles-state").textContent =
+        `اكتمل ملف SRT · ${manifest.caption_count} جملة · ${alignmentLabel(manifest.alignment_status)}.`;
+      notice("تم إنشاء ملف الترجمة المتزامن مع الخط الزمني.", "success");
+    } catch (error) {
+      $("timeline-subtitles-state").textContent = "تعذّر إنشاء ملف الترجمة";
+      notice(`تعذّر إنشاء الترجمة: ${error.message}`, "error");
+    } finally {
+      button.disabled = false;
+      button.textContent = "إنشاء ترجمة SRT للخط الزمني";
+      updateTimelineSummary();
+    }
   }
 
   function clearSceneSelection() {
@@ -565,6 +751,10 @@
           : "لا توجد مقاطع";
     $("timeline-save").disabled = !state.project || !state.timelineDirty;
     $("timeline-render").disabled = !state.project || !state.timelineClips.length;
+    $("timeline-subtitles-create").disabled = !state.project || !state.timelineClips.length;
+    $("transcription-run").disabled = !state.project || !videos.some(
+      (asset) => asset.id === $("timeline-source").value
+    );
     $("timeline-add-clip").disabled = !state.project || !videos.length;
     $("timeline-source").disabled = !videos.length;
     $("timeline-help").textContent = state.timelineDirty
@@ -674,6 +864,11 @@
 
   function markTimelineDirty() {
     state.timelineDirty = true;
+    state.subtitleManifest = null;
+    $("timeline-subtitles-download").hidden = true;
+    $("timeline-subtitles-download").removeAttribute("href");
+    $("timeline-subtitles-state").textContent =
+      "تغيّر الخط الزمني؛ أنشئ ملف SRT جديدًا بعد حفظ التعديلات.";
     if ($("timeline-preview-wrap")) $("timeline-preview-wrap").hidden = true;
     if ($("timeline-download")) $("timeline-download").hidden = true;
     state.timelineRendered = false;
@@ -919,6 +1114,7 @@
     if (state.selectedAsset) localStorage.setItem("studio.assetId", state.selectedAsset.id);
     renderAssets();
     await loadAssetScenes($("timeline-source").value);
+    await loadAssetTranscription($("timeline-source").value);
   }
 
   function renderPlan(plan) {
@@ -1294,6 +1490,8 @@
       event.preventDefault();
       event.returnValue = "";
     });
+    $("transcription-run").addEventListener("click", transcribeSelectedAsset);
+    $("timeline-subtitles-create").addEventListener("click", createTimelineSubtitles);
     $("scene-detect").addEventListener("click", detectProjectScenes);
     $("scene-results").addEventListener("change", updateSceneSelectionActions);
     $("scene-select-all").addEventListener("click", selectAllScenes);
@@ -1303,6 +1501,7 @@
       $("timeline-duration").value = "5";
       syncTimelineSourceFields();
       void loadAssetScenes(event.target.value);
+      void loadAssetTranscription(event.target.value);
     });
     $("timeline-fps").addEventListener("change", () => {
       if (state.timelineClips.length) markTimelineDirty();
