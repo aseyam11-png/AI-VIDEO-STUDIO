@@ -766,7 +766,10 @@ def download_timeline_subtitles(project_id: str) -> FileResponse:
             project_dir(project_id) / "timelines" / f"project-{timeline_id}.srt"
         )
         if not srt_path.is_file():
-            raise HTTPException(status_code=404, detail="Timeline subtitles have not been generated.")
+            raise HTTPException(
+                status_code=404,
+                detail="Timeline subtitles have not been generated.",
+            )
         return FileResponse(
             srt_path,
             media_type="application/x-subrip; charset=utf-8",
