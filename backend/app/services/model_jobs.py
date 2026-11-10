@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from app.core.config import settings
 from app.integrations.blender import render_project_template
@@ -9,7 +9,13 @@ from app.integrations.comfyui import ComfyUIClient, ComfyUIError
 from app.integrations.ffmpeg import MediaToolError, probe_media
 from app.media.audio import enhance_video_audio
 from app.media.speech import transcribe_local
-from app.media.storage import atomic_write_json, project_dir
+from app.media.pipeline import render_multi_source_timeline
+from app.media.storage import (
+    asset_dir,
+    atomic_write_json,
+    project_dir,
+    register_generated_video_asset,
+)
 
 WORKFLOW_BY_JOB_TYPE = {
     "vision.detect": "groundingdino_detect_v1",
@@ -138,6 +144,244 @@ def execute_comfyui_job(
     result["files_directory"] = output_dir.relative_to(project_dir(job["project_id"])).as_posix()
     atomic_write_json(output_dir / "result.json", result)
     return result
+
+
+
+
+def execute_video_sequence(
+    job: dict[str, Any],
+    source: Path,
+    *,
+    progress,
+    cancel_check,
+) -> dict:
+    """Generate approved shots serially, register them, and assemble one MP4."""
+    project_id = str(UUID(job["project_id"]))
+    job_id = str(UUID(job["id"]))
+    payload = job["payload"]
+    shots = payload["shots"]
+    if not 2 <= len(shots) <= 8:
+        raise ValueError("A generated sequence requires between two and eight shots.")
+
+    media_root = Path(settings.media_root).expanduser().resolve()
+    try:
+        reference_path = source.resolve().relative_to(media_root).as_posix()
+    except ValueError as exc:
+        raise ValueError("Generation reference must remain inside MEDIA_ROOT.") from exc
+
+    output_root = project_dir(project_id) / "ai_outputs" / str(job_id)
+    output_root.mkdir(parents=True, exist_ok=True)
+    client = ComfyUIClient()
+    shot_assets: list[dict] = []
+    total_duration = sum(int(shot["duration_seconds"]) for shot in shots)
+    if total_duration > 80:
+        raise ValueError("A generated sequence cannot exceed 80 seconds.")
+
+    def report_shot_progress(index: int, percentage: int, stage: str, message: str) -> None:
+        scaled = 10 + int(((index + percentage / 100) / len(shots)) * 68)
+        progress(
+            min(78, scaled),
+            f"shot_{index + 1}_{stage}",
+            f"Shot {index + 1}/{len(shots)}: {message}",
+        )
+
+    for index, shot in enumerate(shots):
+        if cancel_check():
+            raise RuntimeError("Multi-shot generation was cancelled.")
+        shot_dir = output_root / f"shot-{index + 1:02d}"
+        shot_dir.mkdir(parents=True, exist_ok=True)
+
+        def shot_progress(percent: int, stage: str, message: str) -> None:
+            report_shot_progress(index, percent, stage, message)
+
+        generated = client.run_workflow(
+            "wan22_ti2v_5b_v1",
+            {
+                "source_path": reference_path,
+                "prompt": shot["prompt"],
+                "negative_prompt": shot["negative_prompt"],
+                "duration_seconds": shot["duration_seconds"],
+                "width": payload["generation_width"],
+                "height": payload["generation_height"],
+            },
+            shot_dir,
+            progress=shot_progress,
+            cancel_check=cancel_check,
+        )
+        video_output = None
+        for output in generated.get("outputs", []):
+            output_path = shot_dir / output["saved_as"]
+            metadata = probe_media(output_path)
+            if any(
+                stream.get("codec_type") == "video"
+                for stream in metadata.get("streams", [])
+            ):
+                video_output = (output_path, metadata)
+                break
+        if video_output is None:
+            raise ComfyUIError(
+                f"Wan 2.2 shot {index + 1} did not return a valid video stream."
+            )
+
+        shot_path, shot_metadata = video_output
+        if int(payload["interpolate_factor"]) == 2:
+            if cancel_check():
+                raise RuntimeError("Multi-shot interpolation was cancelled.")
+            interpolation_dir = shot_dir / "interpolated"
+            interpolation = client.run_workflow(
+                "rife_interpolate_v1",
+                {
+                    "source_path": shot_path.resolve().relative_to(media_root).as_posix(),
+                    "factor": 2,
+                },
+                interpolation_dir,
+                progress=shot_progress,
+                cancel_check=cancel_check,
+            )
+            interpolated = None
+            for output in interpolation.get("outputs", []):
+                candidate = interpolation_dir / output["saved_as"]
+                metadata = probe_media(candidate)
+                if any(
+                    stream.get("codec_type") == "video"
+                    for stream in metadata.get("streams", [])
+                ):
+                    interpolated = (candidate, metadata)
+                    break
+            if interpolated is None:
+                raise ComfyUIError(
+                    f"RIFE did not return a valid video for shot {index + 1}."
+                )
+            shot_path, shot_metadata = interpolated
+
+        duration_value = shot_metadata.get("format", {}).get("duration")
+        try:
+            actual_duration = float(duration_value)
+        except (TypeError, ValueError) as exc:
+            raise ComfyUIError(
+                f"Generated shot {index + 1} has no valid duration."
+            ) from exc
+        requested_duration = float(shot["duration_seconds"])
+        if actual_duration + 0.05 < requested_duration:
+            raise ComfyUIError(
+                f"Generated shot {index + 1} is shorter than its approved duration."
+            )
+
+        shot_job_id = str(
+            uuid5(NAMESPACE_URL, f"ai-video-studio:{job_id}:shot:{index + 1}")
+        )
+        asset = register_generated_video_asset(
+            project_id,
+            shot_job_id,
+            shot_path,
+            max_bytes=settings.max_model_output_bytes,
+        )
+        shot_assets.append(
+            {
+                "index": index + 1,
+                "asset_id": asset["id"],
+                "relative_path": asset["relative_path"],
+                "duration_seconds": requested_duration,
+                "generated_duration_seconds": round(actual_duration, 6),
+                "prompt": shot["prompt"],
+            }
+        )
+        progress(
+            min(80, 10 + int(((index + 1) / len(shots)) * 70)),
+            "shot_registered",
+            f"Shot {index + 1}/{len(shots)} is validated and saved to the project.",
+        )
+
+    if cancel_check():
+        raise RuntimeError("Multi-shot assembly was cancelled.")
+
+    sources: dict[str, Path] = {}
+    timeline_clips: list[dict] = []
+    cursor = 0.0
+    for shot in shot_assets:
+        asset_id = str(UUID(shot["asset_id"]))
+        asset_path = asset_dir(project_id, asset_id)
+        manifest_path = asset_path / "asset.json"
+        asset = json.loads(manifest_path.read_text(encoding="utf-8"))
+        source_path = (asset_path / asset["stored_filename"]).resolve()
+        if not source_path.is_relative_to(asset_path.resolve()) or not source_path.is_file():
+            raise FileNotFoundError("Generated shot asset is missing from its project directory.")
+        sources[asset_id] = source_path
+        clip_duration = float(shot["duration_seconds"])
+        timeline_clips.append(
+            {
+                "clip_id": str(uuid5(NAMESPACE_URL, f"{job_id}:clip:{shot['index']}")),
+                "asset_id": asset_id,
+                "source_start_seconds": 0.0,
+                "duration_seconds": clip_duration,
+                "timeline_start_seconds": cursor,
+            }
+        )
+        cursor += clip_duration
+
+    timeline_manifest = {
+        "schema_version": 2,
+        "timeline_id": str(job_id),
+        "project_id": project_id,
+        "fps": payload["fps"],
+        "duration_seconds": round(cursor, 6),
+        "clips": timeline_clips,
+        "status": "draft",
+    }
+    destination = project_dir(project_id) / "exports" / f"{job_id}-multi-shot.mp4"
+    progress(83, "assembling_shots", "Assembling the validated generated shots in timeline order.")
+    rendered = render_multi_source_timeline(
+        sources=sources,
+        timeline_manifest=timeline_manifest,
+        destination=destination,
+        width=payload["output_width"],
+        height=payload["output_height"],
+        fps=payload["fps"],
+        crf=payload["crf"],
+        cancel_check=cancel_check,
+    )
+    output_asset = register_generated_video_asset(
+        project_id,
+        job_id,
+        destination,
+        max_bytes=settings.max_model_output_bytes,
+    )
+    sequence_manifest = {
+        "schema_version": 1,
+        "project_id": project_id,
+        "job_id": str(job_id),
+        "reference_asset_id": str(job["asset_id"]),
+        "shot_count": len(shot_assets),
+        "duration_seconds": round(cursor, 6),
+        "fps": payload["fps"],
+        "interpolate_factor": payload["interpolate_factor"],
+        "shots": shot_assets,
+        "output_asset_id": output_asset["id"],
+        "render": rendered,
+    }
+    atomic_write_json(output_root / "sequence.json", sequence_manifest)
+    progress(96, "sequence_complete", "The multi-shot video is assembled and registered as a project asset.")
+    return {
+        "shot_count": len(shot_assets),
+        "duration_seconds": round(cursor, 6),
+        "interpolate_factor": payload["interpolate_factor"],
+        "shots": shot_assets,
+        "sequence_manifest_path": (
+            output_root / "sequence.json"
+        ).relative_to(project_dir(project_id)).as_posix(),
+        "output_asset_id": output_asset["id"],
+        "output_asset": {
+            "id": output_asset["id"],
+            "asset_type": output_asset["asset_type"],
+            "relative_path": output_asset["relative_path"],
+        },
+        "relative_path": output_asset["relative_path"],
+        "download_url": (
+            f"/v1/projects/{project_id}/jobs/{job_id}/files/"
+            f"{Path(output_asset['relative_path']).name}"
+        ),
+        "render": rendered,
+    }
 
 
 def execute_blender_job(
