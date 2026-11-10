@@ -308,7 +308,7 @@ def test_real_ffmpeg_render_applies_transition_arabic_title_and_image_overlay(tm
                 "start_seconds": 0.2,
                 "duration_seconds": 2.5,
                 "font_size": 30,
-                "color": "0xFFFFFF",
+                "color": "#FFFFFF",
                 "position": "center",
                 "animation": "fade",
                 "background": True,
