@@ -1,5 +1,7 @@
 # Phase 6.5 — Audio mixing and synchronization
 
+**Status:** merged into main via [PR #12](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/12). The PR passed Python/Ruff, real FFmpeg audio-render, Windows script and full Compose integration checks before merge. Target-host listening and browser review remain production acceptance tasks.
+
 ## Delivered scope
 
 Phase 6.5 adds a project-scoped audio mix manifest and connects it to the existing multi-source video timeline renderer. Audio files stay in the project's private media directory; only their metadata and UUID references are saved in the project timeline folder.
