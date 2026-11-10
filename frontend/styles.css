@@ -283,3 +283,15 @@ textarea.control{resize:vertical;min-height:78px;line-height:1.65}
 .visual-effects-actions .hint{flex:1}
 @media(max-width:900px){.visual-effects-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:600px){.visual-effects-heading,.visual-image-upload{align-items:flex-start;flex-direction:column}.visual-effects-grid{grid-template-columns:1fr}.visual-field-wide{grid-column:auto}.visual-effects-actions .button{width:100%}.visual-effect-card{align-items:flex-start}}
+
+
+/* Phase 6.9 — human product identity review */
+.identity-review-panel{margin:16px 0;padding:16px;border:1px solid var(--accent);border-radius:12px;background:#171a1d}
+.identity-review-comparison{display:grid;grid-template-columns:1fr 1.5fr;gap:14px;margin:14px 0}
+.identity-review-comparison>div{min-width:0;display:flex;flex-direction:column;gap:8px}
+.identity-review-comparison strong{font-size:12px;color:#dce2e5}
+.identity-review-comparison img,.identity-review-comparison video{display:block;width:100%;max-height:360px;object-fit:contain;background:#080a0b;border:1px solid var(--line);border-radius:10px}
+.identity-review-checklist{display:grid;gap:10px;margin-top:14px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#111416}
+.identity-review-checklist>strong{font-size:12px;color:#dce2e5;margin-bottom:3px}
+.identity-review-checklist .check-option{align-items:flex-start;line-height:1.55}
+@media(max-width:760px){.identity-review-comparison{grid-template-columns:1fr}.identity-review-comparison img,.identity-review-comparison video{max-height:280px}}
