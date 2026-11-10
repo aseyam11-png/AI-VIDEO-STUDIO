@@ -735,7 +735,7 @@ def render_multi_source_timeline(
 
     has_audio_output = bool(audio_output_inputs)
     if len(audio_output_inputs) == 1:
-        filters.append(f"{audio_output_inputs[0]}anull[a_final]")
+        filters.append(f"{audio_output_inputs[0]}alimiter=limit=0.95[a_final]")
     elif len(audio_output_inputs) > 1:
         filters.append(
             f"{''.join(audio_output_inputs)}amix=inputs={len(audio_output_inputs)}:"
