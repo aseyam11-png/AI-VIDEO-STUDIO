@@ -47,6 +47,30 @@ def _plan(duration: int = 15) -> CreativePlan:
     )
 
 
+def _identity_plan() -> CreativePlan:
+    data = _plan(duration=4).model_dump()
+    first_scene = dict(data["scenes"][0])
+    second_scene = dict(data["scenes"][0])
+    first_scene.update(
+        {
+            "index": 1,
+            "duration_seconds": 2,
+            "purpose": "لقطة تقديم المنتج",
+            "visual_description": "لقطة قريبة واضحة للمنتج من الأمام.",
+        }
+    )
+    second_scene.update(
+        {
+            "index": 2,
+            "duration_seconds": 2,
+            "purpose": "لقطة تفاصيل المنتج",
+            "visual_description": "لقطة جانبية تعرض تفاصيل المنتج وشعاره.",
+        }
+    )
+    data["scenes"] = [first_scene, second_scene]
+    return CreativePlan.model_validate(data)
+
+
 def _project_asset(tmp_path, monkeypatch, *, filename: str, content: bytes):
     monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
     project = create_project(
@@ -386,7 +410,7 @@ def _create_identity_locked_workflow_at_review(tmp_path, monkeypatch, *, idempot
             "idempotency_key": idempotency_key,
             "brief": "أنشئ إعلانًا قصيرًا من صورة المنتج وحافظ على هويته في كل اللقطات.",
             "language": "ar",
-            "creative_plan": _plan().model_dump(),
+            "creative_plan": _identity_plan().model_dump(),
             "generate_video": True,
             "product_identity_lock": True,
         },
