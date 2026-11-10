@@ -550,7 +550,8 @@ def render_multi_source_timeline(
                 )
             else:
                 filters.append(
-                    f"anullsrc=r=48000:cl=stereo,atrim=duration={duration:.6f}[a{index}]"
+                    f"anullsrc=r=48000:cl=stereo,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                    f"atrim=duration={duration:.6f}[a{index}]"
                 )
             concat_inputs.append(f"[a{index}]")
 
