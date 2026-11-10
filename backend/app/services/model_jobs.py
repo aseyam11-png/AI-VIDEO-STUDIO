@@ -227,7 +227,7 @@ def execute_video_enhancement(
                 raise ComfyUIError(
                     "Real-ESRGAN returned an output path outside its frame directory."
                 )
-            if output_path.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp"}:
+            if output_path.suffix.lower() != ".png":
                 continue
             metadata = probe_media(output_path)
             image_stream = next(
