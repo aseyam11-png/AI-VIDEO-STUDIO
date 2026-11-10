@@ -103,6 +103,7 @@ class _VideoSequenceOptions(_StrictOptions):
     interpolate_factor: Literal[1, 2] = 1
     approved: bool = False
 
+
 class _VideoUpscaleOptions(_StrictOptions):
     scale: int = Field(default=2, ge=2, le=4)
 
