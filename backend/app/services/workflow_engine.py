@@ -721,6 +721,37 @@ def advance_workflow_for_job(db: Session, job: JobRecord) -> None:
                 run.updated_at = now
                 return
             effective_asset_id = output_asset.id
+        if (
+            bool((run.options_json or {}).get("product_identity_lock"))
+            and next_step.tool_id == JobType.MEDIA_TIMELINE.value
+        ):
+            if not output_asset_id:
+                step.status = "failed"
+                step.error_message = "Identity-locked generation did not return a reviewable video asset."
+                run.status = "failed"
+                run.error_message = step.error_message
+                run.finished_at = now
+                run.updated_at = now
+                return
+            review = {
+                "status": "pending",
+                "reference_asset_id": run.asset_id,
+                "reference_sha256": (run.options_json or {}).get("identity_reference_sha256"),
+                "output_asset_id": effective_asset_id,
+                "preview_url": (job.result_json or {}).get("download_url"),
+                "generation_job_id": job.id,
+                "required_before_export": True,
+                "created_at": now.isoformat(),
+                "notes": "",
+            }
+            options = dict(run.options_json or {})
+            options["product_identity_review"] = review
+            run.options_json = options
+            next_step.asset_id = effective_asset_id
+            run.status = "awaiting_identity_review"
+            run.updated_at = now
+            return
+
         next_step.asset_id = effective_asset_id
         try:
             _enqueue_step(db, run, next_step)
@@ -748,6 +779,104 @@ def advance_workflow_for_job(db: Session, job: JobRecord) -> None:
         run.error_message = None
         run.finished_at = now
         run.updated_at = now
+
+
+def review_product_identity(
+    workflow_id: str,
+    *,
+    approved: bool,
+    notes: str = "",
+) -> dict:
+    """Record a human product-identity decision and gate downstream export."""
+    with session_scope() as db:
+        run = db.scalar(
+            select(WorkflowRunRecord)
+            .where(WorkflowRunRecord.id == workflow_id)
+            .with_for_update()
+        )
+        if run is None:
+            raise WorkflowNotFoundError("Workflow not found.")
+
+        options = dict(run.options_json or {})
+        review = dict(options.get("product_identity_review") or {})
+        if not options.get("product_identity_lock"):
+            raise WorkflowConflictError("This workflow did not request product identity review.")
+
+        review_status = review.get("status")
+        if review_status in {"approved", "rejected"}:
+            if (review_status == "approved") == approved:
+                return _workflow_to_dict(db, run)
+            raise WorkflowConflictError("A different identity-review decision was already recorded.")
+        if run.status != "awaiting_identity_review" or review_status != "pending":
+            raise WorkflowConflictError("Workflow is not waiting for product identity review.")
+
+        output_asset_id = str(review.get("output_asset_id") or "")
+        output_asset = db.get(AssetRecord, output_asset_id)
+        if output_asset is None or output_asset.project_id != run.project_id:
+            raise WorkflowRequestError("The generated review video is missing or outside this project.")
+
+        now = _now()
+        review.update(
+            {
+                "status": "approved" if approved else "rejected",
+                "notes": notes.strip()[:2000],
+                "reviewed_at": now.isoformat(),
+                "reviewed_by": "user",
+            }
+        )
+        options["product_identity_review"] = review
+        run.options_json = options
+        run.updated_at = now
+
+        if not approved:
+            run.status = "failed"
+            run.error_message = (
+                "Product identity review was rejected. Timeline construction and export were blocked."
+            )
+            run.finished_at = now
+            pending_steps = db.scalars(
+                select(WorkflowStepRecord)
+                .where(
+                    WorkflowStepRecord.workflow_id == run.id,
+                    WorkflowStepRecord.status == "planned",
+                )
+                .with_for_update()
+            ).all()
+            for pending in pending_steps:
+                pending.status = "cancelled"
+                pending.error_message = "Blocked because product identity review was rejected."
+                pending.finished_at = now
+                pending.updated_at = now
+            return _workflow_to_dict(db, run)
+
+        next_step = db.scalar(
+            select(WorkflowStepRecord)
+            .where(
+                WorkflowStepRecord.workflow_id == run.id,
+                WorkflowStepRecord.status == "planned",
+            )
+            .order_by(WorkflowStepRecord.sequence)
+            .with_for_update()
+        )
+        if next_step is None:
+            run.status = "succeeded"
+            run.finished_at = now
+            run.error_message = None
+            run.updated_at = now
+            return _workflow_to_dict(db, run)
+
+        next_step.asset_id = output_asset.id
+        try:
+            _enqueue_step(db, run, next_step)
+        except (WorkflowConflictError, WorkflowRequestError, JobRequestError) as exc:
+            next_step.status = "failed"
+            next_step.error_message = str(exc)[:2000]
+            next_step.finished_at = now
+            run.status = "failed"
+            run.error_message = str(exc)[:2000]
+            run.finished_at = now
+            run.updated_at = now
+        return _workflow_to_dict(db, run)
 
 
 def get_workflow(workflow_id: str) -> dict:
