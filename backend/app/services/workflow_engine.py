@@ -109,13 +109,10 @@ def _step_specs(
     asset_type: str,
     request: WorkflowCreateRequest,
     project: ProjectRecord,
+    *,
+    asset_metadata: dict | None = None,
 ) -> list[tuple[JobType, dict]]:
     plan = request.creative_plan
-    if request.upscale_output:
-        raise WorkflowRequestError(
-            "Real-ESRGAN is currently an image/selected-frame tool. "
-            "Video frame extraction and reassembly are not yet enabled in automatic workflows."
-        )
     fps = min(project.target_fps, 60)
     width, height = _resolution(project.target_resolution)
     steps: list[tuple[JobType, dict]] = []
@@ -223,10 +220,51 @@ def _step_specs(
                     },
                 )
             )
+        if request.upscale_output:
+            if plan.target_duration_seconds > 10:
+                raise WorkflowRequestError(
+                    "Real-ESRGAN video enhancement is limited to 10 seconds per job."
+                )
+            steps.append(
+                (
+                    JobType.VIDEO_ENHANCE,
+                    {
+                        "scale": 2,
+                        "fps": min(fps, 30),
+                        "max_duration_seconds": 10,
+                        "crf": 20,
+                        "approved": True,
+                    },
+                )
+            )
     elif asset_type == "video":
         if request.generate_video:
             raise WorkflowRequestError(
                 "Video generation is an image-to-video operation; source asset is already a video."
+            )
+        if request.upscale_output:
+            source_probe = (asset_metadata or {}).get("probe", {})
+            try:
+                source_duration = float(source_probe.get("format", {}).get("duration"))
+            except (AttributeError, TypeError, ValueError):
+                raise WorkflowRequestError(
+                    "Video enhancement requires a verified source duration from FFprobe."
+                )
+            if not 0 < source_duration <= 10:
+                raise WorkflowRequestError(
+                    "Real-ESRGAN video enhancement is limited to source videos up to 10 seconds."
+                )
+            steps.append(
+                (
+                    JobType.VIDEO_ENHANCE,
+                    {
+                        "scale": 2,
+                        "fps": min(fps, 30),
+                        "max_duration_seconds": 10,
+                        "crf": 20,
+                        "approved": True,
+                    },
+                )
             )
         if request.enhance_audio:
             steps.append((JobType.AUDIO_ENHANCE, {"post_filter": False}))
@@ -243,8 +281,6 @@ def _step_specs(
             )
         steps.append((JobType.MEDIA_PROXY, {"max_width": 1280, "fps": fps}))
         steps.append((JobType.MEDIA_SCENES, {"threshold": 27.0, "min_scene_len": 15}))
-        if request.upscale_output:
-            steps.append((JobType.VIDEO_UPSCALE, {"scale": 2}))
     else:
         raise WorkflowRequestError("Workflows support image or video source assets only.")
 
@@ -333,7 +369,12 @@ def create_workflow_run(
                     "Source asset does not belong to the requested project."
                 )
 
-            specs = _step_specs(asset.asset_type, request, project)
+            specs = _step_specs(
+                asset.asset_type,
+                request,
+                project,
+                asset_metadata=asset.metadata_json or {},
+            )
             normalized_specs = []
             for job_type, payload in specs:
                 try:
