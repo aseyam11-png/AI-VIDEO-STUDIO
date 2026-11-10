@@ -3,7 +3,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.api.routes import media as media_route
 from app.core.config import settings
@@ -211,3 +210,5 @@ def test_project_timeline_api_saves_reads_and_renders_assets(
     download = client.get(f"/v1/projects/{project['id']}/timeline/rendered")
     assert download.status_code == 200
     assert download.content == b"project-preview"
+
+from fastapi.testclient import TestClient
