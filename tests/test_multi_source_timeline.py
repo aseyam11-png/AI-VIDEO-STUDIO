@@ -212,6 +212,14 @@ def test_project_timeline_api_saves_reads_and_renders_assets(
     assert download.status_code == 200
     assert download.content == b"project-preview"
 
+    cleared = client.put(f"/v1/projects/{project['id']}/timeline", json={"fps": 24, "clips": []})
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["clips"] == []
+    assert cleared.json()["duration_seconds"] == 0
+    empty_timeline = client.get(f"/v1/projects/{project['id']}/timeline")
+    assert empty_timeline.status_code == 200
+    assert empty_timeline.json()["clips"] == []
+
 @pytest.mark.skipif(
     shutil.which("ffmpeg") is None,
     reason="FFmpeg is required for multi-source render integration test",
