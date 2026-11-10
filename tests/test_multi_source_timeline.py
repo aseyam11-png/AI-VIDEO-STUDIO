@@ -212,6 +212,9 @@ def test_project_timeline_api_saves_reads_and_renders_assets(
     assert download.status_code == 200
     assert download.content == b"project-preview"
 
+    missing_clips = client.put(f"/v1/projects/{project['id']}/timeline", json={"fps": 24})
+    assert missing_clips.status_code == 422
+
     cleared = client.put(f"/v1/projects/{project['id']}/timeline", json={"fps": 24, "clips": []})
     assert cleared.status_code == 200, cleared.text
     assert cleared.json()["clips"] == []
