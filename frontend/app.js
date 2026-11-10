@@ -135,6 +135,15 @@
     const qwenReady = Boolean(state.modelStatus?.models?.["qwen3.5-9b-q4_K_M"]?.ready);
     const ready = Boolean(state.project && state.selectedAsset && !state.uploading && qwenReady);
     $("generate-plan").disabled = !ready;
+    const enhancement = $("upscale-video");
+    if (enhancement) {
+      const configured = Boolean(state.modelStatus?.models?.realesrgan?.workflow_configured);
+      const duration = Number(state.selectedAsset?.probe?.format?.duration);
+      const supportedDuration = Number.isFinite(duration) && duration > 0 && duration <= 10;
+      enhancement.disabled = !configured || !supportedDuration;
+      const label = enhancement.closest("label");
+      if (label) label.classList.toggle("option-disabled", enhancement.disabled);
+    }
     $("project-summary").textContent = state.project
       ? `${state.project.name} · ${state.project.target_resolution || "الدقة الافتراضية"} · ${state.project.language === "en" ? "English" : "العربية"}`
       : "اختر مشروعًا أو أنشئ مشروعًا جديدًا.";
@@ -162,9 +171,11 @@
       const deepfilter = models.deepfilternet || {};
       const grounding = models["grounding-dino"] || {};
       const sam2 = models.sam2 || {};
+      const realesrgan = models.realesrgan || {};
       const optional = [
         { id: "transcribe-audio", ready: Boolean(whisper.worker_enabled), label: "WhisperX" },
         { id: "enhance-audio", ready: Boolean(deepfilter.configured), label: "DeepFilterNet" },
+        { id: "upscale-video", ready: Boolean(realesrgan.workflow_configured), label: "Real-ESRGAN" },
         { id: "detection-prompt", ready: Boolean(grounding.workflow_configured), label: "Grounding DINO" },
         { id: "tracking-prompt", ready: Boolean(sam2.workflow_configured), label: "SAM 2" }
       ];
@@ -190,7 +201,7 @@
       director.className = "hint readiness-warning";
       summary.textContent = "حالة الخدمات غير معروفة. لم يتم تمكين الخيارات الاختيارية.";
       summary.className = "hint readiness-warning";
-      ["transcribe-audio","enhance-audio","detection-prompt","tracking-prompt"].forEach((id) => {
+      ["transcribe-audio","enhance-audio","upscale-video","detection-prompt","tracking-prompt"].forEach((id) => {
         $(id).disabled = true;
       });
       setProjectControls();
@@ -2121,6 +2132,7 @@
         target_duration_seconds: Number($("target-duration").value),
         transcribe_audio: !$("transcribe-audio").disabled && $("transcribe-audio").checked,
         enhance_audio: !$("enhance-audio").disabled && $("enhance-audio").checked,
+        upscale_output: !$("upscale-video").disabled && $("upscale-video").checked,
         detection_prompt: $("detection-prompt").disabled
           ? null
           : $("detection-prompt").value.trim() || null,
