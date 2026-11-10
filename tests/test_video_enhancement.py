@@ -130,6 +130,7 @@ def test_video_enhancement_requires_approval_and_bounded_video_payload(monkeypat
 def test_video_enhancement_job_is_models_queue_and_requires_video_asset():
     assert JobType.VIDEO_ENHANCE in jobs._MODEL_QUEUE_TYPES
     assert JobType.VIDEO_ENHANCE in jobs._VIDEO_REQUIRED_TYPES
+    assert workflow_engine._queue_for(JobType.VIDEO_ENHANCE) == "models"
 
 
 def test_workflow_upscale_option_adds_video_enhancement_and_rejects_long_sources():
