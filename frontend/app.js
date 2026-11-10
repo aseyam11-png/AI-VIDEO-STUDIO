@@ -12,6 +12,8 @@
     timelineClips: [],
     timelineDirty: false,
     timelineRendered: false,
+    sceneManifest: null,
+    sceneAssetId: null,
     workflow: null,
     pollHandle: null,
     uploading: false
@@ -230,6 +232,7 @@
       state.selectedAsset = matching || state.assets.find((asset) => asset.asset_type === "video") || null;
       renderAssets();
       await loadProjectTimeline(projectId);
+      await loadAssetScenes($("timeline-source").value);
       setProjectControls();
       const savedWorkflow = localStorage.getItem("studio.workflowId");
       if (savedWorkflow && localStorage.getItem("studio.workflowProjectId") === projectId) {
@@ -333,6 +336,218 @@
       }
     }
     renderTimelineEditor();
+  }
+
+  function clearSceneSelection() {
+    state.sceneManifest = null;
+    state.sceneAssetId = null;
+    $("scene-results-panel").hidden = true;
+    $("scene-results").replaceChildren();
+    $("scene-results-count").textContent = "0 مشهد";
+    $("scene-detection-state").textContent = "لم يتم التحليل";
+    $("scene-detection-help").textContent =
+      "يُحفظ تحليل المشاهد مع ملف الفيديو داخل المشروع، ويمكن إعادة تحميله دون تشغيل التحليل مرة أخرى.";
+    $("scene-detect").disabled = !state.project || !state.assets.some(
+      (asset) => asset.id === $("timeline-source").value && asset.asset_type === "video"
+    );
+    updateSceneSelectionActions();
+  }
+
+  async function loadAssetScenes(assetId) {
+    clearSceneSelection();
+    if (!state.project || !assetId) return;
+    const asset = state.assets.find((item) => item.id === assetId && item.asset_type === "video");
+    if (!asset) return;
+    state.sceneAssetId = assetId;
+    $("scene-detection-state").textContent = "جارٍ تحميل التحليل المحفوظ…";
+    $("scene-detect").disabled = true;
+    try {
+      const manifest = await api(
+        `/v1/projects/${encodeURIComponent(state.project.id)}/assets/${encodeURIComponent(assetId)}/scenes`
+      );
+      if (manifest.project_id !== state.project.id ||
+          manifest.asset_id !== assetId ||
+          !Array.isArray(manifest.scenes)) {
+        throw new Error("ملف المشاهد لا يطابق الفيديو الحالي.");
+      }
+      state.sceneManifest = manifest;
+      renderSceneResults();
+    } catch (error) {
+      if (error.status === 404) {
+        $("scene-detection-state").textContent = "لم يتم التحليل";
+        $("scene-detection-help").textContent = "اضغط «تحليل المشاهد» لاكتشاف اللقطات في الفيديو المحدد.";
+      } else {
+        state.sceneAssetId = null;
+        $("scene-detection-state").textContent = "تعذّر تحميل التحليل";
+        notice(`تعذّر تحميل المشاهد المحفوظة: ${error.message}`, "error");
+      }
+    } finally {
+      $("scene-detect").disabled = !state.project || !state.sceneAssetId;
+    }
+  }
+
+  function renderSceneResults() {
+    const manifest = state.sceneManifest;
+    const list = $("scene-results");
+    list.replaceChildren();
+    if (!manifest) {
+      $("scene-results-panel").hidden = true;
+      updateSceneSelectionActions();
+      return;
+    }
+    const scenes = manifest.scenes || [];
+    $("scene-results-panel").hidden = false;
+    $("scene-results-count").textContent = `${scenes.length} مشهد`;
+    $("scene-detection-state").textContent = `تم تحليل ${scenes.length} مشهد`;
+    $("scene-detection-help").textContent =
+      "حدّد المشاهد التي تريدها ثم أضفها إلى الخط الزمني. سيُنشأ مقطع مستقل لكل مشهد مختار.";
+    if (!scenes.length) {
+      const empty = document.createElement("p");
+      empty.className = "scene-results-empty";
+      empty.textContent = "لم يعثر التحليل على مشاهد قابلة للاستخدام.";
+      list.append(empty);
+    }
+    scenes.forEach((scene, index) => {
+      const label = document.createElement("label");
+      label.className = "scene-result-card";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.dataset.sceneSelect = String(scene.id);
+      const body = document.createElement("span");
+      body.className = "scene-result-copy";
+      const title = document.createElement("strong");
+      title.textContent = `المشهد ${String(scene.index || index + 1).padStart(2, "0")}`;
+      const timing = document.createElement("small");
+      const start = Number(scene.start_seconds);
+      const duration = Number(scene.duration_seconds);
+      timing.textContent = `من ${formatDuration(start)} · المدة ${formatDuration(duration)}`;
+      body.append(title, timing);
+      label.append(checkbox, body);
+      list.append(label);
+    });
+    updateSceneSelectionActions();
+  }
+
+  function updateSceneSelectionActions() {
+    const checkboxes = [...document.querySelectorAll("[data-scene-select]")];
+    const selectedCount = checkboxes.filter((item) => item.checked).length;
+    $("scene-add-selected").disabled =
+      !state.sceneManifest || !state.sceneAssetId || selectedCount === 0;
+    $("scene-add-selected").textContent = selectedCount
+      ? `إضافة ${selectedCount} مشهد إلى الخط الزمني`
+      : "إضافة المشاهد المختارة";
+    $("scene-select-all").disabled = checkboxes.length === 0;
+  }
+
+  async function detectProjectScenes() {
+    const assetId = $("timeline-source").value;
+    const asset = state.assets.find((item) => item.id === assetId && item.asset_type === "video");
+    if (!state.project || !asset) {
+      notice("اختر فيديو من مصادر المشروع أولاً.", "error");
+      return;
+    }
+    const threshold = Number($("scene-threshold").value);
+    const minSceneLen = Number($("scene-min-length").value);
+    if (!Number.isFinite(threshold) || threshold <= 0 || threshold > 100 ||
+        !Number.isInteger(minSceneLen) || minSceneLen < 1 || minSceneLen > 1000) {
+      notice("حساسية المشهد يجب أن تكون بين 1 و100، وأقل طول بين 1 و1000 إطار.", "error");
+      return;
+    }
+    const button = $("scene-detect");
+    button.disabled = true;
+    button.textContent = "جارٍ تحليل المشاهد…";
+    $("scene-detection-state").textContent = "قيد التحليل";
+    try {
+      const manifest = await api(
+        `/v1/projects/${encodeURIComponent(state.project.id)}/assets/${encodeURIComponent(assetId)}/scenes`,
+        {
+          method: "POST",
+          body: JSON.stringify({ threshold, min_scene_len: minSceneLen })
+        }
+      );
+      if (manifest.project_id !== state.project.id ||
+          manifest.asset_id !== assetId ||
+          !Array.isArray(manifest.scenes)) {
+        throw new Error("استجابة تحليل المشاهد لا تطابق الفيديو المحدد.");
+      }
+      state.sceneAssetId = assetId;
+      state.sceneManifest = manifest;
+      renderSceneResults();
+      notice(`اكتمل تحليل الفيديو: ${manifest.scene_count} مشهد.`, "success");
+    } catch (error) {
+      state.sceneManifest = null;
+      state.sceneAssetId = assetId;
+      $("scene-results-panel").hidden = true;
+      $("scene-detection-state").textContent = "فشل التحليل";
+      notice(`تعذّر تحليل المشاهد: ${error.message}`, "error");
+    } finally {
+      button.disabled = false;
+      button.textContent = "تحليل المشاهد";
+      updateSceneSelectionActions();
+    }
+  }
+
+  function selectAllScenes() {
+    document.querySelectorAll("[data-scene-select]").forEach((checkbox) => {
+      checkbox.checked = true;
+    });
+    updateSceneSelectionActions();
+  }
+
+  function addSelectedScenesToTimeline() {
+    if (!state.sceneManifest || !state.sceneAssetId) return;
+    const selectedIds = new Set(
+      [...document.querySelectorAll("[data-scene-select]:checked")].map((item) => item.dataset.sceneSelect)
+    );
+    const selectedScenes = (state.sceneManifest.scenes || [])
+      .filter((scene) => selectedIds.has(String(scene.id)))
+      .sort((a, b) => Number(a.index || 0) - Number(b.index || 0));
+    if (!selectedScenes.length) {
+      notice("حدّد مشهدًا واحدًا على الأقل.", "error");
+      return;
+    }
+    const asset = state.assets.find((item) => item.id === state.sceneAssetId && item.asset_type === "video");
+    if (!asset) {
+      notice("لم يعد مصدر المشاهد موجودًا ضمن المشروع الحالي.", "error");
+      clearSceneSelection();
+      return;
+    }
+    if (state.timelineClips.length + selectedScenes.length > 100) {
+      notice("ستتجاوز الإضافة حد 100 مقطع. احذف بعض المقاطع أولاً.", "error");
+      return;
+    }
+    const additions = [];
+    for (const scene of selectedScenes) {
+      const start = Number(scene.start_seconds);
+      const duration = Number(scene.duration_seconds);
+      const sourceDuration = getAssetDuration(asset);
+      if (!Number.isFinite(start) || start < 0 ||
+          !Number.isFinite(duration) || duration <= 0 ||
+          (sourceDuration !== null && start + duration > sourceDuration + 0.001)) {
+        notice(`بيانات توقيت المشهد ${scene.index || scene.id} غير صالحة أو تتجاوز مدة المصدر.`, "error");
+        return;
+      }
+      additions.push({
+        clip_id: uuid(),
+        asset_id: asset.id,
+        source_start_seconds: start,
+        duration_seconds: duration
+      });
+    }
+    const nextDuration = timelineTotalDuration() +
+      additions.reduce((total, clip) => total + clip.duration_seconds, 0);
+    if (nextDuration > 3600) {
+      notice("ستتجاوز الإضافة حد 60 دقيقة للخط الزمني.", "error");
+      return;
+    }
+    state.timelineClips.push(...additions);
+    markTimelineDirty();
+    renderTimelineEditor();
+    document.querySelectorAll("[data-scene-select]").forEach((checkbox) => {
+      checkbox.checked = false;
+    });
+    updateSceneSelectionActions();
+    notice(`أُضيف ${additions.length} مشهد إلى الخط الزمني. احفظ التغييرات لتثبيتها.`, "success");
   }
 
   function updateTimelineSummary() {
@@ -1076,10 +1291,15 @@
       event.preventDefault();
       event.returnValue = "";
     });
-    $("timeline-source").addEventListener("change", () => {
+    $("scene-detect").addEventListener("click", detectProjectScenes);
+    $("scene-results").addEventListener("change", updateSceneSelectionActions);
+    $("scene-select-all").addEventListener("click", selectAllScenes);
+    $("scene-add-selected").addEventListener("click", addSelectedScenesToTimeline);
+    $("timeline-source").addEventListener("change", (event) => {
       $("timeline-in").value = "0";
       $("timeline-duration").value = "5";
       syncTimelineSourceFields();
+      void loadAssetScenes(event.target.value);
     });
     $("timeline-fps").addEventListener("change", () => {
       if (state.timelineClips.length) markTimelineDirty();
