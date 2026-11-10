@@ -189,7 +189,10 @@ def ingest_file_stream(
     safe_project_id = _uuid(project_id)
     get_project(safe_project_id)
     suffix = Path(original_filename or "").suffix.lower()
-    allowed = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".jpg", ".jpeg", ".png", ".webp"}
+    video_extensions = {".mp4", ".mov", ".mkv", ".webm", ".m4v"}
+    image_extensions = {".jpg", ".jpeg", ".png", ".webp"}
+    audio_extensions = {".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"}
+    allowed = video_extensions | image_extensions | audio_extensions
     if suffix not in allowed:
         raise ValueError(f"Unsupported media extension: {suffix or '(none)'}")
 
@@ -217,7 +220,13 @@ def ingest_file_stream(
         if size == 0:
             raise ValueError("Uploaded file is empty.")
         os.replace(temporary, destination)
-        asset_type = "image" if suffix in {".jpg", ".jpeg", ".png", ".webp"} else "video"
+        asset_type = (
+            "image"
+            if suffix in image_extensions
+            else "audio"
+            if suffix in audio_extensions
+            else "video"
+        )
         created_at = datetime.now(timezone.utc)
         manifest = {
             "id": identifier,
