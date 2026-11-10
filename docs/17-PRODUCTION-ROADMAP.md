@@ -1,6 +1,6 @@
 # AI Video Studio — Production Roadmap
 
-**Baseline date:** 2026-11-09  
+**Baseline date:** 2026-11-10  
 **Repository:** `aseyam11-png/AI-VIDEO-STUDIO`  
 **Target release:** private, single-user production installation first. This roadmap does not claim a public multi-user SaaS release.
 
@@ -68,9 +68,16 @@ Keep credentials out of browser bundles. The API currently binds to localhost in
 
 ## 5. Phase 6 — editing and production features
 
+### Phase 6.1 — Multi-source sequential timeline (implemented in this branch)
+
+The first increment adds project-scoped multi-source timelines, with replaceable ordered clip lists for trim/remove/reorder operations, OpenTimelineIO serialization, and an FFmpeg MP4 preview renderer. See [Phase 6.1 — Multi-source Timeline](19-PHASE-6.1-MULTI-SOURCE-TIMELINE.md).
+
+The 6.1 renderer is intentionally limited to sequential cuts on one video lane. It does not yet provide overlapping tracks, transitions, titles, subtitles, advanced audio mixing, or durable background rendering. Target-host output-quality acceptance remains separate.
+
+### Remaining Phase 6 increments
+
 Deliver in independently testable increments:
 
-- Multi-source timeline model and editing operations.
 - Scene/shot selection using actual scene, transcript and detection outputs.
 - Subtitle/caption generation with Arabic RTL, timing and font tests.
 - Audio mixing, voice/music levels, denoise and synchronization.

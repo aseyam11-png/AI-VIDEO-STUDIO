@@ -277,7 +277,12 @@ def render_timeline(
         _check_cancel(cancel_check)
         start = float(clip["start_seconds"])
         duration = float(clip["duration_seconds"])
-        if not math.isfinite(start) or not math.isfinite(duration) or start < 0 or duration <= 0:
+        if (
+            not math.isfinite(start)
+            or not math.isfinite(duration)
+            or start < 0
+            or duration <= 0
+        ):
             raise ValueError("Timeline contains an invalid clip range.")
         if source_duration is not None and start + duration > source_duration + (1.0 / fps):
             raise ValueError("Timeline clip exceeds the source video duration.")
@@ -331,4 +336,303 @@ def render_timeline(
         "size_bytes": destination.stat().st_size,
         "settings": {"width": width, "height": height, "fps": fps, "crf": crf},
         "metadata": probe_media(destination),
+    }
+
+
+def build_multi_source_timeline(
+    *,
+    project_id: str,
+    sources: dict[str, Path],
+    clips: list[dict],
+    fps: int = 30,
+) -> tuple[dict, Path]:
+    """Build a project-wide sequential timeline from project-scoped video assets."""
+    _check_cancel(None)
+    try:
+        import opentimelineio as otio
+    except ImportError as exc:
+        raise OptionalMediaDependencyError(
+            "Timeline generation requires OpenTimelineIO. Install the 'media' extra."
+        ) from exc
+
+    if fps < 1 or fps > 60 or not clips or len(clips) > 100:
+        raise ValueError("A multi-source timeline requires 1–100 clips and an FPS from 1 to 60.")
+
+    safe_project_id = str(UUID(project_id))
+    normalized_sources = {
+        str(UUID(key)): Path(value).expanduser().resolve()
+        for key, value in sources.items()
+    }
+    source_metadata: dict[str, dict] = {}
+    video_track = otio.schema.Track(name="V1", kind=otio.schema.TrackKind.Video)
+    audio_track = otio.schema.Track(name="A1", kind=otio.schema.TrackKind.Audio)
+    timeline = otio.schema.Timeline(name=f"Project {safe_project_id}")
+    timeline.tracks.append(video_track)
+    timeline.tracks.append(audio_track)
+
+    normalized_clips: list[dict] = []
+    timeline_cursor = 0.0
+    total_duration = 0.0
+
+    for index, item in enumerate(clips, start=1):
+        try:
+            asset_id = str(UUID(str(item["asset_id"])))
+            clip_id = (
+                str(UUID(str(item["clip_id"])))
+                if item.get("clip_id")
+                else f"clip_{index:04d}"
+            )
+            start = float(item["source_start_seconds"])
+            duration = float(item["duration_seconds"])
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise ValueError(
+                "Each timeline clip requires a valid asset_id, source start and duration."
+            ) from exc
+
+        if asset_id not in normalized_sources:
+            raise ValueError("Every clip must reference a video asset in the same project.")
+        if not math.isfinite(start) or not math.isfinite(duration) or start < 0 or duration <= 0:
+            raise ValueError(
+                "Clip source range must be finite, non-negative and have positive duration."
+            )
+
+        source = normalized_sources[asset_id]
+        if not source.is_file():
+            raise ValueError("A timeline source asset file is missing.")
+        metadata = source_metadata.get(asset_id)
+        if metadata is None:
+            metadata = probe_media(source)
+            if not any(
+                stream.get("codec_type") == "video"
+                for stream in metadata.get("streams", [])
+            ):
+                raise ValueError("Every timeline source must contain a video stream.")
+            source_metadata[asset_id] = metadata
+
+        duration_value = metadata.get("format", {}).get("duration")
+        try:
+            source_duration = float(duration_value) if duration_value is not None else None
+        except (TypeError, ValueError):
+            source_duration = None
+        if source_duration is not None and start + duration > source_duration + (1.0 / fps):
+            raise ValueError("Timeline clip exceeds its source video duration.")
+
+        video_reference = otio.schema.ExternalReference(target_url=source.as_uri())
+        video_clip = otio.schema.Clip(name=clip_id, media_reference=video_reference)
+        video_clip.source_range = otio.opentime.TimeRange(
+            start_time=otio.opentime.RationalTime(start * fps, fps),
+            duration=otio.opentime.RationalTime(duration * fps, fps),
+        )
+        video_track.append(video_clip)
+
+        has_audio = any(
+            stream.get("codec_type") == "audio"
+            for stream in metadata.get("streams", [])
+        )
+        if has_audio:
+            audio_reference = otio.schema.ExternalReference(target_url=source.as_uri())
+            audio_clip = otio.schema.Clip(name=clip_id, media_reference=audio_reference)
+            audio_clip.source_range = otio.opentime.TimeRange(
+                start_time=otio.opentime.RationalTime(start * fps, fps),
+                duration=otio.opentime.RationalTime(duration * fps, fps),
+            )
+            audio_track.append(audio_clip)
+        else:
+            audio_track.append(
+                otio.schema.Gap(
+                    source_range=otio.opentime.TimeRange(
+                        start_time=otio.opentime.RationalTime(0, fps),
+                        duration=otio.opentime.RationalTime(duration * fps, fps),
+                    )
+                )
+            )
+
+        normalized_clips.append(
+            {
+                "clip_id": clip_id,
+                "asset_id": asset_id,
+                "source_start_seconds": round(start, 6),
+                "duration_seconds": round(duration, 6),
+                "timeline_start_seconds": round(timeline_cursor, 6),
+            }
+        )
+        timeline_cursor += duration
+        total_duration += duration
+        if total_duration > 3600:
+            raise ValueError("Multi-source timeline duration cannot exceed one hour.")
+
+    project_path = project_dir(safe_project_id)
+    timeline_dir = project_path / "timelines"
+    timeline_dir.mkdir(parents=True, exist_ok=True)
+    timeline_path = timeline_dir / f"project-{safe_project_id}.otio"
+    otio.adapters.write_to_file(timeline, str(timeline_path))
+
+    manifest = {
+        "schema_version": 2,
+        "timeline_id": safe_project_id,
+        "project_id": safe_project_id,
+        "fps": fps,
+        "duration_seconds": round(total_duration, 6),
+        "clips": normalized_clips,
+        "otio_filename": timeline_path.name,
+        "status": "draft",
+    }
+    atomic_write_json(timeline_dir / f"project-{safe_project_id}.json", manifest)
+    return manifest, timeline_path
+
+
+def render_multi_source_timeline(
+    *,
+    sources: dict[str, Path],
+    timeline_manifest: dict,
+    destination: Path,
+    width: int = 1920,
+    height: int = 1080,
+    fps: int = 30,
+    crf: int = 20,
+    cancel_check: Callable[[], bool] | None = None,
+) -> dict:
+    """Render an ordered, multi-asset cut timeline without overlays or transitions."""
+    _check_cancel(cancel_check)
+    if width < 320 or width > 3840 or height < 240 or height > 2160:
+        raise ValueError("Render resolution is outside the supported range.")
+    if fps < 1 or fps > 60 or crf < 0 or crf > 35:
+        raise ValueError("Render settings are outside the supported range.")
+    clips = timeline_manifest.get("clips", [])
+    if (
+        timeline_manifest.get("schema_version") != 2
+        or not clips
+        or len(clips) > 100
+    ):
+        raise ValueError("A valid multi-source timeline with 1–100 clips is required.")
+
+    normalized_sources = {
+        str(UUID(key)): Path(value).expanduser().resolve()
+        for key, value in sources.items()
+    }
+    inputs: list[Path] = []
+    clip_metadata: list[dict] = []
+    any_audio = False
+
+    for clip in clips:
+        _check_cancel(cancel_check)
+        try:
+            asset_id = str(UUID(str(clip["asset_id"])))
+            start = float(clip["source_start_seconds"])
+            duration = float(clip["duration_seconds"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "Timeline contains an invalid source reference or clip range."
+            ) from exc
+        if asset_id not in normalized_sources:
+            raise ValueError(
+                "Timeline references a source asset outside the supplied project assets."
+            )
+        if not math.isfinite(start) or not math.isfinite(duration) or start < 0 or duration <= 0:
+            raise ValueError("Timeline contains an invalid clip range.")
+
+        source = normalized_sources[asset_id]
+        if not source.is_file():
+            raise ValueError("A timeline source asset file is missing.")
+        metadata = probe_media(source)
+        streams = metadata.get("streams", [])
+        if not any(stream.get("codec_type") == "video" for stream in streams):
+            raise ValueError("Every timeline source must contain a video stream.")
+        duration_value = metadata.get("format", {}).get("duration")
+        try:
+            source_duration = float(duration_value) if duration_value is not None else None
+        except (TypeError, ValueError):
+            source_duration = None
+        if source_duration is not None and start + duration > source_duration + (1.0 / fps):
+            raise ValueError("Timeline clip exceeds its source video duration.")
+
+        has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
+        any_audio = any_audio or has_audio
+        inputs.append(source)
+        clip_metadata.append(
+            {
+                "start": start,
+                "duration": duration,
+                "has_audio": has_audio,
+            }
+        )
+
+    filters: list[str] = []
+    concat_inputs: list[str] = []
+    for index, clip in enumerate(clip_metadata):
+        _check_cancel(cancel_check)
+        start = clip["start"]
+        duration = clip["duration"]
+        filters.append(
+            f"[{index}:v:0]trim=start={start:.6f}:duration={duration:.6f},"
+            f"setpts=PTS-STARTPTS,scale={width}:{height}:force_original_aspect_ratio=decrease,"
+            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},"
+            f"format=yuv420p[v{index}]"
+        )
+        concat_inputs.append(f"[v{index}]")
+        if any_audio:
+            if clip["has_audio"]:
+                filters.append(
+                    f"[{index}:a:0]atrim=start={start:.6f}:duration={duration:.6f},"
+                    f"asetpts=PTS-STARTPTS,aresample=48000,"
+                    f"aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                    f"apad,atrim=duration={duration:.6f}[a{index}]"
+                )
+            else:
+                filters.append(
+                    f"anullsrc=r=48000:cl=stereo,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                    f"atrim=duration={duration:.6f}[a{index}]"
+                )
+            concat_inputs.append(f"[a{index}]")
+
+    if any_audio:
+        filters.append(
+            f"{''.join(concat_inputs)}concat=n={len(clips)}:v=1:a=1[vout][aout]"
+        )
+    else:
+        filters.append(
+            f"{''.join(concat_inputs)}concat=n={len(clips)}:v=1:a=0[vout]"
+        )
+
+    ffmpeg = require_binary("ffmpeg")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.stem + ".partial" + destination.suffix)
+    command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
+    for source in inputs:
+        command.extend(["-i", str(source)])
+    command.extend(["-filter_complex", ";".join(filters), "-map", "[vout]"])
+    if any_audio:
+        command.extend(["-map", "[aout]", "-c:a", "aac", "-b:a", "192k"])
+    else:
+        command.append("-an")
+    command.extend(
+        [
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            str(crf),
+            "-pix_fmt",
+            "yuv420p",
+            "-movflags",
+            "+faststart",
+            str(temporary),
+        ]
+    )
+    try:
+        _run(command, timeout=7200, cancel_check=cancel_check)
+        if not temporary.is_file() or temporary.stat().st_size == 0:
+            raise MediaToolError("FFmpeg did not create the multi-source rendered video.")
+        metadata = probe_media(temporary)
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+    return {
+        "filename": destination.name,
+        "size_bytes": destination.stat().st_size,
+        "clip_count": len(clips),
+        "settings": {"width": width, "height": height, "fps": fps, "crf": crf},
+        "metadata": metadata,
     }
