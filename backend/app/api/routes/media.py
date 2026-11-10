@@ -256,7 +256,7 @@ async def transcribe_route(
     destination = asset_dir(project_id, asset_id) / "transcription.json"
     cache_dir = media_root() / "models" / "whisperx"
     try:
-        return await run_in_threadpool(
+        result = await run_in_threadpool(
             transcribe_local,
             source,
             destination,
@@ -266,6 +266,11 @@ async def transcribe_route(
             cache_dir=cache_dir,
             align=payload.align,
         )
+        timeline_id = str(UUID(project_id))
+        timeline_dir = project_dir(project_id) / "timelines"
+        (timeline_dir / f"project-{timeline_id}.srt").unlink(missing_ok=True)
+        (timeline_dir / f"project-{timeline_id}-subtitles.json").unlink(missing_ok=True)
+        return result
     except SpeechDependencyError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
@@ -279,7 +284,10 @@ def get_transcription_route(project_id: str, asset_id: str) -> dict:
         raise HTTPException(status_code=422, detail="Transcription results require a video asset.")
     transcription_path = asset_dir(project_id, asset_id) / "transcription.json"
     if not transcription_path.is_file():
-        raise HTTPException(status_code=404, detail="Speech transcription has not been run for this asset.")
+        raise HTTPException(
+            status_code=404,
+            detail="Speech transcription has not been run for this asset.",
+        )
     manifest = read_json(transcription_path)
     if (
         manifest.get("language") not in {"ar", "en"}
@@ -527,26 +535,36 @@ def create_timeline_subtitles(
             project_dir(project_id) / "timelines" / f"project-{timeline_id}.json"
         )
         if not timeline_path.is_file():
-            raise HTTPException(status_code=404, detail="Save the project timeline before creating subtitles.")
+            raise HTTPException(
+                status_code=404,
+                detail="Save the project timeline before creating subtitles.",
+            )
         timeline = read_json(timeline_path)
         clips = timeline.get("clips")
         if timeline.get("project_id") != timeline_id or not isinstance(clips, list) or not clips:
-            raise HTTPException(status_code=422, detail="A non-empty valid project timeline is required.")
+            raise HTTPException(
+                status_code=422,
+                detail="A non-empty valid project timeline is required.",
+            )
 
         transcriptions: dict[str, dict] = {}
-        assets: dict[str, dict] = {}
         missing_transcriptions: list[str] = []
         for clip in clips:
             try:
                 asset_id = str(UUID(str(clip["asset_id"])))
             except (KeyError, TypeError, ValueError) as exc:
-                raise HTTPException(status_code=422, detail="Timeline contains an invalid asset reference.") from exc
+                raise HTTPException(
+                    status_code=422,
+                    detail="Timeline contains an invalid asset reference.",
+                ) from exc
             if asset_id in transcriptions or asset_id in missing_transcriptions:
                 continue
             asset, _ = _source_path(project_id, asset_id)
             if asset["asset_type"] != "video":
-                raise HTTPException(status_code=422, detail="Timeline subtitles require video source assets.")
-            assets[asset_id] = asset
+                raise HTTPException(
+                    status_code=422,
+                    detail="Timeline subtitles require video source assets.",
+                )
             transcription_path = asset_dir(project_id, asset_id) / "transcription.json"
             if not transcription_path.is_file():
                 missing_transcriptions.append(asset_id)
@@ -555,27 +573,42 @@ def create_timeline_subtitles(
             if manifest.get("language") not in {"ar", "en"} or not isinstance(
                 manifest.get("segments"), list
             ):
-                raise HTTPException(status_code=409, detail="A source transcription manifest is invalid.")
+                raise HTTPException(
+                    status_code=409,
+                    detail="A source transcription manifest is invalid.",
+                )
             transcriptions[asset_id] = manifest
 
         if missing_transcriptions:
             raise HTTPException(
                 status_code=409,
                 detail={
-                    "message": "Transcribe every video source used by the timeline before creating subtitles.",
+                    "message": (
+                        "Transcribe every video source used by the timeline "
+                        "before creating subtitles."
+                    ),
                     "missing_asset_ids": missing_transcriptions,
                 },
             )
 
+        valid_alignment_states = {"completed", "unavailable", "not_requested"}
         alignment_states = {
             manifest.get("alignment_status", "not_requested")
             for manifest in transcriptions.values()
         }
+        if not alignment_states.issubset(valid_alignment_states):
+            raise HTTPException(
+                status_code=409,
+                detail="A source transcription has an unknown alignment state.",
+            )
         if payload.require_alignment and alignment_states != {"completed"}:
             raise HTTPException(
                 status_code=409,
                 detail={
-                    "message": "Word alignment is required, but one or more source transcriptions are not word-aligned.",
+                    "message": (
+                        "Word alignment is required, but one or more source "
+                        "transcriptions are not word-aligned."
+                    ),
                     "alignment_states": sorted(alignment_states),
                 },
             )
@@ -588,17 +621,25 @@ def create_timeline_subtitles(
                 source_start = float(clip["source_start_seconds"])
                 clip_duration = float(clip["duration_seconds"])
             except (KeyError, TypeError, ValueError) as exc:
-                raise HTTPException(status_code=422, detail="Timeline contains an invalid clip range.") from exc
+                raise HTTPException(
+                    status_code=422,
+                    detail="Timeline contains an invalid clip range.",
+                ) from exc
             if (
                 not math.isfinite(source_start)
                 or not math.isfinite(clip_duration)
                 or source_start < 0
                 or clip_duration <= 0
             ):
-                raise HTTPException(status_code=422, detail="Timeline contains an invalid clip range.")
+                raise HTTPException(
+                    status_code=422,
+                    detail="Timeline contains an invalid clip range.",
+                )
             source_end = source_start + clip_duration
             transcription = transcriptions[asset_id]
             for segment in transcription["segments"]:
+                if not isinstance(segment, dict):
+                    continue
                 try:
                     segment_start = float(segment["start"])
                     segment_end = float(segment["end"])
@@ -632,14 +673,20 @@ def create_timeline_subtitles(
                 detail="No speech segments overlap the selected timeline clip ranges.",
             )
         if len(captions) > 20000:
-            raise HTTPException(status_code=422, detail="The timeline produces too many subtitle cues.")
+            raise HTTPException(
+                status_code=422,
+                detail="The timeline produces too many subtitle cues.",
+            )
 
         srt_lines: list[str] = []
         for index, caption in enumerate(captions, start=1):
             srt_lines.extend(
                 [
                     str(index),
-                    f"{_srt_timestamp(caption['start_seconds'])} --> {_srt_timestamp(caption['end_seconds'])}",
+                    (
+                        f"{_srt_timestamp(caption['start_seconds'])} --> "
+                        f"{_srt_timestamp(caption['end_seconds'])}"
+                    ),
                     caption["text"],
                     "",
                 ]
@@ -680,7 +727,10 @@ def create_timeline_subtitles(
         )
         return manifest
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Project or timeline source not found.") from exc
+        raise HTTPException(
+            status_code=404,
+            detail="Project or timeline source not found.",
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
@@ -696,7 +746,10 @@ def get_timeline_subtitle_manifest(project_id: str) -> dict:
             / f"project-{timeline_id}-subtitles.json"
         )
         if not path.is_file():
-            raise HTTPException(status_code=404, detail="Timeline subtitles have not been generated.")
+            raise HTTPException(
+                status_code=404,
+                detail="Timeline subtitles have not been generated.",
+            )
         return read_json(path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
