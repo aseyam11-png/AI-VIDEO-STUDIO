@@ -117,7 +117,9 @@ def _verify_product_identity_reference(
         or not expected_source.is_file()
         or source.resolve() != expected_source
     ):
-        raise ValueError("Product identity reference path does not match the selected project asset.")
+        raise ValueError(
+            "Product identity reference path does not match the selected project asset."
+        )
     stored_sha256 = asset.get("sha256")
     if stored_sha256 != expected_sha256:
         raise ValueError("Product identity reference fingerprint changed after workflow approval.")
