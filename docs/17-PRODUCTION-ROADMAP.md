@@ -14,6 +14,8 @@ The following implementation phases are present on `main`:
 | 1 | PostgreSQL metadata, durable jobs/events, transactional outbox, Celery/Valkey, CPU worker and recovery | Merged |
 | 2 | Model adapter contracts, Ollama integration, specialist model jobs and unified Tools API | Merged; real model runtimes/weights are not accepted |
 | 3 | Durable sequential workflow runs/steps, plan approval, child-job chaining and generated-asset handoff | Merged by PR #4 |
+| 6.6 | Transitions, Arabic titles and positioned image overlays | Merged by PR #13 |
+| 6.7 | Approved multi-shot Wan generation and deterministic FFmpeg assembly | Merged by PR #14; all three CI jobs passed |
 
 Phase 3 CI run 120 passed on commit `91c62b8` before merge. Both `python-checks` and `compose-integration` succeeded. This is automated CI evidence, not target-machine GPU or model-inference evidence.
 
@@ -26,7 +28,7 @@ The following gaps remain open:
 - The five ComfyUI workflow registry entries must be populated from actual API-exported workflow JSON; placeholder node IDs/input names must not be guessed.
 - An initial connected Arabic RTL UI is merged in [PR #5](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/5). It covers project creation/history, video upload, Qwen plan review/approval, workflow monitoring, model-readiness indicators and MP4 preview/download. Browser acceptance on the target host remains open.
 - The Workflow Engine v1 is sequential. It is not a general branching DAG or autonomous multi-agent editing director.
-- Wan image-to-video v1 now has a separate durable multi-shot path on the Phase 6.7 feature branch: 2–8 generated shots, up to 10 seconds each, registered as project assets and assembled by FFmpeg. Real Wan/RIFE inference and target-GPU performance still require target-host acceptance.
+- Wan image-to-video v1 now has a durable multi-shot path merged in PR #14: 2–8 generated shots, up to 10 seconds each, registered as project assets and assembled by FFmpeg. Real Wan/RIFE inference and target-GPU performance still require target-host acceptance.
 - The deterministic renderer now supports sequential multi-source clips, Arabic timeline SRT, synchronized audio mixing, and the Phase 6.6 transitions/titles/image-overlay slice merged in PR #13. Real-time waveform editing, arbitrary keyframes, 3D compositing and reviewed Blender/ComfyUI motion-graphics templates remain future work.
 - Product Identity Lock and automated creative/visual QA are not implemented.
 - Authentication/deployment controls, backup/restore testing, operational monitoring and a full production acceptance run remain outstanding.
@@ -104,21 +106,29 @@ This is a deterministic FFmpeg editing slice, not an arbitrary keyframe editor o
 
 See [Phase 6.6 — Transitions, Titles and Motion Graphics](24-PHASE-6.6-TRANSITIONS-TITLES-MOTION.md).
 
-### Phase 6.7 — Multi-shot generation and deterministic assembly (implementation branch)
+### Phase 6.7 — Multi-shot generation and deterministic assembly (merged)
 
-PR #14 on `feat/phase-6.7-multishot-assembly` adds a durable `video.generate_sequence` job. After explicit approval, an image-reference workflow maps 2–8 CreativePlan scenes into individual Wan 2.2 TI2V jobs, optionally applies RIFE interpolation to each shot, validates and registers each shot as a project asset, then assembles the ordered clips into one MP4 with FFmpeg. The final asset is handed to the existing workflow engine for timeline and export steps.
+Merged in [PR #14](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/14). Adds a durable `video.generate_sequence` job. After explicit approval, an image-reference workflow maps 2–8 CreativePlan scenes into individual Wan 2.2 TI2V jobs, optionally applies RIFE interpolation to each shot, validates and registers each shot as a project asset, then assembles the ordered clips into one MP4 with FFmpeg. The final asset is handed to the existing workflow engine for timeline and export steps.
 
-The PR is open as a Draft and is not merged. CI run [42829261546](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/actions/runs/42829261546) passed all three jobs: Python checks, Windows script checks and Compose integration. The Compose test exercises the application/worker infrastructure; the video assembly test uses synthetic FFmpeg clips. Neither proves real Wan/RIFE model inference.
+CI run [42830205865](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/actions/runs/42830205865) passed all three jobs on the PR head before merge: Python checks, Windows script checks and Compose integration. The video assembly test uses synthetic FFmpeg clips; neither the tests nor the Compose job prove real Wan/RIFE model inference.
 
 The same image reference is supplied to every shot. This does not guarantee frame-to-frame identity or exact product preservation; Phase 6.9 addresses product identity review. Real Wan/RIFE execution still requires the exported workflow registry, exact custom nodes/weights and target-GPU acceptance.
 
 See [Phase 6.7 — Multi-Shot Generation and Assembly](25-PHASE-6.7-MULTISHOT-GENERATION-ASSEMBLY.md).
 
+### Phase 6.8 — Bounded Real-ESRGAN video enhancement (implementation PR)
+
+The synchronized Phase 6.8 implementation is submitted in [PR #16](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/16). It adds a durable `video.enhance` model-worker job, per-frame ComfyUI Real-ESRGAN processing, bounded FFmpeg extraction/reassembly, preservation of source audio streams, verified project-asset registration and an Arabic Studio toggle.
+
+The job is limited to 10 seconds and 300 frames, applies a 650-million pixel-frame extraction budget, caps extracted and enhanced frame bytes by the configured model-output limit, and requires approval. Synthetic FFmpeg tests and a mocked ComfyUI client validate orchestration, not real enhancement quality or GPU inference. PR CI and target-host Real-ESRGAN acceptance remain open.
+
+See [Phase 6.8 — Bounded Video Enhancement](26-PHASE-6.8-VIDEO-ENHANCEMENT.md).
+
 ### Remaining Phase 6 increments
 
 Deliver in independently testable increments:
 
-- Video enhancement pipeline with frame extraction/reassembly only after output and storage validation (6.8).
+- Complete Phase 6.8 CI and target-host Real-ESRGAN acceptance; inspect quality and multi-track audio on real samples.
 - Product Identity Lock for product ads: reference preservation, logo/label checks and human review (6.9).
 - Technical and visual QA: black/frozen frame detection, audio clipping/silence, duration/resolution/FPS checks, missing files and corrupt exports (6.10).
 
