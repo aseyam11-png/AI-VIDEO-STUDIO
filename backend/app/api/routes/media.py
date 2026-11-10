@@ -1,19 +1,21 @@
 from pathlib import Path
 from typing import Annotated
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.integrations.ffmpeg import MediaToolError, probe_media
 from app.media.pipeline import (
     OptionalMediaDependencyError,
+    build_multi_source_timeline,
     build_timeline,
     create_proxy,
     detect_scenes,
+    render_multi_source_timeline,
     render_timeline,
 )
 from app.media.speech import SpeechDependencyError, transcribe_local
@@ -56,6 +58,31 @@ class TimelineRequest(BaseModel):
 
 
 class RenderRequest(BaseModel):
+    width: int = Field(default=1920, ge=320, le=3840)
+    height: int = Field(default=1080, ge=240, le=2160)
+    fps: int = Field(default=30, ge=1, le=60)
+    crf: int = Field(default=20, ge=0, le=35)
+
+
+class MultiSourceClipRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    clip_id: UUID = Field(default_factory=uuid4)
+    asset_id: UUID
+    source_start_seconds: float = Field(ge=0, le=3600)
+    duration_seconds: float = Field(gt=0, le=3600)
+
+
+class ProjectTimelineRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fps: int = Field(default=30, ge=1, le=60)
+    clips: list[MultiSourceClipRequest] = Field(min_length=1, max_length=100)
+
+
+class ProjectTimelineRenderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     width: int = Field(default=1920, ge=320, le=3840)
     height: int = Field(default=1080, ge=240, le=2160)
     fps: int = Field(default=30, ge=1, le=60)
@@ -284,3 +311,120 @@ def download_render(project_id: str, asset_id: str) -> FileResponse:
     if not rendered.is_file():
         raise HTTPException(status_code=404, detail="Rendered video not found.")
     return FileResponse(rendered, media_type="video/mp4", filename=rendered.name)
+
+
+@router.get("/timeline")
+def get_project_timeline(project_id: str) -> dict:
+    try:
+        get_project(project_id)
+        timeline_path = project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
+        if not timeline_path.is_file():
+            raise HTTPException(status_code=404, detail="Project timeline not found.")
+        return read_json(timeline_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found.") from exc
+
+
+@router.put("/timeline")
+async def save_project_timeline(project_id: str, payload: ProjectTimelineRequest) -> dict:
+    try:
+        get_project(project_id)
+        sources: dict[str, Path] = {}
+        clips: list[dict] = []
+        for clip in payload.clips:
+            asset_id = str(clip.asset_id)
+            asset, source = _source_path(project_id, asset_id)
+            if asset["asset_type"] != "video":
+                raise HTTPException(
+                    status_code=422,
+                    detail="Multi-source timeline clips must reference video assets.",
+                )
+            sources[asset_id] = source
+            clips.append(clip.model_dump(mode="json"))
+
+        manifest, timeline_path = await run_in_threadpool(
+            build_multi_source_timeline,
+            project_id=project_id,
+            sources=sources,
+            clips=clips,
+            fps=payload.fps,
+        )
+        return {
+            **manifest,
+            "timeline_path": str(timeline_path.relative_to(project_dir(project_id))),
+        }
+    except OptionalMediaDependencyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except (ValueError, MediaToolError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found.") from exc
+
+
+@router.post("/timeline/render")
+async def render_project_timeline_route(
+    project_id: str, payload: ProjectTimelineRenderRequest
+) -> dict:
+    try:
+        get_project(project_id)
+        timeline_path = project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
+        if not timeline_path.is_file():
+            raise HTTPException(status_code=404, detail="Save the project timeline before rendering.")
+        timeline = read_json(timeline_path)
+        if timeline.get("project_id") != str(UUID(project_id)):
+            raise HTTPException(status_code=400, detail="Timeline project mismatch.")
+
+        sources: dict[str, Path] = {}
+        for clip in timeline.get("clips", []):
+            asset_id = str(UUID(str(clip["asset_id"])))
+            if asset_id in sources:
+                continue
+            asset, source = _source_path(project_id, asset_id)
+            if asset["asset_type"] != "video":
+                raise HTTPException(
+                    status_code=422,
+                    detail="Multi-source timeline clips must reference video assets.",
+                )
+            sources[asset_id] = source
+
+        destination = project_dir(project_id) / "exports" / f"project-{UUID(project_id)}-preview.mp4"
+        result = await run_in_threadpool(
+            render_multi_source_timeline,
+            sources=sources,
+            timeline_manifest=timeline,
+            destination=destination,
+            width=payload.width,
+            height=payload.height,
+            fps=payload.fps,
+            crf=payload.crf,
+        )
+        return {
+            **result,
+            "download_url": f"/v1/projects/{project_id}/timeline/rendered",
+        }
+    except OptionalMediaDependencyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except (ValueError, MediaToolError, KeyError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project or timeline source not found.") from exc
+
+
+@router.get("/timeline/rendered")
+def download_project_timeline_render(project_id: str) -> FileResponse:
+    try:
+        get_project(project_id)
+        rendered = (
+            project_dir(project_id)
+            / "exports"
+            / f"project-{UUID(project_id)}-preview.mp4"
+        )
+        if not rendered.is_file():
+            raise HTTPException(status_code=404, detail="Rendered project timeline not found.")
+        return FileResponse(rendered, media_type="video/mp4", filename=rendered.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found.") from exc
