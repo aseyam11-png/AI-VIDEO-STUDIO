@@ -159,6 +159,15 @@ def _step_specs(
                 f"Scene: {scene.visual_description}. "
                 f"Camera: {scene.camera_movement}. Audience: {plan.audience}."
             )[:4000]
+            if request.product_identity_lock:
+                prompt = (
+                    f"{prompt} Canonical product identity lock: reproduce the exact product "
+                    "shown in the supplied reference image. Preserve its silhouette, "
+                    "proportions, materials, colors, components, logo, label, packaging and "
+                    "all visible markings. Do not redesign, replace, morph, omit or invent "
+                    "product details. Keep camera motion and lighting subordinate to "
+                    "product fidelity."
+                )[:4000]
             steps.append(
                 (
                     JobType.VIDEO_GENERATE,
@@ -166,11 +175,24 @@ def _step_specs(
                         "prompt": prompt,
                         "negative_prompt": (
                             "low quality, flicker, distorted geometry, unreadable text"
+                            + (
+                                ", changed product identity, altered logo, misspelled label, "
+                                "different product color, wrong material, missing components, "
+                                "product morphing"
+                                if request.product_identity_lock
+                                else ""
+                            )
                         ),
                         "duration_seconds": scene.duration_seconds,
                         "width": 832,
                         "height": 480,
                         "approved": True,
+                        "product_identity_lock": request.product_identity_lock,
+                        "identity_reference_sha256": (
+                            (asset_metadata or {}).get("sha256")
+                            if request.product_identity_lock
+                            else None
+                        ),
                     },
                 )
             )
