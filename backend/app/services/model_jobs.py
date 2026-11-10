@@ -15,7 +15,7 @@ from app.media.pipeline import (
     assemble_upscaled_video,
     extract_video_frames,
     render_multi_source_timeline,
-  )
+)
 from app.media.speech import transcribe_local
 from app.media.storage import (
     asset_dir,
