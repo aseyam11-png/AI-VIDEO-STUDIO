@@ -64,8 +64,25 @@ class WorkflowFromBriefRequest(BaseModel):
 
 
 
+class ProductIdentityReviewChecks(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    silhouette_and_proportions: bool = False
+    colors_and_materials: bool = False
+    logo_and_labels: bool = False
+    components_and_packaging: bool = False
+    consistency_across_shots: bool = False
+
+
 class WorkflowIdentityReviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     approved: bool
     notes: str = Field(default="", max_length=2000)
+    checks: ProductIdentityReviewChecks = Field(default_factory=ProductIdentityReviewChecks)
+
+    @model_validator(mode="after")
+    def require_completed_checklist_for_approval(self):
+        if self.approved and not all(self.checks.model_dump().values()):
+            raise ValueError("All five product identity checks must be confirmed before approval.")
+        return self
