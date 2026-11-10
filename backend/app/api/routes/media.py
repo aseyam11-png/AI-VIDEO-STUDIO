@@ -127,8 +127,6 @@ class ProjectAudioMixRequest(BaseModel):
     levels_db: AudioMixLevels = Field(default_factory=AudioMixLevels)
     clips: list[AudioMixClipRequest] = Field(default_factory=list, max_length=100)
 
-
-
 class VisualTransitionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -160,7 +158,9 @@ class ImageOverlayRequest(BaseModel):
     duration_seconds: float = Field(gt=0, le=3600, allow_inf_nan=False)
     width_ratio: float = Field(default=0.2, ge=0.05, le=0.6, allow_inf_nan=False)
     opacity: float = Field(default=1.0, ge=0.1, le=1.0, allow_inf_nan=False)
-    position: Literal["top_left", "top_right", "bottom_left", "bottom_right", "center"] = "top_right"
+    position: Literal["top_left", "top_right", "bottom_left", "bottom_right", "center"] = (
+        "top_right"
+    )
     animation: Literal["none", "slide_up"] = "none"
 
 
@@ -627,12 +627,16 @@ async def render_project_timeline_route(
                 continue
             asset, source = _source_path(project_id, asset_id)
             if asset["asset_type"] != "image":
-                raise HTTPException(status_code=422, detail="Visual overlays must reference image assets.")
+                raise HTTPException(
+                    status_code=422, detail="Visual overlays must reference image assets."
+                )
             if not any(
                 stream.get("codec_type") == "video"
                 for stream in probe_media(source).get("streams", [])
             ):
-                raise HTTPException(status_code=422, detail="Overlay image has no decodable image stream.")
+                raise HTTPException(
+                    status_code=422, detail="Overlay image has no decodable image stream."
+                )
             overlay_sources[asset_id] = source
 
         result = await run_in_threadpool(
@@ -663,8 +667,6 @@ async def render_project_timeline_route(
         ) from exc
 
 
-
-
 def _visual_effects_path(project_id: str) -> Path:
     timeline_id = str(UUID(project_id))
     return project_dir(project_id) / "timelines" / f"project-{timeline_id}-visual-effects.json"
@@ -688,7 +690,9 @@ def get_project_visual_effects(project_id: str) -> dict:
         get_project(project_id)
         timeline_path = project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
         if not timeline_path.is_file():
-            raise HTTPException(status_code=404, detail="Save the video timeline before editing visual effects.")
+            raise HTTPException(
+                status_code=404, detail="Save the video timeline before editing visual effects."
+            )
         timeline = read_json(timeline_path)
         path = _visual_effects_path(project_id)
         if not path.is_file():
@@ -697,7 +701,10 @@ def get_project_visual_effects(project_id: str) -> dict:
         if (
             manifest.get("schema_version") != 1
             or manifest.get("project_id") != str(UUID(project_id))
-            or not all(isinstance(manifest.get(key), list) for key in ("transitions", "titles", "overlays"))
+            or not all(
+                isinstance(manifest.get(key), list)
+                for key in ("transitions", "titles", "overlays")
+            )
         ):
             raise HTTPException(status_code=409, detail="Saved visual effects manifest is invalid.")
         return manifest
@@ -715,17 +722,27 @@ def save_project_visual_effects(
         get_project(project_id)
         timeline_path = project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
         if not timeline_path.is_file():
-            raise HTTPException(status_code=404, detail="Save the video timeline before editing visual effects.")
+            raise HTTPException(
+                status_code=404, detail="Save the video timeline before editing visual effects."
+            )
         timeline = read_json(timeline_path)
         if timeline.get("project_id") != str(UUID(project_id)):
-            raise HTTPException(status_code=409, detail="Video timeline belongs to another project.")
+            raise HTTPException(
+                status_code=409, detail="Video timeline belongs to another project."
+            )
         timeline_duration = float(timeline.get("duration_seconds", 0))
-        if not math.isfinite(timeline_duration) or timeline_duration <= 0 or timeline_duration > 3600:
+        if (
+            not math.isfinite(timeline_duration)
+            or timeline_duration <= 0
+            or timeline_duration > 3600
+        ):
             raise HTTPException(status_code=409, detail="Video timeline duration is invalid.")
 
         clips = timeline.get("clips", [])
         if not isinstance(clips, list) or not clips:
-            raise HTTPException(status_code=422, detail="Add and save video clips before visual effects.")
+            raise HTTPException(
+                status_code=422, detail="Add and save video clips before visual effects."
+            )
         clip_positions: dict[str, int] = {}
         clip_durations: dict[str, float] = {}
         for index, clip in enumerate(clips):
@@ -733,9 +750,14 @@ def save_project_visual_effects(
                 clip_id = str(UUID(str(clip["clip_id"])))
                 duration = float(clip["duration_seconds"])
             except (KeyError, TypeError, ValueError) as exc:
-                raise HTTPException(status_code=409, detail="Saved video timeline contains an invalid clip.") from exc
+                raise HTTPException(
+                    status_code=409, detail="Saved video timeline contains an invalid clip."
+                ) from exc
             if clip_id in clip_positions or not math.isfinite(duration) or duration <= 0:
-                raise HTTPException(status_code=409, detail="Saved video timeline contains duplicate or invalid clips.")
+                raise HTTPException(
+                    status_code=409,
+                    detail="Saved video timeline contains duplicate or invalid clips.",
+                )
             clip_positions[clip_id] = index
             clip_durations[clip_id] = duration
 
@@ -746,17 +768,29 @@ def save_project_visual_effects(
             clip_id = str(item.after_clip_id)
             index = clip_positions.get(clip_id)
             if index is None or index >= len(clips) - 1 or clip_id in seen_transition_clips:
-                raise HTTPException(status_code=422, detail="Choose a valid clip boundary for each transition.")
+                raise HTTPException(
+                    status_code=422,
+                    detail="Choose a valid clip boundary for each transition.",
+                )
             next_clip_id = str(UUID(str(clips[index + 1]["clip_id"])))
             duration = item.duration_seconds
             if duration > min(clip_durations[clip_id], clip_durations[next_clip_id]) / 2:
-                raise HTTPException(status_code=422, detail="Transition duration cannot exceed half of either adjacent clip.")
+                raise HTTPException(
+                    status_code=422,
+                    detail="Transition duration cannot exceed half of either adjacent clip.",
+                )
             seen_transition_clips.add(clip_id)
             transition_usage[clip_id] = transition_usage.get(clip_id, 0) + duration
             transition_usage[next_clip_id] = transition_usage.get(next_clip_id, 0) + duration
             transitions.append(item.model_dump(mode="json"))
-        if any(used > clip_durations[clip_id] + 0.000001 for clip_id, used in transition_usage.items()):
-            raise HTTPException(status_code=422, detail="Adjacent transitions cannot overlap inside the same clip.")
+        if any(
+            used > clip_durations[clip_id] + 0.000001
+            for clip_id, used in transition_usage.items()
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Adjacent transitions cannot overlap inside the same clip.",
+            )
 
         titles = []
         seen_title_ids: set[str] = set()
@@ -767,7 +801,10 @@ def save_project_visual_effects(
                 or not item.text.strip()
                 or item.start_seconds + item.duration_seconds > timeline_duration + 0.001
             ):
-                raise HTTPException(status_code=422, detail="A title has duplicate identity or invalid text/timing.")
+                raise HTTPException(
+                    status_code=422,
+                    detail="A title has duplicate identity or invalid text/timing.",
+                )
             seen_title_ids.add(title_id)
             titles.append(item.model_dump(mode="json"))
 
@@ -777,12 +814,16 @@ def save_project_visual_effects(
             overlay_id = str(item.overlay_id)
             asset, source = _source_path(project_id, str(item.asset_id))
             if asset["asset_type"] != "image":
-                raise HTTPException(status_code=422, detail="Visual overlays must reference image assets.")
+                raise HTTPException(
+                    status_code=422, detail="Visual overlays must reference image assets."
+                )
             if not any(
                 stream.get("codec_type") == "video"
                 for stream in probe_media(source).get("streams", [])
             ):
-                raise HTTPException(status_code=422, detail="Overlay image has no decodable image stream.")
+                raise HTTPException(
+                    status_code=422, detail="Overlay image has no decodable image stream."
+                )
             if (
                 overlay_id in seen_overlay_ids
                 or item.start_seconds + item.duration_seconds > timeline_duration + 0.001
@@ -810,7 +851,10 @@ def save_project_visual_effects(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Project, timeline or overlay asset not found.") from exc
+        raise HTTPException(
+            status_code=404,
+            detail="Project, timeline or overlay asset not found.",
+        ) from exc
 
 
 def _audio_mix_path(project_id: str) -> Path:
