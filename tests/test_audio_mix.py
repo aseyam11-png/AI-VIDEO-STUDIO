@@ -234,6 +234,13 @@ def test_render_pipeline_builds_voice_music_sync_denoise_and_fades(tmp_path, mon
         },
         "voice.wav": _probe("voice.wav"),
         "music.wav": _probe("music.wav"),
+        "output.partial.mp4": {
+            "format": {"duration": "10"},
+            "streams": [
+                {"codec_type": "video"},
+                {"codec_type": "audio", "sample_rate": "48000"},
+            ],
+        },
     }
     monkeypatch.setattr(pipeline, "probe_media", lambda path: probes[Path(path).name])
     monkeypatch.setattr(pipeline, "require_binary", lambda _name: "/usr/bin/ffmpeg")
@@ -510,7 +517,7 @@ def test_audio_mix_real_ffmpeg_places_and_mixes_external_music(tmp_path):
     subprocess.run(
         [
             ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000:duration=2",
+            "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000:duration=2.5",
             "-c:a", "pcm_s16le", str(music),
         ],
         check=True, capture_output=True, text=True, timeout=60,
