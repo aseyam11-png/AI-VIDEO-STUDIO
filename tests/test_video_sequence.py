@@ -7,7 +7,16 @@ from uuid import uuid4
 
 import pytest
 from app.core.config import settings
-from app.media.storage import create_project, ingest_file_stream, project_dir
+from app.main import app
+from app.media.storage import (
+    create_project,
+    ingest_file_stream,
+    project_dir,
+    register_generated_video_asset,
+)
+from app.services import job_runner
+from app.services.job_runner import run_job_attempt
+from fastapi.testclient import TestClient
 from app.schemas.jobs import JobType
 from app.schemas.models import CreativePlan
 from app.schemas.workflows import WorkflowCreateRequest
@@ -155,6 +164,79 @@ def test_multishot_workflow_uses_scene_prompts_and_one_assembly_job():
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg is required")
+def test_approved_multishot_workflow_routes_final_asset_to_timeline_step(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
+    monkeypatch.setattr(settings, "comfyui_base_url", "http://comfyui.test:8188")
+    project = create_project(
+        {
+            "name": "Multi-shot workflow chain",
+            "target_duration_seconds": 4,
+            "target_resolution": "640x360",
+            "target_fps": 24,
+            "language": "ar",
+            "brief": "اختبار تمرير الفيديو الناتج إلى الخط الزمني.",
+        }
+    )
+    image_asset, _ = ingest_file_stream(
+        project["id"],
+        "reference.png",
+        io.BytesIO(b"synthetic-image-reference"),
+        max_bytes=1024,
+    )
+    fixture = tmp_path / "workflow-sequence.mp4"
+    _make_video(fixture, duration=4)
+
+    def fake_sequence(job, source, *, progress, cancel_check):
+        destination = project_dir(job["project_id"]) / "exports" / "workflow-sequence.mp4"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(fixture, destination)
+        asset = register_generated_video_asset(
+            job["project_id"],
+            job["id"],
+            destination,
+            max_bytes=settings.max_model_output_bytes,
+        )
+        return {"output_asset_id": asset["id"], "output_asset": asset}
+
+    monkeypatch.setattr(job_runner, "execute_video_sequence", fake_sequence)
+    client = TestClient(app)
+    created = client.post(
+        "/v1/workflows",
+        json={
+            "project_id": project["id"],
+            "asset_id": image_asset["id"],
+            "idempotency_key": "multi-shot-workflow-chain-0001",
+            "brief": "أنشئ إعلانًا متعدد اللقطات من صورة المنتج ثم جهّزه للمونتاج.",
+            "language": "ar",
+            "creative_plan": _plan().model_dump(),
+            "generate_video": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    run_id = created.json()["id"]
+    assert [step["tool_id"] for step in created.json()["steps"]] == [
+        "video.generate_sequence",
+        "media.timeline",
+        "media.render",
+    ]
+
+    approved = client.post(f"/v1/workflows/{run_id}/approve")
+    assert approved.status_code == 202, approved.text
+    first_step = approved.json()["steps"][0]
+    job = client.get(f"/v1/jobs/{first_step['job_id']}").json()
+    completed = run_job_attempt(job["id"], job["dispatch_generation"])
+    assert completed["status"] == "succeeded"
+
+    advanced = client.get(f"/v1/workflows/{run_id}").json()
+    sequence_step, timeline_step, _ = advanced["steps"]
+    assert sequence_step["status"] == "succeeded"
+    assert sequence_step["result"]["output_asset_id"]
+    assert timeline_step["status"] == "queued"
+    assert timeline_step["asset_id"] == sequence_step["result"]["output_asset_id"]
+
+
 def test_video_sequence_executes_wan_shots_registers_assets_and_assembles_mp4(
     tmp_path, monkeypatch
 ):
