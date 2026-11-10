@@ -14,13 +14,12 @@ from app.media.storage import (
     project_dir,
     register_generated_video_asset,
 )
-from app.services import job_runner
-from app.services.job_runner import run_job_attempt
-from fastapi.testclient import TestClient
 from app.schemas.jobs import JobType
 from app.schemas.models import CreativePlan
 from app.schemas.workflows import WorkflowCreateRequest
-from app.services import jobs, model_jobs, workflow_engine
+from app.services import job_runner, jobs, model_jobs, workflow_engine
+from app.services.job_runner import run_job_attempt
+from fastapi.testclient import TestClient
 
 
 def _plan() -> CreativePlan:
