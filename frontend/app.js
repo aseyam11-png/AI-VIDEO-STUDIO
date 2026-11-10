@@ -1908,10 +1908,13 @@
       notice("أنشئ مشروعًا أو اختر مشروعًا قبل رفع الفيديو.", "error");
       return;
     }
-    const allowed = [".mp4", ".mov", ".mkv", ".webm", ".m4v"];
+    const allowed = [
+      ".mp4", ".mov", ".mkv", ".webm", ".m4v",
+      ".png", ".jpg", ".jpeg", ".webp"
+    ];
     const name = file.name.toLowerCase();
     if (!allowed.some((extension) => name.endsWith(extension))) {
-      notice("صيغة الملف غير مدعومة. استخدم MP4 أو MOV أو MKV أو WEBM أو M4V.", "error");
+      notice("الصيغة غير مدعومة. استخدم فيديو MP4/MOV/MKV/WEBM أو صورة PNG/JPG/WEBP.", "error");
       return;
     }
 
@@ -1924,7 +1927,7 @@
     percent.textContent = "0%";
     state.uploading = true;
     setProjectControls();
-    notice("بدأ رفع الفيديو إلى مساحة التخزين الخاصة…", "info");
+    notice("بدأ رفع الملف إلى مساحة المشروع الخاصة…", "info");
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/v1/projects/${encodeURIComponent(state.project.id)}/assets`);
@@ -1949,7 +1952,7 @@
       }
       progress.style.width = "100%";
       percent.textContent = "100%";
-      notice("تم رفع الفيديو والتحقق من صلاحيته بنجاح.", "success");
+      notice(body.asset_type === "image" ? "تم رفع صورة المنتج والتحقق منها. يمكنك اختيارها كمرجع لهوية المنتج." : "تم رفع الفيديو والتحقق من صلاحيته بنجاح.", "success");
       try {
         await reloadAssets(body.id);
       } catch (error) {
