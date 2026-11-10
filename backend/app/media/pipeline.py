@@ -999,12 +999,14 @@ def render_multi_source_timeline(
             )
             current_video_label = next_label
 
+    ffmpeg = require_binary("ffmpeg")
+    destination.parent.mkdir(parents=True, exist_ok=True)
     if title_metadata:
+        font = _escape_filter_path(str(_title_font_path()))
         title_temp = tempfile.TemporaryDirectory(
             prefix="studio-titles-", dir=str(destination.parent)
         )
         title_directory = Path(title_temp.name)
-        font = _escape_filter_path(str(_title_font_path()))
         for index, title in enumerate(title_metadata):
             text_path = title_directory / f"title-{index:02d}.txt"
             text_path.write_text(title["text"], encoding="utf-8")
@@ -1057,12 +1059,13 @@ def render_multi_source_timeline(
             "alimiter=limit=0.95[a_final]"
         )
 
-    ffmpeg = require_binary("ffmpeg")
-    destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(destination.stem + ".partial" + destination.suffix)
     command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
-    for source in inputs:
-        command.extend(["-i", str(source)])
+    for input_index, source in enumerate(inputs):
+        if input_index >= first_overlay_input_index:
+            command.extend(["-loop", "1", "-i", str(source)])
+        else:
+            command.extend(["-i", str(source)])
     command.extend([
         "-filter_complex", ";".join(filters), "-map", video_output_label,
         "-t", f"{timeline_duration:.6f}",
