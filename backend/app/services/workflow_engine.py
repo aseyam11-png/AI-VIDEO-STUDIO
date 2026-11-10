@@ -151,34 +151,104 @@ def _step_specs(
             raise WorkflowRequestError(
                 "An image workflow must explicitly enable video generation."
             )
-        if len(plan.scenes) != 1 or plan.target_duration_seconds > 10:
+        if len(plan.scenes) > 8:
             raise WorkflowRequestError(
-                "Image-to-video workflow v1 supports one shot of at most 10 seconds. "
-                "Use a video source for multi-scene projects."
+                "Multi-shot generation is limited to eight approved scenes per workflow."
             )
-        scene = plan.scenes[0]
-        prompt = (
-            f"{plan.logline}. Style: {plan.visual_style}. "
-            f"Scene: {scene.visual_description}. "
-            f"Camera: {scene.camera_movement}. Audience: {plan.audience}."
-        )[:4000]
-        steps.append(
-            (
-                JobType.VIDEO_GENERATE,
-                {
-                    "prompt": prompt,
-                    "negative_prompt": (
-                        "low quality, flicker, distorted geometry, unreadable text"
-                    ),
-                    "duration_seconds": scene.duration_seconds,
-                    "width": 832,
-                    "height": 480,
-                    "approved": True,
-                },
+        if any(scene.duration_seconds > 10 for scene in plan.scenes):
+            raise WorkflowRequestError(
+                "Each generated shot must be between one and ten seconds."
             )
-        )
-        if request.interpolate_generated_video:
-            steps.append((JobType.VIDEO_INTERPOLATE, {"factor": 2}))
+        if len(plan.scenes) == 1:
+            scene = plan.scenes[0]
+            prompt = (
+                f"{plan.logline}. Style: {plan.visual_style}. "
+                f"Scene: {scene.visual_description}. "
+                f"Camera: {scene.camera_movement}. Audience: {plan.audience}. "
+                "Use the supplied reference image as the visual starting point."
+            )[:4000]
+            steps.append(
+                (
+                    JobType.VIDEO_GENERATE,
+                    {
+                        "prompt": prompt,
+                        "negative_prompt": (
+                            "low quality, flicker, distorted geometry, unreadable text"
+                        ),
+                        "duration_seconds": scene.duration_seconds,
+                        "width": 832,
+                        "height": 480,
+                        "approved": True,
+                    },
+                )
+            )
+            if request.interpolate_generated_video:
+                steps.append((JobType.VIDEO_INTERPOLATE, {"factor": 2}))
+        else:
+            for scene in plan.scenes:
+                prompt = (
+                    f"Project: {plan.title}. {plan.logline}. "
+                    f"Style: {plan.visual_style}. Palette: {', '.join(plan.color_palette)}. "
+                    f"Audience: {plan.audience}. "
+                    f"Shot {scene.index} of {len(plan.scenes)}. "
+                    f"Purpose: {scene.purpose}. "
+                    f"Visual direction: {scene.visual_description}. "
+                    f"Shot type: {scene.shot_type}. Camera movement: {scene.camera_movement}. "
+                    "Use the supplied reference image as the consistent product/subject reference. "
+                    "Keep the subject's shape, proportions, colors and visible markings consistent. "
+                    "Do not add captions, logos, watermarks or readable text."
+                )[:4000]
+                negative_prompt = (
+                    "low quality, flicker, temporal inconsistency, scene cuts, "
+                    "distorted geometry, changed product shape, changed label, "
+                    "extra products, unreadable text, captions, watermark"
+                )
+                steps.append(
+                    (
+                        JobType.VIDEO_GENERATE,
+                        {
+                            "prompt": prompt,
+                            "negative_prompt": negative_prompt,
+                            "duration_seconds": scene.duration_seconds,
+                            "width": 832,
+                            "height": 480,
+                            "approved": True,
+                            "_workflow": {
+                                "use_reference_asset": True,
+                                "scene_index": scene.index,
+                                "collect_assembly_output": not request.interpolate_generated_video,
+                            },
+                        },
+                    )
+                )
+                if request.interpolate_generated_video:
+                    steps.append(
+                        (
+                            JobType.VIDEO_INTERPOLATE,
+                            {
+                                "factor": 2,
+                                "_workflow": {
+                                    "scene_index": scene.index,
+                                    "collect_assembly_output": True,
+                                },
+                            },
+                        )
+                    )
+            steps.append(
+                (
+                    JobType.VIDEO_ASSEMBLE,
+                    {
+                        "scene_durations_seconds": [
+                            scene.duration_seconds for scene in plan.scenes
+                        ],
+                        "width": width,
+                        "height": height,
+                        "fps": fps,
+                        "crf": 20,
+                    },
+                )
+            )
+            return steps
     elif asset_type == "video":
         if request.generate_video:
             raise WorkflowRequestError(
@@ -293,11 +363,17 @@ def create_workflow_run(
             normalized_specs = []
             for job_type, payload in specs:
                 try:
-                    normalized = normalize_payload(job_type, payload)
+                    workflow_meta = payload.get("_workflow", {})
+                    public_payload = {
+                        key: value for key, value in payload.items() if key != "_workflow"
+                    }
+                    normalized = normalize_payload(job_type, public_payload)
                 except JobRequestError as exc:
                     raise WorkflowRequestError(
                         f"Workflow step '{job_type.value}' is not configured: {exc}"
                     ) from exc
+                if workflow_meta:
+                    normalized["_workflow"] = workflow_meta
                 normalized_specs.append((job_type, normalized))
 
             now = _now()
@@ -318,6 +394,7 @@ def create_workflow_run(
                     "upscale_output": request.upscale_output,
                     "generate_video": request.generate_video,
                     "interpolate_generated_video": request.interpolate_generated_video,
+                    "generated_shots": [],
                 },
                 status="awaiting_approval",
                 current_step_index=0,
@@ -372,7 +449,21 @@ def _enqueue_step(db: Session, run: WorkflowRunRecord, step: WorkflowStepRecord)
             f"Cannot start '{job_type.value}': an identical operation is already active."
         )
 
-    normalized = normalize_payload(job_type, step.payload_json)
+    raw_payload = dict(step.payload_json or {})
+    workflow_meta = raw_payload.pop("_workflow", {})
+    if job_type == JobType.VIDEO_ASSEMBLE:
+        generated_shots = sorted(
+            run.options_json.get("generated_shots", []),
+            key=lambda item: int(item.get("scene_index", 0)),
+        )
+        raw_payload["generated_asset_ids"] = [
+            item["asset_id"] for item in generated_shots
+        ]
+    normalized = normalize_payload(job_type, raw_payload)
+    if job_type == JobType.VIDEO_ASSEMBLE and len(normalized["generated_asset_ids"]) < 2:
+        raise WorkflowRequestError(
+            "The workflow does not have enough completed generated shots to assemble."
+        )
     idempotency_key = f"workflow-{run.id}-{step.sequence:03d}"
     canonical = {
         "project_id": run.project_id,
@@ -530,6 +621,23 @@ def advance_workflow_for_job(db: Session, job: JobRecord) -> None:
         step.error_message = None
         step.finished_at = now
         output_asset_id = (job.result_json or {}).get("output_asset_id")
+        workflow_meta = (step.payload_json or {}).get("_workflow", {})
+        if output_asset_id and workflow_meta.get("collect_assembly_output"):
+            options = dict(run.options_json or {})
+            shots = list(options.get("generated_shots", []))
+            scene_index = int(workflow_meta.get("scene_index", 0))
+            if scene_index < 1 or scene_index > 8:
+                step.status = "failed"
+                step.error_message = "Generated shot has an invalid scene index."
+                run.status = "failed"
+                run.error_message = step.error_message
+                run.finished_at = now
+                run.updated_at = now
+                return
+            shots = [item for item in shots if int(item.get("scene_index", 0)) != scene_index]
+            shots.append({"scene_index": scene_index, "asset_id": str(output_asset_id)})
+            options["generated_shots"] = shots
+            run.options_json = options
         if run.status == "cancel_requested":
             run.status = "cancelled"
             run.finished_at = now
@@ -552,7 +660,10 @@ def advance_workflow_for_job(db: Session, job: JobRecord) -> None:
             run.updated_at = now
             return
         effective_asset_id = step.asset_id
-        if output_asset_id:
+        next_meta = (next_step.payload_json or {}).get("_workflow", {})
+        if next_meta.get("use_reference_asset"):
+            effective_asset_id = run.asset_id
+        elif output_asset_id:
             output_asset = db.get(AssetRecord, str(output_asset_id))
             if output_asset is None or output_asset.project_id != run.project_id:
                 step.status = "failed"
