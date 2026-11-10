@@ -828,7 +828,10 @@ def save_project_visual_effects(
                 overlay_id in seen_overlay_ids
                 or item.start_seconds + item.duration_seconds > timeline_duration + 0.001
             ):
-                raise HTTPException(status_code=422, detail="An image overlay has duplicate identity or invalid timing.")
+                raise HTTPException(
+                    status_code=422,
+                    detail="An image overlay has duplicate identity or invalid timing.",
+                )
             seen_overlay_ids.add(overlay_id)
             overlays.append(item.model_dump(mode="json"))
 
