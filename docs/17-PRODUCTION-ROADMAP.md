@@ -27,7 +27,7 @@ The following gaps remain open:
 - An initial connected Arabic RTL UI is merged in [PR #5](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/5). It covers project creation/history, video upload, Qwen plan review/approval, workflow monitoring, model-readiness indicators and MP4 preview/download. Browser acceptance on the target host remains open.
 - The Workflow Engine v1 is sequential. It is not a general branching DAG or autonomous multi-agent editing director.
 - Wan image-to-video workflow v1 is limited to one generated shot up to 10 seconds; multi-shot assembly is not implemented.
-- Current deterministic timeline rendering is cut-only and single-source. Layered timelines, transitions, titles/subtitles, motion graphics, multi-source editing and audio mix automation remain incomplete.
+- The deterministic renderer now supports sequential multi-source clips, Arabic transcription to a separate timeline SRT, and synchronized project audio mixing. Audio waveform editing, real-time playback editing, title/overlay rendering and advanced motion graphics remain outside the merged baseline while Phase 6.6 is implemented on its feature branch.
 - Product Identity Lock and automated creative/visual QA are not implemented.
 - Authentication/deployment controls, backup/restore testing, operational monitoring and a full production acceptance run remain outstanding.
 - Third-party code, model, checkpoint, custom-node and dataset licenses must be inventoried before distribution or commercial use.
@@ -90,11 +90,19 @@ Merged in [PR #11](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/11). Add
 
 See [Phase 6.4 — Arabic Captions and Speech Sync](22-PHASE-6.4-ARABIC-CAPTIONS-SPEECH-SYNC.md). This produces a separate downloadable SRT; burned-in captions and embedded MP4 subtitle streams remain future work.
 
-### Phase 6.5 — Audio mixing and synchronization (implemented in this branch)
+### Phase 6.5 — Audio mixing and synchronization (merged)
 
-Adds project-scoped audio asset uploads and a saved audio-mix manifest. Users can place voice, music and sound-effect clips on the video timeline, trim their source ranges, set gain and master levels, apply fades and optional FFmpeg noise reduction, and choose whether to retain or denoise source-video audio. The FFmpeg preview export mixes the selected sources into one synchronized stereo AAC stream. Saving a changed video timeline invalidates the previous audio mix and preview.
+Merged in [PR #12](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/12). Adds project-scoped audio assets and saved Voice/Music/SFX tracks with source/timeline timing, per-clip and master gain, fades, optional FFmpeg afftdn noise reduction, source-video audio control and synchronized stereo AAC mixing. The PR passed Python/Ruff tests, the real FFmpeg audio-render integration test, Windows script checks and full Compose integration before merge.
 
-See [Phase 6.5 — Audio Mixing and Sync](23-PHASE-6.5-AUDIO-MIXING-SYNC.md). This is not a waveform editor or real-time audio engine. The current noise reduction uses FFmpeg afftdn; it does not claim DeepFilterNet inference. CI and target-host listening acceptance remain required before merging and production use.
+See [Phase 6.5 — Audio Mixing and Sync](23-PHASE-6.5-AUDIO-MIXING-SYNC.md). This is not a waveform editor or real-time audio engine. The current noise reduction uses FFmpeg afftdn; it does not claim DeepFilterNet inference. Actual listening and browser acceptance on the target Windows host remain required.
+
+### Phase 6.6 — Transitions, titles and motion graphics (in development)
+
+The feature branch 'feat/phase-6.6-transitions-titles-motion' adds project-scoped transition/title/image-overlay manifests, deterministic FFmpeg rendering for dip-to-black and white-flash boundaries, Arabic-capable text titles with fade/slide-up animation, and positioned image/logo overlays with opacity and basic slide-up motion. The Arabic Studio gets controls to add, edit by removal/recreation, save and export these visual effects. Timeline changes invalidate previously saved visual effects.
+
+This deterministic 6.6 slice does not claim arbitrary motion-graphics authoring, waveform-like keyframe editing, or automatic Blender/ComfyUI scene generation. Those remain template/runtime integration work and require target-host acceptance. The branch is not merged until its CI and render tests pass.
+
+See [Phase 6.6 — Transitions, Titles and Motion Graphics](24-PHASE-6.6-TRANSITIONS-TITLES-MOTION.md).
 
 ### Remaining Phase 6 increments
 
