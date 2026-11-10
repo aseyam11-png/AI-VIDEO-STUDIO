@@ -993,6 +993,10 @@
 
   async function createProject(event) {
     event.preventDefault();
+    if (state.timelineDirty &&
+        !window.confirm("لديك تغييرات غير محفوظة في الخط الزمني. هل تريد تجاهلها وإنشاء مشروع جديد؟")) {
+      return;
+    }
     const form = new FormData($("project-form"));
     const payload = {
       name: String(form.get("name") || "").trim(),
