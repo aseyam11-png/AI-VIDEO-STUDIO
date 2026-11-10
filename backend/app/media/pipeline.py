@@ -597,6 +597,7 @@ def render_multi_source_timeline(
 
     clip_positions: dict[str, int] = {}
     clip_durations: dict[str, float] = {}
+    clip_ids_in_order: list[str] = []
     for index, item in enumerate(clips):
         try:
             raw_clip_id = item.get("clip_id")
@@ -612,6 +613,7 @@ def render_multi_source_timeline(
             raise ValueError("Timeline clip identifiers must be unique.")
         clip_positions[clip_id] = index
         clip_durations[clip_id] = clip_duration
+        clip_ids_in_order.append(clip_id)
 
     transitions_by_clip: dict[str, dict] = {}
     transition_usage: dict[str, float] = {}
@@ -748,7 +750,7 @@ def render_multi_source_timeline(
             "animation": animation,
         })
 
-    for clip in clips:
+    for clip_index, clip in enumerate(clips):
         _check_cancel(cancel_check)
         try:
             asset_id = str(UUID(str(clip["asset_id"])))
@@ -785,7 +787,7 @@ def render_multi_source_timeline(
         inputs.append(source)
         clip_metadata.append(
             {
-                "clip_id": str(UUID(str(clip["clip_id"]))),
+                "clip_id": clip_ids_in_order[clip_index],
                 "start": start,
                 "duration": duration,
                 "has_audio": has_audio,
