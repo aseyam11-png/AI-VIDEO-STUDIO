@@ -786,6 +786,7 @@ def review_product_identity(
     *,
     approved: bool,
     notes: str = "",
+    checks: dict[str, bool] | None = None,
 ) -> dict:
     """Record a human product-identity decision and gate downstream export."""
     with session_scope() as db:
@@ -799,6 +800,21 @@ def review_product_identity(
 
         options = dict(run.options_json or {})
         review = dict(options.get("product_identity_review") or {})
+        checks = dict(checks or {})
+        required_checks = {
+            "silhouette_and_proportions",
+            "colors_and_materials",
+            "logo_and_labels",
+            "components_and_packaging",
+            "consistency_across_shots",
+        }
+        if approved and (
+            set(checks) != required_checks
+            or not all(checks.get(name) is True for name in required_checks)
+        ):
+            raise WorkflowRequestError(
+                "All five product identity checks must be confirmed before approval."
+            )
         if not options.get("product_identity_lock"):
             raise WorkflowConflictError("This workflow did not request product identity review.")
 
@@ -822,6 +838,7 @@ def review_product_identity(
                 "notes": notes.strip()[:2000],
                 "reviewed_at": now.isoformat(),
                 "reviewed_by": "user",
+                "checks": checks,
             }
         )
         options["product_identity_review"] = review
