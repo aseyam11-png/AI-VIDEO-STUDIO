@@ -344,9 +344,12 @@ def create_job(data: JobCreate) -> tuple[dict[str, Any], bool]:
                 raise JobRequestError("Asset was not found in the requested project.")
             if data.job_type in _VIDEO_REQUIRED_TYPES and asset.asset_type != "video":
                 raise JobRequestError("This job type requires a video asset.")
-            if data.job_type == JobType.VIDEO_GENERATE and asset.asset_type != "image":
+            if data.job_type in {
+                JobType.VIDEO_GENERATE,
+                JobType.VIDEO_GENERATE_SEQUENCE,
+            } and asset.asset_type != "image":
                 raise JobRequestError(
-                    "The initial Wan 2.2 TI2V workflow requires an image reference asset."
+                    "Wan 2.2 generation requires an image reference asset."
                 )
             if asset.asset_type not in {"video", "image"}:
                 raise JobRequestError("The selected asset type is not supported for model jobs.")
