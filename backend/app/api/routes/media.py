@@ -77,7 +77,7 @@ class ProjectTimelineRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     fps: int = Field(default=30, ge=1, le=60)
-    clips: list[MultiSourceClipRequest] = Field(min_length=1, max_length=100)
+    clips: list[MultiSourceClipRequest] = Field(default_factory=list, max_length=100)
 
 
 class ProjectTimelineRenderRequest(BaseModel):
@@ -333,6 +333,24 @@ def get_project_timeline(project_id: str) -> dict:
 async def save_project_timeline(project_id: str, payload: ProjectTimelineRequest) -> dict:
     try:
         get_project(project_id)
+        if not payload.clips:
+            timeline_dir = project_dir(project_id) / "timelines"
+            timeline_dir.mkdir(parents=True, exist_ok=True)
+            timeline_id = str(UUID(project_id))
+            manifest = {
+                "schema_version": 2,
+                "timeline_id": timeline_id,
+                "project_id": timeline_id,
+                "fps": payload.fps,
+                "duration_seconds": 0,
+                "clips": [],
+                "otio_filename": None,
+                "status": "draft",
+            }
+            atomic_write_json(timeline_dir / f"project-{timeline_id}.json", manifest)
+            (timeline_dir / f"project-{timeline_id}.otio").unlink(missing_ok=True)
+            return {**manifest, "timeline_path": None}
+
         sources: dict[str, Path] = {}
         clips: list[dict] = []
         for clip in payload.clips:
