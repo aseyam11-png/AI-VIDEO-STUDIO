@@ -8,11 +8,13 @@ from uuid import uuid4
 from app.core.config import settings
 from app.db.models import JobRecord, OutboxRecord
 from app.db.session import session_scope
+from app.integrations.ffmpeg import MediaToolError, probe_media
 from app.media.pipeline import (
     MediaJobCancelled,
     build_timeline,
     create_proxy,
     detect_scenes,
+    render_multi_source_timeline,
     render_timeline,
 )
 from app.media.storage import (
@@ -251,6 +253,122 @@ def _execute_media_job(
         }
         progress(95, "blender_rendered", "Blender completed the motion graphics render.")
         return result
+
+    if job_type == JobType.VIDEO_ASSEMBLE.value:
+        progress(10, "validating_generated_shots", "Validating generated scene assets before assembly.")
+        generated_asset_ids = payload.get("generated_asset_ids", [])
+        planned_durations = payload.get("scene_durations_seconds", [])
+        if (
+            not isinstance(generated_asset_ids, list)
+            or not 2 <= len(generated_asset_ids) <= 8
+            or len(generated_asset_ids) != len(planned_durations)
+            or len(set(generated_asset_ids)) != len(generated_asset_ids)
+        ):
+            raise ValueError("Video assembly requires two to eight unique generated video assets.")
+
+        sources: dict[str, Path] = {}
+        clips: list[dict] = []
+        actual_durations: list[float] = []
+        adjustments: list[dict] = []
+        for index, generated_asset_id in enumerate(generated_asset_ids, start=1):
+            if cancel_check():
+                raise JobCancelled("Cancellation requested while preparing generated shots.")
+            generated_asset = get_asset(project_id, generated_asset_id)
+            if generated_asset.get("asset_type") != "video":
+                raise ValueError("Every generated shot must be a video asset from this project.")
+            generated_source = _safe_source_path(
+                project_id,
+                generated_asset_id,
+                generated_asset["stored_filename"],
+            )
+            metadata = probe_media(generated_source)
+            if not any(
+                stream.get("codec_type") == "video"
+                for stream in metadata.get("streams", [])
+            ):
+                raise MediaToolError(
+                    f"Generated shot {index} does not contain a valid video stream."
+                )
+            try:
+                source_duration = float(metadata.get("format", {}).get("duration"))
+                planned_duration = float(planned_durations[index - 1])
+            except (TypeError, ValueError) as exc:
+                raise MediaToolError(
+                    f"Generated shot {index} has no valid duration metadata."
+                ) from exc
+            if not 0.1 < source_duration <= 60:
+                raise MediaToolError(f"Generated shot {index} duration is outside safe limits.")
+            clip_duration = min(source_duration, planned_duration)
+            if clip_duration <= 0:
+                raise MediaToolError(f"Generated shot {index} has an invalid render duration.")
+            asset_uuid = str(UUID(generated_asset_id))
+            clip_id = str(uuid4())
+            sources[asset_uuid] = generated_source
+            clips.append(
+                {
+                    "clip_id": clip_id,
+                    "asset_id": asset_uuid,
+                    "source_start_seconds": 0.0,
+                    "duration_seconds": round(clip_duration, 6),
+                }
+            )
+            actual_durations.append(round(clip_duration, 6))
+            if abs(clip_duration - planned_duration) > 0.05:
+                adjustments.append(
+                    {
+                        "scene_index": index,
+                        "planned_duration_seconds": planned_duration,
+                        "rendered_duration_seconds": round(clip_duration, 6),
+                        "reason": "Generated video duration differs from the requested scene duration.",
+                    }
+                )
+
+        timeline_manifest = {
+            "schema_version": 2,
+            "project_id": project_id,
+            "fps": payload["fps"],
+            "duration_seconds": round(sum(actual_durations), 6),
+            "clips": clips,
+        }
+        output_dir = project_dir(project_id) / "ai_outputs" / str(UUID(job["id"]))
+        output_dir.mkdir(parents=True, exist_ok=True)
+        destination = output_dir / "assembled.mp4"
+        progress(30, "assembling_generated_shots", "Assembling generated scenes in approved storyboard order.")
+        render_result = render_multi_source_timeline(
+            sources=sources,
+            timeline_manifest=timeline_manifest,
+            destination=destination,
+            width=payload["width"],
+            height=payload["height"],
+            fps=payload["fps"],
+            crf=payload["crf"],
+            cancel_check=cancel_check,
+        )
+        if cancel_check():
+            raise JobCancelled("Cancellation requested after generated-shot assembly.")
+        output_asset = register_generated_video_asset(
+            project_id,
+            job["id"],
+            destination,
+            max_bytes=settings.max_model_output_bytes,
+        )
+        progress(95, "registering_assembled_video", "Multi-shot MP4 was rendered and registered as a project asset.")
+        return {
+            **render_result,
+            "scene_count": len(clips),
+            "scene_durations_seconds": actual_durations,
+            "duration_seconds": round(sum(actual_durations), 6),
+            "duration_adjustments": adjustments,
+            "output_asset_id": output_asset["id"],
+            "output_asset": {
+                "id": output_asset["id"],
+                "asset_type": output_asset["asset_type"],
+                "relative_path": output_asset["relative_path"],
+            },
+            "download_url": (
+                f"/v1/projects/{project_id}/assets/{output_asset['id']}/file"
+            ),
+        }
 
     if asset_type != "video":
         raise ValueError("Deterministic media processing jobs require a video asset.")
