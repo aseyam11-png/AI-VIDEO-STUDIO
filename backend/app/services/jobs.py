@@ -15,7 +15,7 @@ from app.db.models import (
 )
 from app.db.session import session_scope
 from app.schemas.jobs import JobCreate, JobType
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import model_validator, BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
@@ -87,6 +87,14 @@ class _VideoGenerateOptions(_StrictOptions):
     product_identity_lock: bool = False
     identity_reference_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
+    @model_validator(mode="after")
+    def validate_identity_reference(self):
+        if self.product_identity_lock and not self.identity_reference_sha256:
+            raise ValueError("Product identity lock requires a verified reference SHA-256.")
+        if not self.product_identity_lock and self.identity_reference_sha256:
+            raise ValueError("Identity reference fingerprint requires product_identity_lock.")
+        return self
+
 
 class _VideoShotOptions(_StrictOptions):
     prompt: str = Field(min_length=1, max_length=4000)
@@ -106,6 +114,14 @@ class _VideoSequenceOptions(_StrictOptions):
     approved: bool = False
     product_identity_lock: bool = False
     identity_reference_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_identity_reference(self):
+        if self.product_identity_lock and not self.identity_reference_sha256:
+            raise ValueError("Product identity lock requires a verified reference SHA-256.")
+        if not self.product_identity_lock and self.identity_reference_sha256:
+            raise ValueError("Identity reference fingerprint requires product_identity_lock.")
+        return self
 
 
 class _VideoEnhanceOptions(_StrictOptions):
