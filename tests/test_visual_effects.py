@@ -5,13 +5,13 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.api.routes import media as media_route
 from app.core.config import settings
 from app.main import app
 from app.media import pipeline
 from app.media.storage import create_project, ingest_file_stream
+from fastapi.testclient import TestClient
 
 
 def _project(tmp_path, monkeypatch, name="Visual effects project"):
