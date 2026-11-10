@@ -217,12 +217,29 @@ def _step_specs(
                     f"Audience: {plan.audience}. "
                     f"On-screen direction: {scene.on_screen_text}."
                 )[:4000]
+                if request.product_identity_lock:
+                    prompt = (
+                        f"{prompt} Canonical product identity lock: the supplied reference "
+                        "image is the single source of truth for the product. Preserve the "
+                        "exact silhouette, proportions, geometry, colors, materials, hardware, "
+                        "logo, typography, labels and packaging in every shot. Do not redesign, "
+                        "replace, morph, omit, add or invent product details. Keep the whole "
+                        "product visually consistent across shots; simplify camera movement "
+                        "rather than changing the product."
+                    )[:4000]
                 shots.append(
                     {
                         "prompt": prompt,
                         "negative_prompt": (
                             "low quality, flicker, temporal inconsistency, "
                             "distorted geometry, unreadable text, product deformation"
+                            + (
+                                ", changed product identity, altered logo, misspelled label, "
+                                "different product, changed materials, missing components, "
+                                "extra product, product morphing"
+                                if request.product_identity_lock
+                                else ""
+                            )
                         ),
                         "duration_seconds": scene.duration_seconds,
                     }
@@ -240,6 +257,12 @@ def _step_specs(
                         "crf": 20,
                         "interpolate_factor": 2 if request.interpolate_generated_video else 1,
                         "approved": True,
+                        "product_identity_lock": request.product_identity_lock,
+                        "identity_reference_sha256": (
+                            (asset_metadata or {}).get("sha256")
+                            if request.product_identity_lock
+                            else None
+                        ),
                     },
                 )
             )
