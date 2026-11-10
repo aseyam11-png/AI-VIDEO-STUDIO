@@ -1,5 +1,7 @@
 import math
+import os
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -481,6 +483,28 @@ def build_multi_source_timeline(
     return manifest, timeline_path
 
 
+def _escape_filter_path(value: str) -> str:
+    """Escape a filesystem path for an FFmpeg filter option value."""
+    return "".join("\\" + char if char in "\\':,[];" else char for char in value)
+
+
+def _title_font_path() -> Path:
+    windows_fonts = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
+    candidates = [
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf"),
+        windows_fonts / "arial.ttf",
+        windows_fonts / "segoeui.ttf",
+        Path("/System/Library/Fonts/Supplemental/Arial.ttf"),
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise MediaToolError(
+        "Title rendering requires a supported font. Install DejaVu Sans or configure a system font."
+    )
+
+
 def render_multi_source_timeline(
     *,
     sources: dict[str, Path],
@@ -492,9 +516,11 @@ def render_multi_source_timeline(
     crf: int = 20,
     audio_mix_manifest: dict | None = None,
     audio_sources: dict[str, Path] | None = None,
+    visual_effects_manifest: dict | None = None,
+    overlay_sources: dict[str, Path] | None = None,
     cancel_check: Callable[[], bool] | None = None,
 ) -> dict:
-    """Render the video timeline and mix synchronized project audio tracks."""
+    """Render a project timeline with synchronized audio, transitions, titles and image overlays."""
     _check_cancel(cancel_check)
     if width < 320 or width > 3840 or height < 240 or height > 2160:
         raise ValueError("Render resolution is outside the supported range.")
@@ -549,7 +575,182 @@ def render_multi_source_timeline(
     if not math.isfinite(timeline_duration) or timeline_duration <= 0 or timeline_duration > 3600:
         raise ValueError("Video timeline duration is invalid.")
 
-    for clip in clips:
+    effects = visual_effects_manifest or {}
+    if effects:
+        if (
+            effects.get("schema_version") != 1
+            or effects.get("project_id") != timeline_manifest.get("project_id")
+        ):
+            raise ValueError("Visual effects project or manifest version is invalid.")
+    raw_transitions = effects.get("transitions", [])
+    raw_titles = effects.get("titles", [])
+    raw_overlays = effects.get("overlays", [])
+    if (
+        not isinstance(raw_transitions, list)
+        or len(raw_transitions) > 99
+        or not isinstance(raw_titles, list)
+        or len(raw_titles) > 20
+        or not isinstance(raw_overlays, list)
+        or len(raw_overlays) > 20
+    ):
+        raise ValueError("Visual effects exceed the supported item limits.")
+
+    clip_positions: dict[str, int] = {}
+    clip_durations: dict[str, float] = {}
+    clip_ids_in_order: list[str] = []
+    for index, item in enumerate(clips):
+        try:
+            raw_clip_id = item.get("clip_id")
+            clip_id = (
+                str(UUID(str(raw_clip_id)))
+                if raw_clip_id
+                else str(UUID(int=index + 1))
+            )
+            clip_duration = float(item["duration_seconds"])
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Timeline clip identifiers or durations are invalid.") from exc
+        if clip_id in clip_positions:
+            raise ValueError("Timeline clip identifiers must be unique.")
+        clip_positions[clip_id] = index
+        clip_durations[clip_id] = clip_duration
+        clip_ids_in_order.append(clip_id)
+
+    transitions_by_clip: dict[str, dict] = {}
+    transition_usage: dict[str, float] = {}
+    for item in raw_transitions:
+        try:
+            after_clip_id = str(UUID(str(item["after_clip_id"])))
+            style = str(item["style"])
+            duration = float(item["duration_seconds"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("A transition definition is invalid.") from exc
+        index = clip_positions.get(after_clip_id)
+        if (
+            index is None
+            or index >= len(clips) - 1
+            or after_clip_id in transitions_by_clip
+            or style not in {"dip_to_black", "flash_white"}
+            or not math.isfinite(duration)
+            or duration <= 0
+        ):
+            raise ValueError("A transition must target one existing clip boundary.")
+        next_clip_id = str(UUID(str(clips[index + 1]["clip_id"])))
+        if duration > min(clip_durations[after_clip_id], clip_durations[next_clip_id]) / 2:
+            raise ValueError("A transition cannot exceed half of either adjacent clip.")
+        transitions_by_clip[after_clip_id] = {
+            "style": style,
+            "duration": duration,
+            "next_clip_id": next_clip_id,
+        }
+        transition_usage[after_clip_id] = transition_usage.get(after_clip_id, 0.0) + duration
+        transition_usage[next_clip_id] = transition_usage.get(next_clip_id, 0.0) + duration
+    for clip_id, used in transition_usage.items():
+        if used > clip_durations[clip_id] + 0.000001:
+            raise ValueError("Incoming and outgoing transitions overlap inside a clip.")
+
+    title_metadata: list[dict] = []
+    seen_title_ids: set[str] = set()
+    for item in raw_titles:
+        try:
+            title_id = str(UUID(str(item["title_id"])))
+            text = str(item["text"])
+            start = float(item["start_seconds"])
+            duration = float(item["duration_seconds"])
+            font_size = int(item.get("font_size", 48))
+            color = str(item.get("color", "#FFFFFF"))
+            position = str(item.get("position", "bottom"))
+            animation = str(item.get("animation", "fade"))
+            background = bool(item.get("background", True))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("A title definition is invalid.") from exc
+        end = start + duration
+        if (
+            title_id in seen_title_ids
+            or not text.strip()
+            or len(text) > 280
+            or not math.isfinite(start)
+            or not math.isfinite(duration)
+            or start < 0
+            or duration <= 0
+            or end > timeline_duration + 0.001
+            or font_size < 18
+            or font_size > 120
+            or len(color) != 7
+            or not color.startswith("#")
+            or any(char not in "0123456789abcdefABCDEF" for char in color[1:])
+            or position not in {"top", "center", "bottom"}
+            or animation not in {"none", "fade", "slide_up"}
+        ):
+            raise ValueError("A title has invalid text, timing, font or animation settings.")
+        seen_title_ids.add(title_id)
+        title_metadata.append({
+            "text": text,
+            "start": start,
+            "duration": duration,
+            "end": end,
+            "font_size": font_size,
+            "color": "0x" + color[1:],
+            "position": position,
+            "animation": animation,
+            "background": background,
+        })
+
+    normalized_overlay_sources = {
+        str(UUID(key)): Path(value).expanduser().resolve()
+        for key, value in (overlay_sources or {}).items()
+    }
+    overlay_metadata: list[dict] = []
+    seen_overlay_ids: set[str] = set()
+    for item in raw_overlays:
+        try:
+            overlay_id = str(UUID(str(item["overlay_id"])))
+            asset_id = str(UUID(str(item["asset_id"])))
+            start = float(item["start_seconds"])
+            duration = float(item["duration_seconds"])
+            width_ratio = float(item.get("width_ratio", 0.2))
+            opacity = float(item.get("opacity", 1.0))
+            position = str(item.get("position", "top_right"))
+            animation = str(item.get("animation", "none"))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("An image overlay definition is invalid.") from exc
+        if (
+            overlay_id in seen_overlay_ids
+            or asset_id not in normalized_overlay_sources
+            or not math.isfinite(start)
+            or not math.isfinite(duration)
+            or not math.isfinite(width_ratio)
+            or not math.isfinite(opacity)
+            or start < 0
+            or duration <= 0
+            or start + duration > timeline_duration + 0.001
+            or width_ratio < 0.05
+            or width_ratio > 0.6
+            or opacity < 0.1
+            or opacity > 1.0
+            or position not in {"top_left", "top_right", "bottom_left", "bottom_right", "center"}
+            or animation not in {"none", "slide_up"}
+        ):
+            raise ValueError("An image overlay has invalid asset, timing or layout settings.")
+        source = normalized_overlay_sources[asset_id]
+        if not source.is_file():
+            raise ValueError("An image overlay source file is missing.")
+        metadata = probe_media(source)
+        if not any(stream.get("codec_type") == "video" for stream in metadata.get("streams", [])):
+            raise ValueError("An image overlay must contain a decodable image stream.")
+        seen_overlay_ids.add(overlay_id)
+        overlay_metadata.append({
+            "asset_id": asset_id,
+            "source": source,
+            "start": start,
+            "duration": duration,
+            "end": start + duration,
+            "width_ratio": width_ratio,
+            "opacity": opacity,
+            "position": position,
+            "animation": animation,
+        })
+
+    for clip_index, clip in enumerate(clips):
         _check_cancel(cancel_check)
         try:
             asset_id = str(UUID(str(clip["asset_id"])))
@@ -586,6 +787,7 @@ def render_multi_source_timeline(
         inputs.append(source)
         clip_metadata.append(
             {
+                "clip_id": clip_ids_in_order[clip_index],
                 "start": start,
                 "duration": duration,
                 "has_audio": has_audio,
@@ -663,6 +865,10 @@ def render_multi_source_timeline(
             }
         )
 
+    first_overlay_input_index = len(inputs)
+    for overlay in overlay_metadata:
+        inputs.append(overlay["source"])
+
     filters: list[str] = []
     video_concat_inputs: list[str] = []
     audio_output_inputs: list[str] = []
@@ -670,12 +876,30 @@ def render_multi_source_timeline(
         _check_cancel(cancel_check)
         start = clip["start"]
         duration = clip["duration"]
-        filters.append(
+        video_chain = (
             f"[{index}:v:0]trim=start={start:.6f}:duration={duration:.6f},"
             f"setpts=PTS-STARTPTS,scale={width}:{height}:force_original_aspect_ratio=decrease,"
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},"
-            f"format=yuv420p[v{index}]"
+            "format=yuv420p"
         )
+        previous_transition = (
+            transitions_by_clip.get(clip_metadata[index - 1]["clip_id"])
+            if index > 0 else None
+        )
+        outgoing_transition = transitions_by_clip.get(clip["clip_id"])
+        if previous_transition:
+            color = "black" if previous_transition["style"] == "dip_to_black" else "white"
+            video_chain += (
+                f",fade=t=in:st=0:d={previous_transition['duration']:.6f}:color={color}"
+            )
+        if outgoing_transition:
+            color = "black" if outgoing_transition["style"] == "dip_to_black" else "white"
+            fade_start = duration - outgoing_transition["duration"]
+            video_chain += (
+                f",fade=t=out:st={fade_start:.6f}:d={outgoing_transition['duration']:.6f}:"
+                f"color={color}"
+            )
+        filters.append(video_chain + f"[v{index}]")
         video_concat_inputs.append(f"[v{index}]")
         if any_source_audio:
             if source_audio_enabled and clip["has_audio"]:
@@ -733,6 +957,104 @@ def render_multi_source_timeline(
         filters.append(chain)
         audio_output_inputs.append(f"[mix{index}]")
 
+    video_output_label = "[vout]"
+    current_video_label = video_output_label
+    title_temp = None
+    if overlay_metadata:
+        for index, overlay in enumerate(overlay_metadata):
+            input_index = first_overlay_input_index + index
+            overlay_label = f"[overlay_asset_{index}]"
+            scaled_width = max(16, int(width * overlay["width_ratio"]))
+            scaled_height = max(16, int(height * 0.35))
+            overlay_chain = (
+                f"[{input_index}:v]scale=w={scaled_width}:h={scaled_height}:"
+                f"force_original_aspect_ratio=decrease,format=rgba,"
+                f"colorchannelmixer=aa={overlay['opacity']:.4f}"
+            )
+            overlay_chain += (
+                f",setpts=PTS-STARTPTS,fps={fps},"
+                f"trim=duration={timeline_duration:.6f},setpts=PTS-STARTPTS"
+            )
+            filters.append(overlay_chain + overlay_label)
+
+            margin = 32
+            if overlay["position"] == "top_left":
+                x_expr, y_expr = str(margin), str(margin)
+            elif overlay["position"] == "top_right":
+                x_expr, y_expr = f"W-w-{margin}", str(margin)
+            elif overlay["position"] == "bottom_left":
+                x_expr, y_expr = str(margin), f"H-h-{margin}"
+            elif overlay["position"] == "bottom_right":
+                x_expr, y_expr = f"W-w-{margin}", f"H-h-{margin}"
+            else:
+                x_expr, y_expr = "(W-w)/2", "(H-h)/2"
+            if overlay["animation"] == "slide_up":
+                target_y = y_expr
+                y_expr = (
+                    f"if(lt(t\\,{overlay['start'] + 0.4:.6f})\\,"
+                    f"({target_y})+40*(1-(t-{overlay['start']:.6f})/0.4)\\,"
+                    f"({target_y}))"
+                )
+            next_label = f"[video_overlay_{index}]"
+            enable = (
+                f"between(t\\,{overlay['start']:.6f}\\,{overlay['end']:.6f})"
+            )
+            filters.append(
+                f"{current_video_label}{overlay_label}overlay=x={x_expr}:y={y_expr}:"
+                f"eval=frame:eof_action=repeat:enable='{enable}'{next_label}"
+            )
+            current_video_label = next_label
+
+    ffmpeg = require_binary("ffmpeg")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if title_metadata:
+        font = _escape_filter_path(str(_title_font_path()))
+        title_temp = tempfile.TemporaryDirectory(
+            prefix="studio-titles-", dir=str(destination.parent)
+        )
+        title_directory = Path(title_temp.name)
+        for index, title in enumerate(title_metadata):
+            text_path = title_directory / f"title-{index:02d}.txt"
+            text_path.write_text(title["text"], encoding="utf-8")
+            escaped_text_path = _escape_filter_path(str(text_path))
+            if title["position"] == "top":
+                target_y = "h*0.08"
+            elif title["position"] == "center":
+                target_y = "(h-text_h)/2"
+            else:
+                target_y = "h-text_h-h*0.08"
+            y_expr = target_y
+            if title["animation"] == "slide_up":
+                y_expr = (
+                    f"if(lt(t\\,{title['start'] + 0.4:.6f})\\,"
+                    f"({target_y})+40*(1-(t-{title['start']:.6f})/0.4)\\,"
+                    f"({target_y}))"
+                )
+            alpha_option = ""
+            if title["animation"] == "fade":
+                fade_duration = min(0.3, title["duration"] / 2)
+                alpha = (
+                    f"if(lt(t\\,{title['start'] + fade_duration:.6f})\\,"
+                    f"max(0\\,(t-{title['start']:.6f})/{fade_duration:.6f})\\,"
+                    f"if(gt(t\\,{title['end'] - fade_duration:.6f})\\,"
+                    f"max(0\\,({title['end']:.6f}-t)/{fade_duration:.6f})\\,1))"
+                )
+                alpha_option = f":alpha='{alpha}'"
+            enable = (
+                f"between(t\\,{title['start']:.6f}\\,{title['end']:.6f})"
+            )
+            box_option = ":box=1:boxcolor=black@0.45:boxborderw=14" if title["background"] else ""
+            next_label = f"[video_title_{index}]"
+            filters.append(
+                f"{current_video_label}drawtext=fontfile='{font}':"
+                f"textfile='{escaped_text_path}':text_shaping=1:"
+                f"fontsize={title['font_size']}:fontcolor={title['color']}:"
+                f"x=(w-text_w)/2:y='{y_expr}'{box_option}{alpha_option}:"
+                f"fix_bounds=1:enable='{enable}'{next_label}"
+            )
+            current_video_label = next_label
+
+    video_output_label = current_video_label
     has_audio_output = bool(audio_output_inputs)
     if len(audio_output_inputs) == 1:
         filters.append(f"{audio_output_inputs[0]}alimiter=limit=0.95[a_final]")
@@ -743,13 +1065,17 @@ def render_multi_source_timeline(
             "alimiter=limit=0.95[a_final]"
         )
 
-    ffmpeg = require_binary("ffmpeg")
-    destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(destination.stem + ".partial" + destination.suffix)
     command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
-    for source in inputs:
-        command.extend(["-i", str(source)])
-    command.extend(["-filter_complex", ";".join(filters), "-map", "[vout]"])
+    for input_index, source in enumerate(inputs):
+        if input_index >= first_overlay_input_index:
+            command.extend(["-loop", "1", "-i", str(source)])
+        else:
+            command.extend(["-i", str(source)])
+    command.extend([
+        "-filter_complex", ";".join(filters), "-map", video_output_label,
+        "-t", f"{timeline_duration:.6f}",
+    ])
     if has_audio_output:
         command.extend(["-map", "[a_final]", "-c:a", "aac", "-b:a", "192k"])
     else:
@@ -777,11 +1103,16 @@ def render_multi_source_timeline(
         temporary.replace(destination)
     finally:
         temporary.unlink(missing_ok=True)
+        if title_temp is not None:
+            title_temp.cleanup()
 
     return {
         "filename": destination.name,
         "size_bytes": destination.stat().st_size,
         "clip_count": len(clips),
+        "transition_count": len(transitions_by_clip),
+        "title_count": len(title_metadata),
+        "overlay_count": len(overlay_metadata),
         "audio_clip_count": len(audio_input_metadata),
         "settings": {"width": width, "height": height, "fps": fps, "crf": crf},
         "metadata": metadata,

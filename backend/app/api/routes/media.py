@@ -127,6 +127,50 @@ class ProjectAudioMixRequest(BaseModel):
     levels_db: AudioMixLevels = Field(default_factory=AudioMixLevels)
     clips: list[AudioMixClipRequest] = Field(default_factory=list, max_length=100)
 
+class VisualTransitionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    after_clip_id: UUID
+    style: Literal["dip_to_black", "flash_white"]
+    duration_seconds: float = Field(gt=0, le=2, allow_inf_nan=False)
+
+
+class VisualTitleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title_id: UUID = Field(default_factory=uuid4)
+    text: str = Field(min_length=1, max_length=280)
+    start_seconds: float = Field(ge=0, le=3600, allow_inf_nan=False)
+    duration_seconds: float = Field(gt=0, le=3600, allow_inf_nan=False)
+    font_size: int = Field(default=48, ge=18, le=120)
+    color: str = Field(default="#FFFFFF", pattern="^#[0-9A-Fa-f]{6}$")
+    position: Literal["top", "center", "bottom"] = "bottom"
+    animation: Literal["none", "fade", "slide_up"] = "fade"
+    background: bool = True
+
+
+class ImageOverlayRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    overlay_id: UUID = Field(default_factory=uuid4)
+    asset_id: UUID
+    start_seconds: float = Field(ge=0, le=3600, allow_inf_nan=False)
+    duration_seconds: float = Field(gt=0, le=3600, allow_inf_nan=False)
+    width_ratio: float = Field(default=0.2, ge=0.05, le=0.6, allow_inf_nan=False)
+    opacity: float = Field(default=1.0, ge=0.1, le=1.0, allow_inf_nan=False)
+    position: Literal["top_left", "top_right", "bottom_left", "bottom_right", "center"] = (
+        "top_right"
+    )
+    animation: Literal["none", "slide_up"] = "none"
+
+
+class ProjectVisualEffectsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transitions: list[VisualTransitionRequest] = Field(default_factory=list, max_length=99)
+    titles: list[VisualTitleRequest] = Field(default_factory=list, max_length=20)
+    overlays: list[ImageOverlayRequest] = Field(default_factory=list, max_length=20)
+
 
 def _source_path(project_id: str, asset_id: str) -> tuple[dict, Path]:
     try:
@@ -450,6 +494,7 @@ async def save_project_timeline(project_id: str, payload: ProjectTimelineRequest
             (timeline_dir / f"project-{timeline_id}.srt").unlink(missing_ok=True)
             (timeline_dir / f"project-{timeline_id}-subtitles.json").unlink(missing_ok=True)
             _audio_mix_path(project_id).unlink(missing_ok=True)
+            _visual_effects_path(project_id).unlink(missing_ok=True)
             return {**manifest, "timeline_path": None}
 
         sources: dict[str, Path] = {}
@@ -483,6 +528,7 @@ async def save_project_timeline(project_id: str, payload: ProjectTimelineRequest
         (timeline_dir / f"project-{timeline_id}.srt").unlink(missing_ok=True)
         (timeline_dir / f"project-{timeline_id}-subtitles.json").unlink(missing_ok=True)
         _audio_mix_path(project_id).unlink(missing_ok=True)
+        _visual_effects_path(project_id).unlink(missing_ok=True)
         return {
             **manifest,
             "timeline_path": str(timeline_path.relative_to(project_dir(project_id))),
@@ -560,6 +606,39 @@ async def render_project_timeline_route(
             / "exports"
             / f"project-{UUID(project_id)}-preview.mp4"
         )
+        visual_path = _visual_effects_path(project_id)
+        visual_effects = (
+            read_json(visual_path)
+            if visual_path.is_file()
+            else _empty_visual_effects(project_id, timeline)
+        )
+        if (
+            visual_effects.get("schema_version") != 1
+            or visual_effects.get("project_id") != str(UUID(project_id))
+            or not isinstance(visual_effects.get("transitions"), list)
+            or not isinstance(visual_effects.get("titles"), list)
+            or not isinstance(visual_effects.get("overlays"), list)
+        ):
+            raise HTTPException(status_code=409, detail="Saved visual effects manifest is invalid.")
+        overlay_sources: dict[str, Path] = {}
+        for overlay in visual_effects.get("overlays", []):
+            asset_id = str(UUID(str(overlay["asset_id"])))
+            if asset_id in overlay_sources:
+                continue
+            asset, source = _source_path(project_id, asset_id)
+            if asset["asset_type"] != "image":
+                raise HTTPException(
+                    status_code=422, detail="Visual overlays must reference image assets."
+                )
+            if not any(
+                stream.get("codec_type") == "video"
+                for stream in probe_media(source).get("streams", [])
+            ):
+                raise HTTPException(
+                    status_code=422, detail="Overlay image has no decodable image stream."
+                )
+            overlay_sources[asset_id] = source
+
         result = await run_in_threadpool(
             render_multi_source_timeline,
             sources=sources,
@@ -571,6 +650,8 @@ async def render_project_timeline_route(
             crf=payload.crf,
             audio_mix_manifest=audio_mix,
             audio_sources=audio_sources,
+            visual_effects_manifest=visual_effects,
+            overlay_sources=overlay_sources,
         )
         return {
             **result,
@@ -583,6 +664,199 @@ async def render_project_timeline_route(
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=404, detail="Project or timeline source not found."
+        ) from exc
+
+
+def _visual_effects_path(project_id: str) -> Path:
+    timeline_id = str(UUID(project_id))
+    return project_dir(project_id) / "timelines" / f"project-{timeline_id}-visual-effects.json"
+
+
+def _empty_visual_effects(project_id: str, timeline: dict | None = None) -> dict:
+    return {
+        "schema_version": 1,
+        "project_id": str(UUID(project_id)),
+        "timeline_duration_seconds": float((timeline or {}).get("duration_seconds", 0)),
+        "transitions": [],
+        "titles": [],
+        "overlays": [],
+        "status": "draft",
+    }
+
+
+@router.get("/visual-effects")
+def get_project_visual_effects(project_id: str) -> dict:
+    try:
+        get_project(project_id)
+        timeline_path = project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
+        if not timeline_path.is_file():
+            raise HTTPException(
+                status_code=404, detail="Save the video timeline before editing visual effects."
+            )
+        timeline = read_json(timeline_path)
+        path = _visual_effects_path(project_id)
+        if not path.is_file():
+            return _empty_visual_effects(project_id, timeline)
+        manifest = read_json(path)
+        if (
+            manifest.get("schema_version") != 1
+            or manifest.get("project_id") != str(UUID(project_id))
+            or not all(
+                isinstance(manifest.get(key), list)
+                for key in ("transitions", "titles", "overlays")
+            )
+        ):
+            raise HTTPException(status_code=409, detail="Saved visual effects manifest is invalid.")
+        return manifest
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found.") from exc
+
+
+@router.put("/visual-effects")
+def save_project_visual_effects(
+    project_id: str, payload: ProjectVisualEffectsRequest
+) -> dict:
+    try:
+        get_project(project_id)
+        timeline_path = project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
+        if not timeline_path.is_file():
+            raise HTTPException(
+                status_code=404, detail="Save the video timeline before editing visual effects."
+            )
+        timeline = read_json(timeline_path)
+        if timeline.get("project_id") != str(UUID(project_id)):
+            raise HTTPException(
+                status_code=409, detail="Video timeline belongs to another project."
+            )
+        timeline_duration = float(timeline.get("duration_seconds", 0))
+        if (
+            not math.isfinite(timeline_duration)
+            or timeline_duration <= 0
+            or timeline_duration > 3600
+        ):
+            raise HTTPException(status_code=409, detail="Video timeline duration is invalid.")
+
+        clips = timeline.get("clips", [])
+        if not isinstance(clips, list) or not clips:
+            raise HTTPException(
+                status_code=422, detail="Add and save video clips before visual effects."
+            )
+        clip_positions: dict[str, int] = {}
+        clip_durations: dict[str, float] = {}
+        for index, clip in enumerate(clips):
+            try:
+                clip_id = str(UUID(str(clip["clip_id"])))
+                duration = float(clip["duration_seconds"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=409, detail="Saved video timeline contains an invalid clip."
+                ) from exc
+            if clip_id in clip_positions or not math.isfinite(duration) or duration <= 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Saved video timeline contains duplicate or invalid clips.",
+                )
+            clip_positions[clip_id] = index
+            clip_durations[clip_id] = duration
+
+        transitions = []
+        transition_usage: dict[str, float] = {}
+        seen_transition_clips: set[str] = set()
+        for item in payload.transitions:
+            clip_id = str(item.after_clip_id)
+            index = clip_positions.get(clip_id)
+            if index is None or index >= len(clips) - 1 or clip_id in seen_transition_clips:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Choose a valid clip boundary for each transition.",
+                )
+            next_clip_id = str(UUID(str(clips[index + 1]["clip_id"])))
+            duration = item.duration_seconds
+            if duration > min(clip_durations[clip_id], clip_durations[next_clip_id]) / 2:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Transition duration cannot exceed half of either adjacent clip.",
+                )
+            seen_transition_clips.add(clip_id)
+            transition_usage[clip_id] = transition_usage.get(clip_id, 0) + duration
+            transition_usage[next_clip_id] = transition_usage.get(next_clip_id, 0) + duration
+            transitions.append(item.model_dump(mode="json"))
+        if any(
+            used > clip_durations[clip_id] + 0.000001
+            for clip_id, used in transition_usage.items()
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Adjacent transitions cannot overlap inside the same clip.",
+            )
+
+        titles = []
+        seen_title_ids: set[str] = set()
+        for item in payload.titles:
+            title_id = str(item.title_id)
+            if (
+                title_id in seen_title_ids
+                or not item.text.strip()
+                or item.start_seconds + item.duration_seconds > timeline_duration + 0.001
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="A title has duplicate identity or invalid text/timing.",
+                )
+            seen_title_ids.add(title_id)
+            titles.append(item.model_dump(mode="json"))
+
+        overlays = []
+        seen_overlay_ids: set[str] = set()
+        for item in payload.overlays:
+            overlay_id = str(item.overlay_id)
+            asset, source = _source_path(project_id, str(item.asset_id))
+            if asset["asset_type"] != "image":
+                raise HTTPException(
+                    status_code=422, detail="Visual overlays must reference image assets."
+                )
+            if not any(
+                stream.get("codec_type") == "video"
+                for stream in probe_media(source).get("streams", [])
+            ):
+                raise HTTPException(
+                    status_code=422, detail="Overlay image has no decodable image stream."
+                )
+            if (
+                overlay_id in seen_overlay_ids
+                or item.start_seconds + item.duration_seconds > timeline_duration + 0.001
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="An image overlay has duplicate identity or invalid timing.",
+                )
+            seen_overlay_ids.add(overlay_id)
+            overlays.append(item.model_dump(mode="json"))
+
+        manifest = {
+            "schema_version": 1,
+            "project_id": str(UUID(project_id)),
+            "timeline_duration_seconds": round(timeline_duration, 6),
+            "transitions": transitions,
+            "titles": titles,
+            "overlays": overlays,
+            "status": "draft",
+        }
+        path = _visual_effects_path(project_id)
+        atomic_write_json(path, manifest)
+        preview = project_dir(project_id) / "exports" / f"project-{UUID(project_id)}-preview.mp4"
+        preview.unlink(missing_ok=True)
+        return manifest
+    except MediaToolError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Project, timeline or overlay asset not found.",
         ) from exc
 
 

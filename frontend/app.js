@@ -18,6 +18,11 @@
     audioMixLevels: { voice: 0, music: 0, sfx: 0 },
     sourceAudioEnabled: true,
     sourceAudioDenoise: false,
+    visualEffectsManifest: null,
+    visualTransitions: [],
+    visualTitles: [],
+    visualOverlays: [],
+    visualEffectsDirty: false,
     sceneManifest: null,
     sceneAssetId: null,
     transcriptionManifest: null,
@@ -244,6 +249,7 @@
       renderAssets();
       await loadProjectTimeline(projectId);
       await loadProjectAudioMix(projectId);
+      await loadProjectVisualEffects(projectId);
       await loadAssetScenes($("timeline-source").value);
       await loadAssetTranscription($("timeline-source").value);
       await loadTimelineSubtitleStatus(projectId);
@@ -287,6 +293,7 @@
     }
     renderTimelineEditor();
     renderAudioMixEditor();
+    renderVisualEffectsEditor();
     setProjectControls();
   }
 
@@ -320,6 +327,11 @@
     state.audioMixLevels = { voice: 0, music: 0, sfx: 0 };
     state.sourceAudioEnabled = true;
     state.sourceAudioDenoise = false;
+    state.visualEffectsManifest = null;
+    state.visualTransitions = [];
+    state.visualTitles = [];
+    state.visualOverlays = [];
+    state.visualEffectsDirty = false;
     state.subtitleManifest = null;
     $("timeline-subtitles-download").hidden = true;
     $("timeline-subtitles-download").removeAttribute("href");
@@ -337,6 +349,7 @@
     }
     renderTimelineEditor();
     renderAudioMixEditor();
+    renderVisualEffectsEditor();
   }
 
   async function loadProjectTimeline(projectId) {
@@ -368,6 +381,60 @@
     return state.project
       ? "/v1/projects/" + encodeURIComponent(state.project.id) + "/audio-mix"
       : null;
+  }
+
+  function visualEffectsEndpoint() {
+    return state.project
+      ? "/v1/projects/" + encodeURIComponent(state.project.id) + "/visual-effects"
+      : null;
+  }
+
+  async function loadProjectVisualEffects(projectId) {
+    state.visualEffectsManifest = null;
+    state.visualTransitions = [];
+    state.visualTitles = [];
+    state.visualOverlays = [];
+    state.visualEffectsDirty = false;
+    if (!projectId || !state.timelineManifest) {
+      renderVisualEffectsEditor();
+      return;
+    }
+    try {
+      const manifest = await api("/v1/projects/" + encodeURIComponent(projectId) + "/visual-effects");
+      if (
+        manifest.project_id !== projectId ||
+        !Array.isArray(manifest.transitions) ||
+        !Array.isArray(manifest.titles) ||
+        !Array.isArray(manifest.overlays)
+      ) {
+        throw new Error("إعدادات المؤثرات لا تخص المشروع المحدد أو أن بنيتها غير صالحة.");
+      }
+      state.visualEffectsManifest = manifest;
+      state.visualTransitions = manifest.transitions.map((item) => ({
+        after_clip_id: item.after_clip_id,
+        style: item.style,
+        duration_seconds: Number(item.duration_seconds)
+      }));
+      state.visualTitles = manifest.titles.map((item) => ({
+        ...item,
+        start_seconds: Number(item.start_seconds),
+        duration_seconds: Number(item.duration_seconds)
+      }));
+      state.visualOverlays = manifest.overlays.map((item) => ({
+        ...item,
+        start_seconds: Number(item.start_seconds),
+        duration_seconds: Number(item.duration_seconds),
+        width_ratio: Number(item.width_ratio),
+        opacity: Number(item.opacity)
+      }));
+      state.visualEffectsDirty =
+        Math.abs(Number(manifest.timeline_duration_seconds || 0) - timelineTotalDuration()) > 0.001;
+    } catch (error) {
+      if (error.status !== 404) {
+        notice("تعذّر تحميل المؤثرات البصرية: " + error.message, "error");
+      }
+    }
+    renderVisualEffectsEditor();
   }
 
   function audioSourceAssets() {
@@ -559,6 +626,331 @@
     if ($("timeline-download")) $("timeline-download").hidden = true;
     $("audio-mix-state").textContent = "تغييرات غير محفوظة";
     $("audio-mix-save").disabled = !state.project;
+  }
+
+
+
+  function renderVisualEffectsEditor() {
+    const transitionsList = $("visual-transition-list");
+    const titleList = $("visual-title-list");
+    const overlayList = $("visual-overlay-list");
+    if (!transitionsList || !titleList || !overlayList) return;
+
+    const clipSelect = $("visual-transition-after");
+    const selectedClip = clipSelect.value;
+    clipSelect.replaceChildren();
+    if (state.timelineClips.length < 2) {
+      clipSelect.add(new Option("أضف مقطعين على الأقل", ""));
+      clipSelect.disabled = true;
+    } else {
+      state.timelineClips.slice(0, -1).forEach((clip, index) => {
+        const asset = state.assets.find((item) => item.id === clip.asset_id);
+        clipSelect.add(new Option(
+          (index + 1) + " ← " + getAssetLabel(asset),
+          clip.clip_id
+        ));
+      });
+      clipSelect.value = state.timelineClips.some((clip) => clip.clip_id === selectedClip)
+        ? selectedClip
+        : state.timelineClips[0].clip_id;
+      clipSelect.disabled = false;
+    }
+
+    const imageSelect = $("visual-overlay-asset");
+    const previousImage = imageSelect.value;
+    imageSelect.replaceChildren();
+    const images = state.assets.filter((asset) => asset.asset_type === "image");
+    if (!images.length) {
+      imageSelect.add(new Option("ارفع صورة PNG أو JPG أو WEBP أولًا", ""));
+      imageSelect.disabled = true;
+    } else {
+      images.forEach((asset) => imageSelect.add(new Option(getAssetLabel(asset), asset.id)));
+      imageSelect.value = images.some((asset) => asset.id === previousImage)
+        ? previousImage
+        : images[0].id;
+      imageSelect.disabled = false;
+    }
+
+    transitionsList.replaceChildren();
+    if (!state.visualTransitions.length) {
+      const empty = document.createElement("p");
+      empty.className = "visual-empty";
+      empty.textContent = "لم تتم إضافة انتقالات بعد.";
+      transitionsList.append(empty);
+    }
+    state.visualTransitions.forEach((item, index) => {
+      const row = document.createElement("article");
+      row.className = "visual-effect-card";
+      const label = document.createElement("strong");
+      const clipIndex = state.timelineClips.findIndex((clip) => clip.clip_id === item.after_clip_id);
+      label.textContent = "انتقال بعد المقطع " + (clipIndex + 1);
+      const details = document.createElement("span");
+      details.textContent =
+        (item.style === "flash_white" ? "وميض أبيض" : "تلاشي إلى الأسود") +
+        " · " + item.duration_seconds + " ث";
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.dataset.visualAction = "remove-transition";
+      remove.dataset.visualIndex = String(index);
+      remove.textContent = "حذف";
+      row.append(label, details, remove);
+      transitionsList.append(row);
+    });
+
+    titleList.replaceChildren();
+    if (!state.visualTitles.length) {
+      const empty = document.createElement("p");
+      empty.className = "visual-empty";
+      empty.textContent = "لا توجد عناوين أو نصوص ظاهرة على الفيديو.";
+      titleList.append(empty);
+    }
+    state.visualTitles.forEach((item, index) => {
+      const row = document.createElement("article");
+      row.className = "visual-effect-card";
+      const copy = document.createElement("div");
+      const label = document.createElement("strong");
+      label.textContent = item.text;
+      const details = document.createElement("span");
+      details.textContent = item.start_seconds + "–" +
+        (item.start_seconds + item.duration_seconds).toFixed(1) + " ث · " +
+        item.position + " · " + item.animation;
+      copy.append(label, details);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.dataset.visualAction = "remove-title";
+      remove.dataset.visualIndex = String(index);
+      remove.textContent = "حذف";
+      row.append(copy, remove);
+      titleList.append(row);
+    });
+
+    overlayList.replaceChildren();
+    if (!state.visualOverlays.length) {
+      const empty = document.createElement("p");
+      empty.className = "visual-empty";
+      empty.textContent = "لا توجد صور أو شعارات مضافة فوق الفيديو.";
+      overlayList.append(empty);
+    }
+    state.visualOverlays.forEach((item, index) => {
+      const asset = state.assets.find((entry) => entry.id === item.asset_id);
+      const row = document.createElement("article");
+      row.className = "visual-effect-card";
+      const copy = document.createElement("div");
+      const label = document.createElement("strong");
+      label.textContent = getAssetLabel(asset);
+      const details = document.createElement("span");
+      details.textContent = item.start_seconds + "–" +
+        (item.start_seconds + item.duration_seconds).toFixed(1) + " ث · " +
+        item.position + " · شفافية " + Math.round(item.opacity * 100) + "%";
+      copy.append(label, details);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.dataset.visualAction = "remove-overlay";
+      remove.dataset.visualIndex = String(index);
+      remove.textContent = "حذف";
+      row.append(copy, remove);
+      overlayList.append(row);
+    });
+
+    $("visual-effects-state").textContent = state.visualEffectsDirty
+      ? "تغييرات غير محفوظة"
+      : "تم الحفظ";
+    $("visual-effects-save").disabled = !state.project || !state.visualEffectsDirty;
+    $("visual-transition-add").disabled =
+      !state.project || state.timelineClips.length < 2 ||
+      state.visualTransitions.length >= 99 ||
+      state.visualTransitions.some((item) => item.after_clip_id === clipSelect.value);
+    $("visual-title-add").disabled =
+      !state.project || !state.timelineClips.length || state.visualTitles.length >= 20;
+    $("visual-overlay-add").disabled =
+      !state.project || !images.length || !state.timelineClips.length ||
+      state.visualOverlays.length >= 20;
+    $("visual-overlay-upload").disabled = !state.project || state.uploading;
+    $("visual-effects-help").textContent = state.visualEffectsDirty
+      ? "هناك تعديلات لم تُحفظ. احفظ المؤثرات قبل إنشاء معاينة MP4."
+      : "تُحفظ المؤثرات مع المشروع وتُطبّق عند إنشاء معاينة MP4.";
+  }
+
+  function addVisualTransition() {
+    const afterClipId = $("visual-transition-after").value;
+    const style = $("visual-transition-style").value;
+    const duration = Number($("visual-transition-duration").value);
+    const index = state.timelineClips.findIndex((clip) => clip.clip_id === afterClipId);
+    if (
+      index < 0 || index >= state.timelineClips.length - 1 ||
+      state.visualTransitions.some((item) => item.after_clip_id === afterClipId) ||
+      !Number.isFinite(duration) || duration <= 0 || duration > 2
+    ) {
+      notice("اختر حدًا صالحًا بين مقطعين وحدد مدة انتقال صحيحة.", "error");
+      return;
+    }
+    const first = Number(state.timelineClips[index].duration_seconds);
+    const second = Number(state.timelineClips[index + 1].duration_seconds);
+    const currentFirst = state.visualTransitions
+      .filter((item) => item.after_clip_id === afterClipId)
+      .reduce((sum, item) => sum + Number(item.duration_seconds), 0);
+    const previousClipId = index > 0 ? state.timelineClips[index - 1].clip_id : null;
+    const nextClipId = state.timelineClips[index + 1].clip_id;
+    const previousBoundary = state.visualTransitions.find(
+      (item) => item.after_clip_id === previousClipId
+    );
+    const nextBoundary = state.visualTransitions.find(
+      (item) => item.after_clip_id === nextClipId
+    );
+    const usedOnFirst = previousBoundary ? Number(previousBoundary.duration_seconds) : 0;
+    const usedOnSecond = nextBoundary ? Number(nextBoundary.duration_seconds) : 0;
+    if (duration + usedOnFirst > first + 0.0001 ||
+        duration + usedOnSecond > second + 0.0001 ||
+        duration > first / 2 || duration > second / 2) {
+      notice("مدة الانتقال كبيرة مقارنة بالمقطعين أو تتداخل مع انتقال مجاور.", "error");
+      return;
+    }
+    state.visualTransitions.push({
+      after_clip_id: afterClipId,
+      style,
+      duration_seconds: duration
+    });
+    markVisualEffectsDirty();
+    notice("تمت إضافة الانتقال. احفظ المؤثرات لتطبيقه عند التصدير.", "success");
+  }
+
+  function addVisualTitle() {
+    const text = $("visual-title-text").value.trim();
+    const start = Number($("visual-title-start").value);
+    const duration = Number($("visual-title-duration").value);
+    const fontSize = Number($("visual-title-size").value);
+    if (
+      !text || text.length > 280 || !Number.isFinite(start) ||
+      !Number.isFinite(duration) || !Number.isFinite(fontSize) ||
+      start < 0 || duration <= 0 || fontSize < 18 || fontSize > 120 ||
+      start + duration > timelineTotalDuration() + 0.001 ||
+      state.visualTitles.length >= 20
+    ) {
+      notice("تحقق من نص العنوان وموضعه ومدته وحجم الخط.", "error");
+      return;
+    }
+    state.visualTitles.push({
+      title_id: uuid(),
+      text,
+      start_seconds: start,
+      duration_seconds: duration,
+      font_size: fontSize,
+      color: $("visual-title-color").value,
+      position: $("visual-title-position").value,
+      animation: $("visual-title-animation").value,
+      background: $("visual-title-background").checked
+    });
+    $("visual-title-text").value = "";
+    markVisualEffectsDirty();
+    notice("أُضيف العنوان إلى الفيديو. احفظ المؤثرات قبل التصدير.", "success");
+  }
+
+  function addVisualOverlay() {
+    const assetId = $("visual-overlay-asset").value;
+    const asset = state.assets.find((item) => item.id === assetId && item.asset_type === "image");
+    const start = Number($("visual-overlay-start").value);
+    const duration = Number($("visual-overlay-duration").value);
+    const width = Number($("visual-overlay-width").value) / 100;
+    const opacity = Number($("visual-overlay-opacity").value) / 100;
+    if (
+      !asset || !Number.isFinite(start) || !Number.isFinite(duration) ||
+      !Number.isFinite(width) || !Number.isFinite(opacity) ||
+      start < 0 || duration <= 0 || start + duration > timelineTotalDuration() + 0.001 ||
+      width < 0.05 || width > 0.6 || opacity < 0.1 || opacity > 1 ||
+      state.visualOverlays.length >= 20
+    ) {
+      notice("تحقق من الصورة والتوقيت والحجم والشفافية.", "error");
+      return;
+    }
+    state.visualOverlays.push({
+      overlay_id: uuid(),
+      asset_id: asset.id,
+      start_seconds: start,
+      duration_seconds: duration,
+      width_ratio: width,
+      opacity,
+      position: $("visual-overlay-position").value,
+      animation: $("visual-overlay-animation").value
+    });
+    markVisualEffectsDirty();
+    notice("أُضيفت الصورة أو العلامة المائية إلى الفيديو.", "success");
+  }
+
+  function handleVisualEffectAction(event) {
+    const button = event.target.closest("[data-visual-action]");
+    if (!button) return;
+    const index = Number(button.dataset.visualIndex);
+    const action = button.dataset.visualAction;
+    if (!Number.isInteger(index) || index < 0) return;
+    if (action === "remove-transition") state.visualTransitions.splice(index, 1);
+    else if (action === "remove-title") state.visualTitles.splice(index, 1);
+    else if (action === "remove-overlay") state.visualOverlays.splice(index, 1);
+    else return;
+    markVisualEffectsDirty();
+  }
+
+  async function saveProjectVisualEffects() {
+    if (!state.project) return false;
+    if (state.timelineDirty) {
+      const savedTimeline = await saveProjectTimeline();
+      if (!savedTimeline) return false;
+    }
+    const button = $("visual-effects-save");
+    button.disabled = true;
+    try {
+      const manifest = await api(visualEffectsEndpoint(), {
+        method: "PUT",
+        body: JSON.stringify({
+          transitions: state.visualTransitions,
+          titles: state.visualTitles,
+          overlays: state.visualOverlays
+        })
+      });
+      state.visualEffectsManifest = manifest;
+      state.visualTransitions = manifest.transitions;
+      state.visualTitles = manifest.titles;
+      state.visualOverlays = manifest.overlays;
+      state.visualEffectsDirty = false;
+      renderVisualEffectsEditor();
+      notice("تم حفظ الانتقالات والعناوين والطبقات البصرية داخل المشروع.", "success");
+      return true;
+    } catch (error) {
+      notice("تعذّر حفظ المؤثرات البصرية: " + error.message, "error");
+      return false;
+    } finally {
+      button.disabled = false;
+      renderVisualEffectsEditor();
+    }
+  }
+
+  async function uploadVisualOverlayImage(file) {
+    if (!state.project) return;
+    const allowed = [".png", ".jpg", ".jpeg", ".webp"];
+    const name = file.name.toLowerCase();
+    if (!allowed.some((extension) => name.endsWith(extension))) {
+      notice("ارفع صورة PNG أو JPG أو WEBP.", "error");
+      return;
+    }
+    state.uploading = true;
+    renderVisualEffectsEditor();
+    try {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      const asset = await api("/v1/projects/" + encodeURIComponent(state.project.id) + "/assets", {
+        method: "POST",
+        body: form
+      });
+      const assets = await api("/v1/projects/" + encodeURIComponent(state.project.id) + "/assets");
+      state.assets = Array.isArray(assets) ? assets : [];
+      renderAssets();
+      $("visual-overlay-asset").value = asset.id;
+      notice("تم رفع الصورة وفحصها. يمكنك إضافتها كطبقة فوق الفيديو.", "success");
+    } catch (error) {
+      notice("تعذّر رفع الصورة: " + error.message, "error");
+    } finally {
+      state.uploading = false;
+      renderVisualEffectsEditor();
+    }
   }
 
   function addAudioMixClip() {
@@ -1268,8 +1660,17 @@
     }
   }
 
+  function markVisualEffectsDirty() {
+    state.visualEffectsDirty = true;
+    state.timelineRendered = false;
+    if ($("timeline-preview-wrap")) $("timeline-preview-wrap").hidden = true;
+    if ($("timeline-download")) $("timeline-download").hidden = true;
+    renderVisualEffectsEditor();
+  }
+
   function markTimelineDirty() {
     state.timelineDirty = true;
+    state.visualEffectsDirty = true;
     state.subtitleManifest = null;
     $("timeline-subtitles-download").hidden = true;
     $("timeline-subtitles-download").removeAttribute("href");
@@ -1280,6 +1681,7 @@
     state.timelineRendered = false;
     state.audioMixDirty = true;
     renderAudioMixEditor();
+    renderVisualEffectsEditor();
     updateTimelineSummary();
   }
 
@@ -1420,6 +1822,10 @@
     if (state.audioMixDirty) {
       const audioSaved = await saveProjectAudioMix();
       if (!audioSaved) return;
+    }
+    if (state.visualEffectsDirty) {
+      const visualSaved = await saveProjectVisualEffects();
+      if (!visualSaved) return;
     }
     const button = $("timeline-render");
     button.disabled = true;
@@ -1820,8 +2226,8 @@
 
   async function createProject(event) {
     event.preventDefault();
-    if (state.timelineDirty &&
-        !window.confirm("لديك تغييرات غير محفوظة في الخط الزمني. هل تريد تجاهلها وإنشاء مشروع جديد؟")) {
+    if ((state.timelineDirty || state.audioMixDirty || state.visualEffectsDirty) &&
+        !window.confirm("لديك تغييرات غير محفوظة في الخط الزمني أو الصوت أو المؤثرات. هل تريد تجاهلها وإنشاء مشروع جديد؟")) {
       return;
     }
     const form = new FormData($("project-form"));
@@ -1876,8 +2282,8 @@
     $("project-form").addEventListener("submit", createProject);
     $("director-form").addEventListener("submit", createPlan);
     $("project-select").addEventListener("change", (event) => {
-      if ((state.timelineDirty || state.audioMixDirty) &&
-          !window.confirm("لديك تغييرات غير محفوظة في الخط الزمني أو الصوت. هل تريد تجاهلها والانتقال؟")) {
+      if ((state.timelineDirty || state.audioMixDirty || state.visualEffectsDirty) &&
+          !window.confirm("لديك تغييرات غير محفوظة في الخط الزمني أو الصوت أو المؤثرات. هل تريد تجاهلها والانتقال؟")) {
         event.target.value = state.project?.id || "";
         return;
       }
@@ -1897,6 +2303,19 @@
     $("timeline-clip-list").addEventListener("click", handleTimelineClipAction);
     $("timeline-save").addEventListener("click", saveProjectTimeline);
     $("timeline-render").addEventListener("click", renderProjectTimeline);
+    $("visual-transition-after").addEventListener("change", renderVisualEffectsEditor);
+    $("visual-transition-add").addEventListener("click", addVisualTransition);
+    $("visual-title-add").addEventListener("click", addVisualTitle);
+    $("visual-overlay-add").addEventListener("click", addVisualOverlay);
+    $("visual-effects-save").addEventListener("click", saveProjectVisualEffects);
+    $("visual-transition-list").addEventListener("click", handleVisualEffectAction);
+    $("visual-title-list").addEventListener("click", handleVisualEffectAction);
+    $("visual-overlay-list").addEventListener("click", handleVisualEffectAction);
+    $("visual-overlay-upload").addEventListener("click", () => $("visual-overlay-file").click());
+    $("visual-overlay-file").addEventListener("change", (event) => {
+      if (event.target.files?.[0]) void uploadVisualOverlayImage(event.target.files[0]);
+      event.target.value = "";
+    });
     $("audio-mix-add").addEventListener("click", addAudioMixClip);
     $("audio-mix-save").addEventListener("click", saveProjectAudioMix);
     $("audio-mix-list").addEventListener("change", handleAudioMixChange);
@@ -1913,7 +2332,7 @@
       event.target.value = "";
     });
     window.addEventListener("beforeunload", (event) => {
-      if (!state.timelineDirty && !state.audioMixDirty) return;
+      if (!state.timelineDirty && !state.audioMixDirty && !state.visualEffectsDirty) return;
       event.preventDefault();
       event.returnValue = "";
     });

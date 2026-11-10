@@ -8,7 +8,7 @@ ARG INSTALL_BLENDER=0
 
 WORKDIR /app
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg ca-certificates && \
+    apt-get install -y --no-install-recommends ffmpeg ca-certificates fonts-dejavu-core && \
     if [ "$INSTALL_BLENDER" = "1" ]; then \
       apt-get install -y --no-install-recommends blender; \
     fi && \

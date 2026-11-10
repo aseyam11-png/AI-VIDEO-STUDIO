@@ -355,6 +355,162 @@
             </div>
           </section>
 
+          <section id="visual-effects-panel" class="visual-effects-workspace" aria-labelledby="visual-effects-title">
+            <div class="visual-effects-heading">
+              <div>
+                <span class="eyebrow">VISUAL EFFECTS / PHASE 6.6</span>
+                <h4 id="visual-effects-title">الانتقالات والعناوين والطبقات البصرية</h4>
+                <p>أضف انتقالًا بين مقطعين، أو عنوانًا عربيًا متحركًا، أو صورة وشعارًا فوق الفيديو. تُطبّق التأثيرات في تصدير MP4.</p>
+              </div>
+              <span id="visual-effects-state" class="quiet">تم الحفظ</span>
+            </div>
+
+            <div class="visual-effects-section">
+              <div class="visual-section-heading">
+                <strong>الانتقالات بين اللقطات</strong>
+                <span>حتى 99 انتقالًا</span>
+              </div>
+              <div class="visual-effects-grid">
+                <div>
+                  <label class="field-label" for="visual-transition-after">بعد المقطع</label>
+                  <select id="visual-transition-after" class="control">
+                    <option value="">أضف مقطعين أولًا</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="visual-transition-style">نوع الانتقال</label>
+                  <select id="visual-transition-style" class="control">
+                    <option value="dip_to_black">تلاشي إلى الأسود</option>
+                    <option value="flash_white">وميض أبيض</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="visual-transition-duration">المدة (ثانية)</label>
+                  <input id="visual-transition-duration" class="control" type="number" min="0.05" max="2" step="0.05" value="0.4">
+                </div>
+                <div class="visual-action-field">
+                  <button id="visual-transition-add" class="button button-secondary" type="button" disabled>＋ إضافة انتقال</button>
+                </div>
+              </div>
+              <div id="visual-transition-list" class="visual-effect-list" aria-live="polite"></div>
+            </div>
+
+            <div class="visual-effects-section">
+              <div class="visual-section-heading">
+                <strong>العناوين والنصوص</strong>
+                <span>دعم النص العربي مع تلاشي أو انزلاق</span>
+              </div>
+              <div class="visual-effects-grid visual-title-grid">
+                <div class="visual-field-wide">
+                  <label class="field-label" for="visual-title-text">نص العنوان</label>
+                  <input id="visual-title-text" class="control" type="text" maxlength="280" placeholder="مثال: اكتشف التفاصيل">
+                </div>
+                <div>
+                  <label class="field-label" for="visual-title-start">وقت الظهور (ث)</label>
+                  <input id="visual-title-start" class="control" type="number" min="0" max="3600" step="0.1" value="0">
+                </div>
+                <div>
+                  <label class="field-label" for="visual-title-duration">مدة الظهور (ث)</label>
+                  <input id="visual-title-duration" class="control" type="number" min="0.1" max="3600" step="0.1" value="3">
+                </div>
+                <div>
+                  <label class="field-label" for="visual-title-position">موضع العنوان</label>
+                  <select id="visual-title-position" class="control">
+                    <option value="top">أعلى</option>
+                    <option value="center">المنتصف</option>
+                    <option value="bottom" selected>أسفل</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="visual-title-animation">الحركة</label>
+                  <select id="visual-title-animation" class="control">
+                    <option value="fade">تلاشي دخول وخروج</option>
+                    <option value="slide_up">انزلاق للأعلى</option>
+                    <option value="none">بدون حركة</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="visual-title-size">حجم الخط</label>
+                  <input id="visual-title-size" class="control" type="number" min="18" max="120" step="1" value="48">
+                </div>
+                <div>
+                  <label class="field-label" for="visual-title-color">لون النص</label>
+                  <input id="visual-title-color" class="control visual-color-input" type="color" value="#FFFFFF">
+                </div>
+                <label class="visual-check-option">
+                  <input id="visual-title-background" type="checkbox" checked>
+                  <span>خلفية داكنة شفافة خلف العنوان</span>
+                </label>
+                <div class="visual-action-field">
+                  <button id="visual-title-add" class="button button-secondary" type="button" disabled>＋ إضافة عنوان</button>
+                </div>
+              </div>
+              <div id="visual-title-list" class="visual-effect-list" aria-live="polite"></div>
+            </div>
+
+            <div class="visual-effects-section">
+              <div class="visual-section-heading">
+                <strong>الصور والشعارات والطبقات</strong>
+                <span>PNG شفاف أو JPG أو WEBP</span>
+              </div>
+              <div class="visual-image-upload">
+                <input id="visual-overlay-file" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" hidden>
+                <span>ارفع شعارًا أو صورة لاستخدامها كطبقة فوق الفيديو.</span>
+                <button id="visual-overlay-upload" class="button button-outline" type="button">＋ رفع صورة</button>
+              </div>
+              <div class="visual-effects-grid">
+                <div class="visual-field-wide">
+                  <label class="field-label" for="visual-overlay-asset">الصورة المرفوعة</label>
+                  <select id="visual-overlay-asset" class="control">
+                    <option value="">ارفع صورة أولًا</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="visual-overlay-start">وقت الظهور (ث)</label>
+                  <input id="visual-overlay-start" class="control" type="number" min="0" max="3600" step="0.1" value="0">
+                </div>
+                <div>
+                  <label class="field-label" for="visual-overlay-duration">مدة الظهور (ث)</label>
+                  <input id="visual-overlay-duration" class="control" type="number" min="0.1" max="3600" step="0.1" value="5">
+                </div>
+                <div>
+                  <label class="field-label" for="visual-overlay-position">الموضع</label>
+                  <select id="visual-overlay-position" class="control">
+                    <option value="top_right">أعلى اليمين</option>
+                    <option value="top_left">أعلى اليسار</option>
+                    <option value="bottom_right">أسفل اليمين</option>
+                    <option value="bottom_left">أسفل اليسار</option>
+                    <option value="center">المنتصف</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="field-label" for="visual-overlay-width">عرض الصورة (% من الفيديو)</label>
+                  <input id="visual-overlay-width" class="control" type="number" min="5" max="60" step="1" value="20">
+                </div>
+                <div>
+                  <label class="field-label" for="visual-overlay-opacity">الشفافية (%)</label>
+                  <input id="visual-overlay-opacity" class="control" type="number" min="10" max="100" step="5" value="100">
+                </div>
+                <div>
+                  <label class="field-label" for="visual-overlay-animation">الحركة</label>
+                  <select id="visual-overlay-animation" class="control">
+                    <option value="none">ثابتة</option>
+                    <option value="slide_up">انزلاق للأعلى</option>
+                  </select>
+                </div>
+                <div class="visual-action-field">
+                  <button id="visual-overlay-add" class="button button-secondary" type="button" disabled>＋ إضافة طبقة</button>
+                </div>
+              </div>
+              <div id="visual-overlay-list" class="visual-effect-list" aria-live="polite"></div>
+            </div>
+
+            <div class="visual-effects-actions">
+              <button id="visual-effects-save" class="button button-outline" type="button" disabled>حفظ المؤثرات البصرية</button>
+              <p id="visual-effects-help" class="hint">تُحفظ التأثيرات مع المشروع وتُطبّق عند إنشاء معاينة MP4.</p>
+            </div>
+          </section>
+
           <div class="timeline-summary">
             <span id="timeline-clip-count">0 مقطع</span>
             <span id="timeline-total-duration">المدة الإجمالية: 0 ثانية</span>
