@@ -648,6 +648,8 @@
       list.append(card);
     });
     syncTimelineSourceFields();
+    $("scene-detect").disabled = !state.project ||
+      !videos.some((asset) => asset.id === sourceSelect.value);
     updateTimelineSummary();
     if (!state.workflow) setStepper(state.timelineClips.length ? 2 : 1);
   }
@@ -916,6 +918,7 @@
     state.selectedAsset = preferred || state.assets.find((asset) => asset.asset_type === "video") || null;
     if (state.selectedAsset) localStorage.setItem("studio.assetId", state.selectedAsset.id);
     renderAssets();
+    await loadAssetScenes($("timeline-source").value);
   }
 
   function renderPlan(plan) {
