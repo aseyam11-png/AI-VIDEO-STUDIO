@@ -392,7 +392,9 @@ def build_multi_source_timeline(
         if asset_id not in normalized_sources:
             raise ValueError("Every clip must reference a video asset in the same project.")
         if not math.isfinite(start) or not math.isfinite(duration) or start < 0 or duration <= 0:
-            raise ValueError("Clip source range must be finite, non-negative and have positive duration.")
+            raise ValueError(
+                "Clip source range must be finite, non-negative and have positive duration."
+            )
 
         source = normalized_sources[asset_id]
         if not source.is_file():
@@ -504,7 +506,10 @@ def render_multi_source_timeline(
     ):
         raise ValueError("A valid multi-source timeline with 1–100 clips is required.")
 
-    normalized_sources = {str(UUID(key)): Path(value).expanduser().resolve() for key, value in sources.items()}
+    normalized_sources = {
+        str(UUID(key)): Path(value).expanduser().resolve()
+        for key, value in sources.items()
+    }
     inputs: list[Path] = []
     clip_metadata: list[dict] = []
     any_audio = False

@@ -375,7 +375,9 @@ async def render_project_timeline_route(
             project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
         )
         if not timeline_path.is_file():
-            raise HTTPException(status_code=404, detail="Save the project timeline before rendering.")
+            raise HTTPException(
+                status_code=404, detail="Save the project timeline before rendering."
+            )
         timeline = read_json(timeline_path)
         if timeline.get("project_id") != str(UUID(project_id)):
             raise HTTPException(status_code=400, detail="Timeline project mismatch.")
