@@ -376,11 +376,28 @@ def create_workflow_run(
                     "Source asset does not belong to the requested project."
                 )
 
+            if request.product_identity_lock and asset.asset_type != "image":
+                raise WorkflowRequestError(
+                    "Product identity lock requires an uploaded image asset as the source reference."
+                )
+            if request.product_identity_lock and not (
+                isinstance(asset.sha256, str)
+                and len(asset.sha256) == 64
+                and all(character in "0123456789abcdef" for character in asset.sha256)
+            ):
+                raise WorkflowRequestError(
+                    "The product reference image must have a verified SHA-256 fingerprint."
+                )
+
             specs = _step_specs(
                 asset.asset_type,
                 request,
                 project,
-                asset_metadata=asset.metadata_json or {},
+                asset_metadata={
+                    **(asset.metadata_json or {}),
+                    "sha256": asset.sha256,
+                    "asset_type": asset.asset_type,
+                },
             )
             normalized_specs = []
             for job_type, payload in specs:
@@ -410,6 +427,10 @@ def create_workflow_run(
                     "upscale_output": request.upscale_output,
                     "generate_video": request.generate_video,
                     "interpolate_generated_video": request.interpolate_generated_video,
+                    "product_identity_lock": request.product_identity_lock,
+                    "identity_reference_sha256": (
+                        asset.sha256 if request.product_identity_lock else None
+                    ),
                 },
                 status="awaiting_approval",
                 current_step_index=0,
@@ -781,6 +802,7 @@ def create_workflow_from_brief(request: WorkflowFromBriefRequest) -> dict:
         upscale_output=request.upscale_output,
         generate_video=request.generate_video,
         interpolate_generated_video=request.interpolate_generated_video,
+        product_identity_lock=request.product_identity_lock,
     )
     result = create_workflow_run(create_request, request_hash_override=request_hash)
     result["plan_model"] = settings.ollama_model
