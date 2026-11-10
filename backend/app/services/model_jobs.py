@@ -146,9 +146,10 @@ def execute_comfyui_job(
             and any(stream.get("codec_type") == "video" for stream in streams)
         ):
             video_stream_found = True
-            if job["job_type"] in {"video.generate", "video.interpolate"} and output_path.suffix.lower() in {
-                ".mp4", ".mov", ".mkv", ".webm"
-            }:
+            if (
+                job["job_type"] in {"video.generate", "video.interpolate"}
+                and output_path.suffix.lower() in {".mp4", ".mov", ".mkv", ".webm"}
+            ):
                 generated_video_path = output_path
         output["download_url"] = (
             f"/v1/projects/{job['project_id']}/jobs/{job['id']}/files/"
