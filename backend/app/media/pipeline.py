@@ -341,6 +341,268 @@ def render_timeline(
     }
 
 
+def extract_video_frames(
+    *,
+    source: Path,
+    destination: Path,
+    fps: int,
+    max_duration_seconds: int,
+    max_frames: int = 300,
+    max_total_bytes: int = 2 * 1024 * 1024 * 1024,
+    cancel_check: Callable[[], bool] | None = None,
+) -> dict:
+    """Extract a bounded, constant-FPS image sequence for per-frame enhancement."""
+    if fps not in {15, 24, 30}:
+        raise ValueError("Frame extraction FPS must be 15, 24 or 30.")
+    if not 1 <= max_duration_seconds <= 10 or not 1 <= max_frames <= 300:
+        raise ValueError("Video enhancement limits are outside the supported range.")
+
+    metadata = probe_media(source)
+    video_stream = next(
+        (
+            stream
+            for stream in metadata.get("streams", [])
+            if stream.get("codec_type") == "video"
+        ),
+        None,
+    )
+    if video_stream is None:
+        raise ValueError("Video enhancement requires a valid video stream.")
+    try:
+        width = int(video_stream["width"])
+        height = int(video_stream["height"])
+    except (TypeError, ValueError, KeyError) as exc:
+        raise ValueError("Source video dimensions are invalid.") from exc
+
+    source_rate = video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")
+    try:
+        if isinstance(source_rate, str) and "/" in source_rate:
+            numerator, denominator = source_rate.split("/", maxsplit=1)
+            source_fps = float(numerator) / float(denominator)
+        else:
+            source_fps = float(source_rate)
+    except (TypeError, ValueError, ZeroDivisionError):
+        source_fps = float(fps)
+    if not math.isfinite(source_fps) or source_fps <= 0:
+        source_fps = float(fps)
+
+    duration_value = video_stream.get("duration")
+    try:
+        duration = (
+            float(duration_value)
+            if duration_value is not None
+            else float(video_stream.get("nb_frames")) / source_fps
+            if video_stream.get("nb_frames") is not None
+            else float(metadata.get("format", {}).get("duration"))
+        )
+    except (TypeError, ValueError, ZeroDivisionError) as exc:
+        raise ValueError("Source video duration is invalid.") from exc
+    if not math.isfinite(duration) or duration <= 0 or duration > max_duration_seconds + 0.001:
+        raise ValueError(
+            f"Video enhancement is limited to {max_duration_seconds} seconds per job."
+        )
+
+    output_fps = min(fps, max(1, round(source_fps)))
+    expected_frames = max(1, round(duration * output_fps))
+    if expected_frames < 1 or expected_frames > max_frames:
+        raise ValueError(
+            f"Video would require {expected_frames} frames; "
+            f"the per-job limit is {max_frames}."
+        )
+
+    pixel_frames = width * height * expected_frames
+    if pixel_frames > 650_000_000:
+        raise ValueError(
+            "Frame extraction exceeds the configured pixel budget for this job."
+        )
+
+    destination.mkdir(parents=True, exist_ok=True)
+    pattern = destination / "frame-%06d.png"
+    ffmpeg = require_binary("ffmpeg")
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(source),
+        "-map",
+        "0:v:0",
+        "-an",
+        "-t",
+        f"{duration:.6f}",
+        "-vf",
+        f"fps={output_fps}",
+        "-frames:v",
+        str(expected_frames),
+        "-start_number",
+        "1",
+        "-q:v",
+        "2",
+        str(pattern),
+    ]
+    _run(command, timeout=900, cancel_check=cancel_check)
+    frames = sorted(destination.glob("frame-*.png"))
+    if not frames or len(frames) > max_frames:
+        raise MediaToolError("FFmpeg did not create a valid bounded frame sequence.")
+    if len(frames) != expected_frames:
+        raise MediaToolError(
+            f"Expected {expected_frames} extracted frames but found {len(frames)}."
+        )
+    extracted_bytes = sum(frame.stat().st_size for frame in frames)
+    if extracted_bytes > max_total_bytes:
+        for frame in frames:
+            frame.unlink(missing_ok=True)
+        raise MediaToolError("Extracted frame sequence exceeds the configured size limit.")
+    return {
+        "source_duration_seconds": round(duration, 6),
+        "source_width": width,
+        "source_height": height,
+        "fps": output_fps,
+        "frame_count": len(frames),
+        "frames_directory": str(destination),
+    }
+
+
+def assemble_upscaled_video(
+    *,
+    source: Path,
+    frames_directory: Path,
+    destination: Path,
+    frame_count: int,
+    fps: int,
+    duration_seconds: float,
+    expected_width: int,
+    expected_height: int,
+    crf: int = 20,
+    cancel_check: Callable[[], bool] | None = None,
+) -> dict:
+    """Rebuild the enhanced image sequence and retain the original audio stream."""
+    if not 1 <= frame_count <= 300 or fps not in {15, 24, 30}:
+        raise ValueError("Enhanced frame sequence is outside supported limits.")
+    if not all(math.isfinite(value) for value in (duration_seconds,)):
+        raise ValueError("Enhanced video duration must be finite.")
+    if duration_seconds <= 0 or duration_seconds > 10:
+        raise ValueError("Enhanced video duration must be between 0 and 10 seconds.")
+    if not 320 <= expected_width <= 7680 or not 240 <= expected_height <= 4320:
+        raise ValueError("Enhanced frame dimensions are outside supported limits.")
+    if not 0 <= crf <= 35:
+        raise ValueError("Enhanced video CRF is outside supported limits.")
+
+    frames = sorted(frames_directory.glob("frame-*.png"))
+    if len(frames) != frame_count:
+        raise MediaToolError("Enhanced frame count does not match the extracted sequence.")
+    for index, frame in enumerate(frames, start=1):
+        if frame.name != f"frame-{index:06d}.png" or not frame.is_file():
+            raise MediaToolError("Enhanced frames must be a contiguous ordered PNG sequence.")
+        frame_metadata = probe_media(frame)
+        image_stream = next(
+            (
+                stream
+                for stream in frame_metadata.get("streams", [])
+                if stream.get("codec_type") == "video"
+            ),
+            None,
+        )
+        if image_stream is None or (
+            int(image_stream.get("width", 0)) != expected_width
+            or int(image_stream.get("height", 0)) != expected_height
+        ):
+            raise MediaToolError(f"Enhanced frame {index} has unexpected dimensions.")
+
+    source_metadata = probe_media(source)
+    has_audio = any(
+        stream.get("codec_type") == "audio"
+        for stream in source_metadata.get("streams", [])
+    )
+    ffmpeg = require_binary("ffmpeg")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.stem + ".partial" + destination.suffix)
+    input_pattern = frames_directory / "frame-%06d.png"
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-framerate",
+        str(fps),
+        "-start_number",
+        "1",
+        "-i",
+        str(input_pattern),
+        "-i",
+        str(source),
+        "-map",
+        "0:v:0",
+    ]
+    if has_audio:
+        command.extend(["-map", "1:a:0?"])
+    else:
+        command.append("-an")
+    command.extend(
+        [
+            "-frames:v",
+            str(frame_count),
+            "-t",
+            f"{duration_seconds:.6f}",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "medium",
+            "-crf",
+            str(crf),
+            "-pix_fmt",
+            "yuv420p",
+        ]
+    )
+    if has_audio:
+        command.extend(["-c:a", "aac", "-b:a", "192k"])
+    command.extend(["-movflags", "+faststart", str(temporary)])
+    try:
+        _run(command, timeout=3600, cancel_check=cancel_check)
+        if not temporary.is_file() or temporary.stat().st_size == 0:
+            raise MediaToolError("FFmpeg did not create an enhanced MP4.")
+        rendered_metadata = probe_media(temporary)
+        streams = rendered_metadata.get("streams", [])
+        video_stream = next(
+            (stream for stream in streams if stream.get("codec_type") == "video"),
+            None,
+        )
+        if video_stream is None:
+            raise MediaToolError("Enhanced MP4 has no video stream.")
+        if (
+            int(video_stream.get("width", 0)) != expected_width
+            or int(video_stream.get("height", 0)) != expected_height
+        ):
+            raise MediaToolError("Enhanced MP4 resolution does not match the enhanced frames.")
+        output_audio = any(stream.get("codec_type") == "audio" for stream in streams)
+        if output_audio != has_audio:
+            raise MediaToolError("Enhanced MP4 did not preserve the source audio stream.")
+        try:
+            output_duration = float(rendered_metadata.get("format", {}).get("duration"))
+        except (TypeError, ValueError) as exc:
+            raise MediaToolError("Enhanced MP4 duration could not be verified.") from exc
+        if abs(output_duration - duration_seconds) > max(0.15, 2 / fps):
+            raise MediaToolError("Enhanced MP4 duration differs from the source video.")
+        temporary.replace(destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+    return {
+        "filename": destination.name,
+        "size_bytes": destination.stat().st_size,
+        "duration_seconds": round(output_duration, 6),
+        "frame_count": frame_count,
+        "fps": fps,
+        "width": expected_width,
+        "height": expected_height,
+        "has_audio": has_audio,
+        "metadata": rendered_metadata,
+    }
+
+
 def build_multi_source_timeline(
     *,
     project_id: str,
