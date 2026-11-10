@@ -27,7 +27,7 @@ The following gaps remain open:
 - An initial connected Arabic RTL UI is merged in [PR #5](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/5). It covers project creation/history, video upload, Qwen plan review/approval, workflow monitoring, model-readiness indicators and MP4 preview/download. Browser acceptance on the target host remains open.
 - The Workflow Engine v1 is sequential. It is not a general branching DAG or autonomous multi-agent editing director.
 - Wan image-to-video v1 now has a separate durable multi-shot path on the Phase 6.7 feature branch: 2–8 generated shots, up to 10 seconds each, registered as project assets and assembled by FFmpeg. Real Wan/RIFE inference and target-GPU performance still require target-host acceptance.
-- The deterministic renderer now supports sequential multi-source clips, Arabic transcription to a separate timeline SRT, and synchronized project audio mixing. Audio waveform editing, real-time playback editing, title/overlay rendering and advanced motion graphics remain outside the merged baseline while Phase 6.6 is implemented on its feature branch.
+- The deterministic renderer now supports sequential multi-source clips, Arabic timeline SRT, synchronized audio mixing, and the Phase 6.6 transitions/titles/image-overlay slice merged in PR #13. Real-time waveform editing, arbitrary keyframes, 3D compositing and reviewed Blender/ComfyUI motion-graphics templates remain future work.
 - Product Identity Lock and automated creative/visual QA are not implemented.
 - Authentication/deployment controls, backup/restore testing, operational monitoring and a full production acceptance run remain outstanding.
 - Third-party code, model, checkpoint, custom-node and dataset licenses must be inventoried before distribution or commercial use.
@@ -96,25 +96,21 @@ Merged in [PR #12](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/12). Add
 
 See [Phase 6.5 — Audio Mixing and Sync](23-PHASE-6.5-AUDIO-MIXING-SYNC.md). This is not a waveform editor or real-time audio engine. The current noise reduction uses FFmpeg afftdn; it does not claim DeepFilterNet inference. Actual listening and browser acceptance on the target Windows host remain required.
 
-### Phase 6.6 — Transitions, titles and motion graphics (in development)
+### Phase 6.6 — Transitions, titles and motion graphics (merged)
 
-The feature branch 'feat/phase-6.6-transitions-titles-motion' adds project-scoped transition/title/image-overlay manifests, deterministic FFmpeg rendering for dip-to-black and white-flash boundaries, Arabic-capable text titles with fade/slide-up animation, and positioned image/logo overlays with opacity and basic slide-up motion. The Arabic Studio gets controls to add, edit by removal/recreation, save and export these visual effects. Timeline changes invalidate previously saved visual effects.
+Merged in [PR #13](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/13). Adds project-scoped transition/title/image-overlay manifests and deterministic FFmpeg rendering for dip-to-black and white-flash boundaries, Arabic-capable titles with fade/slide-up animation, and positioned image/logo overlays. The Arabic Studio includes controls to configure, save and export these effects; timeline edits invalidate the saved effects.
 
-This deterministic 6.6 slice does not claim arbitrary motion-graphics authoring, waveform-like keyframe editing, or automatic Blender/ComfyUI scene generation. Those remain template/runtime integration work and require target-host acceptance. The branch is not merged until its CI and render tests pass.
-
-See [Phase 6.6 — Transitions, Titles and Motion Graphics](24-PHASE-6.6-TRANSITIONS-TITLES-MOTION.md).
-
-### Phase 6.6 — Transitions, titles and motion graphics (implementation branch)
-
-The deterministic FFmpeg slice is on `feat/phase-6.6-transitions-titles-motion` and tracked in [PR #13](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/13). It adds dip-to-black/white-flash transitions, Arabic titles, image/logo overlays and simple fade/slide motion. CI and human render/browser acceptance are the merge gates. This is not an arbitrary keyframe or 3D compositor; reviewed Blender/ComfyUI templates remain future enhancement work.
+This is a deterministic FFmpeg editing slice, not an arbitrary keyframe editor or 3D compositor. Human render and browser acceptance on the target host remain open; reviewed Blender/ComfyUI templates are future work.
 
 See [Phase 6.6 — Transitions, Titles and Motion Graphics](24-PHASE-6.6-TRANSITIONS-TITLES-MOTION.md).
 
 ### Phase 6.7 — Multi-shot generation and deterministic assembly (implementation branch)
 
-The stacked branch `feat/phase-6.7-multishot-assembly` adds a durable `video.generate_sequence` job. An approved image-reference workflow converts 2–8 creative-plan scenes into individual Wan 2.2 TI2V jobs, optionally applies RIFE interpolation to each shot, registers each shot as a project asset, then assembles the ordered clips into one verified MP4 with FFmpeg. The resulting sequence is registered as an output asset so the existing durable workflow can continue into timeline and export steps.
+PR #14 on `feat/phase-6.7-multishot-assembly` adds a durable `video.generate_sequence` job. After explicit approval, an image-reference workflow maps 2–8 CreativePlan scenes into individual Wan 2.2 TI2V jobs, optionally applies RIFE interpolation to each shot, validates and registers each shot as a project asset, then assembles the ordered clips into one MP4 with FFmpeg. The final asset is handed to the existing workflow engine for timeline and export steps.
 
-The same reference image is supplied to each shot. This does not guarantee frame-to-frame identity or exact product preservation; that is a separate Phase 6.9 acceptance concern. Real Wan/RIFE execution still requires a configured registry and a target GPU; CI synthetic renders do not prove model inference.
+The PR is open as a Draft and is not merged. CI run [42829261546](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/actions/runs/42829261546) passed all three jobs: Python checks, Windows script checks and Compose integration. The Compose test exercises the application/worker infrastructure; the video assembly test uses synthetic FFmpeg clips. Neither proves real Wan/RIFE model inference.
+
+The same image reference is supplied to every shot. This does not guarantee frame-to-frame identity or exact product preservation; Phase 6.9 addresses product identity review. Real Wan/RIFE execution still requires the exported workflow registry, exact custom nodes/weights and target-GPU acceptance.
 
 See [Phase 6.7 — Multi-Shot Generation and Assembly](25-PHASE-6.7-MULTISHOT-GENERATION-ASSEMBLY.md).
 
