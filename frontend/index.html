@@ -170,6 +170,41 @@
             </div>
           </div>
 
+          <div class="scene-selection-panel">
+            <div class="scene-selection-heading">
+              <div>
+                <span class="eyebrow">SCENE DETECTION</span>
+                <h4>اكتشاف المشاهد واختيار اللقطات</h4>
+                <p>حلّل الفيديو الحالي، ثم اختر المشاهد التي تريد إضافتها إلى الخط الزمني كمقاطع مستقلة.</p>
+              </div>
+              <span id="scene-detection-state" class="quiet">لم يتم التحليل</span>
+            </div>
+            <div class="scene-detection-controls">
+              <div>
+                <label class="field-label" for="scene-threshold">حساسية تغيّر المشهد</label>
+                <input id="scene-threshold" class="control" type="number" min="1" max="100" step="1" value="27">
+              </div>
+              <div>
+                <label class="field-label" for="scene-min-length">أقل طول للمشهد (إطارات)</label>
+                <input id="scene-min-length" class="control" type="number" min="1" max="1000" step="1" value="15">
+              </div>
+              <div class="scene-detection-action">
+                <button id="scene-detect" class="button button-outline" type="button" disabled>تحليل المشاهد</button>
+              </div>
+            </div>
+            <div id="scene-results-panel" class="scene-results-panel" hidden>
+              <div class="scene-results-toolbar">
+                <span id="scene-results-count">0 مشهد</span>
+                <div>
+                  <button id="scene-select-all" class="scene-toolbar-button" type="button">تحديد الكل</button>
+                  <button id="scene-add-selected" class="button button-secondary" type="button" disabled>إضافة المشاهد المختارة</button>
+                </div>
+              </div>
+              <div id="scene-results" class="scene-results" aria-live="polite"></div>
+            </div>
+            <p id="scene-detection-help" class="hint">يُحفظ تحليل المشاهد مع ملف الفيديو داخل المشروع، ويمكن إعادة تحميله دون تشغيل التحليل مرة أخرى.</p>
+          </div>
+
           <div class="timeline-summary">
             <span id="timeline-clip-count">0 مقطع</span>
             <span id="timeline-total-duration">المدة الإجمالية: 0 ثانية</span>
