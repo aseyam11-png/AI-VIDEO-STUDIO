@@ -18,6 +18,7 @@ class JobType(StrEnum):
     VIDEO_GENERATE = "video.generate"
     VIDEO_UPSCALE = "video.upscale"
     VIDEO_INTERPOLATE = "video.interpolate"
+    VIDEO_ASSEMBLE = "video.assemble"
     MOTION_BLENDER = "motion.blender"
 
 
