@@ -2105,10 +2105,39 @@
     $("workflow-state").textContent = statusLabels[workflow.status] || workflow.status;
     $("plan-status").textContent = statusLabels[workflow.status] || workflow.status;
     $("approval-actions").hidden = workflow.status !== "awaiting_approval";
-    $("execution-actions").hidden = !["queued", "running", "cancel_requested"].includes(workflow.status);
+    $("execution-actions").hidden = !["queued", "running", "cancel_requested", "awaiting_identity_review"].includes(workflow.status);
     renderWorkflowSteps(workflow.steps || []);
     $("plan-panel").hidden = !workflow.creative_plan;
     if (workflow.creative_plan) renderPlan(workflow.creative_plan);
+
+    const reviewPanel = $("identity-review-panel");
+    const identityReview = workflow.options?.product_identity_review;
+    reviewPanel.hidden = workflow.status !== "awaiting_identity_review";
+    if (workflow.status === "awaiting_identity_review" && identityReview) {
+      $("identity-review-notes").value = identityReview.notes || "";
+      const referenceAsset = state.assets.find((asset) => asset.id === identityReview.reference_asset_id);
+      $("identity-review-reference").textContent =
+        "الصورة المرجعية: " + (referenceAsset?.original_filename || identityReview.reference_asset_id) +
+        " · SHA-256: " + String(identityReview.reference_sha256 || "").slice(0, 16) + "…";
+      const previewUrl = identityReview.preview_url;
+      const preview = $("identity-review-preview");
+      if (previewUrl) {
+        const safeUrl = new URL(previewUrl, window.location.origin);
+        if (safeUrl.origin === window.location.origin) {
+          preview.src = safeUrl.pathname + safeUrl.search;
+        } else {
+          preview.removeAttribute("src");
+          notice("تم رفض رابط معاينة خارج نطاق الاستديو.", "error");
+        }
+      } else {
+        preview.removeAttribute("src");
+      }
+      setStepper(4);
+    } else {
+      $("identity-review-preview").pause();
+      $("identity-review-preview").removeAttribute("src");
+      $("identity-review-preview").load();
+    }
 
     const terminal = ["succeeded", "failed", "cancelled"].includes(workflow.status);
     if (workflow.status === "succeeded") {
@@ -2117,12 +2146,14 @@
     } else {
       $("render-result").hidden = true;
       $("video-preview-wrap").hidden = true;
-      if (workflow.status === "running" || workflow.status === "queued") setStepper(4);
+      if (["running", "queued", "awaiting_identity_review"].includes(workflow.status)) setStepper(4);
     }
     if (workflow.status === "failed") {
       notice(workflow.error_message || "فشل أحد أجزاء التنفيذ. راجع تفاصيل الخطوات ويمكن إعادة محاولة المهمة الفاشلة.", "error");
     } else if (workflow.status === "cancelled") {
       notice("تم إلغاء سير العمل.", "info");
+    } else if (workflow.status === "awaiting_identity_review") {
+      notice("اكتمل التوليد. راجع الفيديو المرجعي والنتيجة ثم وافق أو ارفض قبل التصدير.", "info");
     } else if (workflow.status === "succeeded") {
       notice("اكتمل سير العمل وتم إنشاء ملف الفيديو النهائي.", "success");
     }
@@ -2221,6 +2252,36 @@
       notice(`تعذّر اعتماد الخطة: ${error.message}`, "error");
     } finally {
       $("approve-workflow").disabled = false;
+    }
+  }
+
+  async function submitIdentityReview(approved) {
+    if (!state.workflow?.id) return;
+    const buttons = ["identity-review-approve", "identity-review-reject"];
+    buttons.forEach((id) => { $(id).disabled = true; });
+    try {
+      const workflow = await api(
+        `/v1/workflows/${encodeURIComponent(state.workflow.id)}/identity-review`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            approved,
+            notes: $("identity-review-notes").value.trim()
+          })
+        }
+      );
+      renderWorkflow(workflow);
+      if (workflow.status === "queued" || workflow.status === "running") {
+        startPolling(workflow.id);
+        notice("تم اعتماد هوية المنتج. استؤنف بناء الخط الزمني والتصدير.", "success");
+      } else if (workflow.status === "failed") {
+        stopPolling();
+        notice(workflow.error_message || "تم رفض هوية المنتج وإيقاف التصدير.", "error");
+      }
+    } catch (error) {
+      notice(`تعذّرت معالجة مراجعة الهوية: ${error.message}`, "error");
+    } finally {
+      buttons.forEach((id) => { $(id).disabled = false; });
     }
   }
 
@@ -2355,6 +2416,11 @@
       $("execution-panel").hidden = true;
       loadProject(event.target.value);
     });
+    ["generate-video", "product-identity-lock", "interpolate-generated-video"].forEach((id) => {
+      $(id).addEventListener("change", setProjectControls);
+    });
+    $("identity-review-approve").addEventListener("click", () => submitIdentityReview(true));
+    $("identity-review-reject").addEventListener("click", () => submitIdentityReview(false));
     $("asset-select").addEventListener("change", (event) => {
       state.selectedAsset = state.assets.find((asset) => asset.id === event.target.value) || null;
       if (state.selectedAsset) localStorage.setItem("studio.assetId", state.selectedAsset.id);
