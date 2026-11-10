@@ -160,13 +160,16 @@
       if (label) label.classList.toggle("option-disabled", interpolation.disabled);
       if (interpolation.disabled) interpolation.checked = false;
     }
-    ["transcribe-audio", "enhance-audio", "tracking-prompt"].forEach((id) => {
+    const videoOnlyOptions = {
+      "transcribe-audio": Boolean(state.modelStatus?.models?.whisperx?.worker_enabled),
+      "enhance-audio": Boolean(state.modelStatus?.models?.deepfilternet?.configured),
+      "tracking-prompt": Boolean(state.modelStatus?.models?.sam2?.workflow_configured)
+    };
+    Object.entries(videoOnlyOptions).forEach(([id, configured]) => {
       const input = $(id);
-      if (input) {
-        input.disabled = input.disabled || imageSelected;
-        const label = input.closest("label") || input.parentElement;
-        if (label) label.classList.toggle("option-disabled", input.disabled);
-      }
+      input.disabled = imageSelected || !configured;
+      const label = input.closest("label") || input.parentElement;
+      if (label) label.classList.toggle("option-disabled", input.disabled);
     });
     const targetDuration = $("target-duration");
     if (targetDuration) {
