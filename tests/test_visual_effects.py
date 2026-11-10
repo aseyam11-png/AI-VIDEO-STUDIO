@@ -5,7 +5,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-
 from app.api.routes import media as media_route
 from app.core.config import settings
 from app.main import app
