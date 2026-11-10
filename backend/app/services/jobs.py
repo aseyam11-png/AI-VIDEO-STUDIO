@@ -15,7 +15,7 @@ from app.db.models import (
 )
 from app.db.session import session_scope
 from app.schemas.jobs import JobCreate, JobType
-from pydantic import model_validator, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
