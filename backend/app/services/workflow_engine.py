@@ -246,10 +246,10 @@ def _step_specs(
             source_probe = (asset_metadata or {}).get("probe", {})
             try:
                 source_duration = float(source_probe.get("format", {}).get("duration"))
-            except (AttributeError, TypeError, ValueError):
+            except (AttributeError, TypeError, ValueError) as exc:
                 raise WorkflowRequestError(
                     "Video enhancement requires a verified source duration from FFprobe."
-                )
+                ) from exc
             if not 0 < source_duration <= 10:
                 raise WorkflowRequestError(
                     "Real-ESRGAN video enhancement is limited to source videos up to 10 seconds."
