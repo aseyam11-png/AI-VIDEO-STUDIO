@@ -78,11 +78,16 @@ Adds an RTL timeline workspace to the served `/studio/` application. Users can a
 
 See [Phase 6.2 — Arabic Timeline Editor](20-PHASE-6.2-ARABIC-TIMELINE-EDITOR.md). Automated checks validate the UI integration and JavaScript syntax; real browser and media acceptance on the target Windows host remain separate.
 
+### Phase 6.3 — Scene/shot selection (implemented in this branch)
+
+Adds a saved scene-results read endpoint and an RTL scene-selection workspace. Users can run ContentDetector against the selected project video, reload its saved scene manifest, select individual scenes, and append the chosen source ranges as separate clips in the current sequential timeline. Scene selection validates source bounds, clip-count and total-duration limits before adding any selected scene.
+
+See [Phase 6.3 — Scene and Shot Selection](21-PHASE-6.3-SCENE-SHOT-SELECTION.md). This increment uses deterministic scene-boundary detection; it does not claim semantic AI ranking or transcript-aware recommendations.
+
 ### Remaining Phase 6 increments
 
 Deliver in independently testable increments:
 
-- Scene/shot selection using actual scene, transcript and detection outputs (6.3).
 - Subtitle/caption generation with Arabic RTL, timing and font tests (6.4).
 - Audio mixing, voice/music levels, denoise and synchronization (6.5).
 - Transitions, titles, overlays and motion graphics using reviewed Blender/ComfyUI templates (6.6).
