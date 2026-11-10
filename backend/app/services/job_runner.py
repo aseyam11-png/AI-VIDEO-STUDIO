@@ -183,17 +183,6 @@ def _execute_media_job(
             cancel_check=cancel_check,
         )
 
-    if job_type == JobType.VIDEO_ENHANCE.value:
-        if asset_type != "video":
-            raise ValueError("Video enhancement requires a video asset.")
-        progress(8, "preparing_video_enhancement", "Preparing bounded frame-by-frame enhancement.")
-        return execute_video_enhancement(
-            job,
-            source,
-            progress=progress,
-            cancel_check=cancel_check,
-        )
-
     if job_type == JobType.VIDEO_GENERATE_SEQUENCE.value:
         if asset_type != "image":
             raise ValueError("Multi-shot generation requires an image reference asset.")
