@@ -237,7 +237,10 @@ def test_wan_generation_requires_approval_and_stays_within_ten_seconds(monkeypat
 
 def test_product_identity_lock_requires_a_verified_reference_hash(monkeypatch):
     monkeypatch.setattr(settings, "comfyui_base_url", "http://127.0.0.1:8188")
-    with pytest.raises(JobRequestError, match="Product identity lock requires a verified reference"):
+    with pytest.raises(
+        JobRequestError,
+        match="Product identity lock requires a verified reference",
+    ):
         normalize_payload(
             JobType.VIDEO_GENERATE,
             {
