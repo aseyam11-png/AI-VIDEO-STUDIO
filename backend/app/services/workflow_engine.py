@@ -46,6 +46,7 @@ _MODEL_QUEUE_TYPES = {
     JobType.VISION_TRACK,
     JobType.VIDEO_GENERATE,
     JobType.VIDEO_GENERATE_SEQUENCE,
+    JobType.VIDEO_ENHANCE,
     JobType.VIDEO_UPSCALE,
     JobType.VIDEO_INTERPOLATE,
     JobType.MOTION_BLENDER,
@@ -111,11 +112,6 @@ def _step_specs(
     project: ProjectRecord,
 ) -> list[tuple[JobType, dict]]:
     plan = request.creative_plan
-    if request.upscale_output:
-        raise WorkflowRequestError(
-            "Real-ESRGAN is currently an image/selected-frame tool. "
-            "Video frame extraction and reassembly are not yet enabled in automatic workflows."
-        )
     fps = min(project.target_fps, 60)
     width, height = _resolution(project.target_resolution)
     steps: list[tuple[JobType, dict]] = []
@@ -223,10 +219,51 @@ def _step_specs(
                     },
                 )
             )
+        if request.upscale_output:
+            if plan.target_duration_seconds > 10:
+                raise WorkflowRequestError(
+                    "Real-ESRGAN video enhancement is limited to 10 seconds per job."
+                )
+            steps.append(
+                (
+                    JobType.VIDEO_ENHANCE,
+                    {
+                        "scale": 2,
+                        "fps": min(fps, 30),
+                        "max_duration_seconds": 10,
+                        "crf": 20,
+                        "approved": True,
+                    },
+                )
+            )
     elif asset_type == "video":
         if request.generate_video:
             raise WorkflowRequestError(
                 "Video generation is an image-to-video operation; source asset is already a video."
+            )
+        if request.upscale_output:
+            source_probe = (asset.metadata_json or {}).get("probe", {})
+            try:
+                source_duration = float(source_probe.get("format", {}).get("duration"))
+            except (AttributeError, TypeError, ValueError):
+                raise WorkflowRequestError(
+                    "Video enhancement requires a verified source duration from FFprobe."
+                )
+            if not 0 < source_duration <= 10:
+                raise WorkflowRequestError(
+                    "Real-ESRGAN video enhancement is limited to source videos up to 10 seconds."
+                )
+            steps.append(
+                (
+                    JobType.VIDEO_ENHANCE,
+                    {
+                        "scale": 2,
+                        "fps": min(fps, 30),
+                        "max_duration_seconds": 10,
+                        "crf": 20,
+                        "approved": True,
+                    },
+                )
             )
         if request.enhance_audio:
             steps.append((JobType.AUDIO_ENHANCE, {"post_filter": False}))
