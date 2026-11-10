@@ -1,6 +1,6 @@
 import math
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -96,6 +96,38 @@ class ProjectTimelineRenderRequest(BaseModel):
     crf: int = Field(default=20, ge=0, le=35)
 
 
+class AudioMixClipRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    clip_id: UUID = Field(default_factory=uuid4)
+    asset_id: UUID
+    role: Literal["voice", "music", "sfx"]
+    timeline_start_seconds: float = Field(ge=0, le=3600, allow_inf_nan=False)
+    source_start_seconds: float = Field(ge=0, le=3600, allow_inf_nan=False)
+    duration_seconds: float = Field(gt=0, le=3600, allow_inf_nan=False)
+    gain_db: float = Field(default=0, ge=-60, le=12, allow_inf_nan=False)
+    fade_in_seconds: float = Field(default=0, ge=0, le=30, allow_inf_nan=False)
+    fade_out_seconds: float = Field(default=0, ge=0, le=30, allow_inf_nan=False)
+    denoise: bool = False
+
+
+class AudioMixLevels(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    voice: float = Field(default=0, ge=-60, le=12, allow_inf_nan=False)
+    music: float = Field(default=0, ge=-60, le=12, allow_inf_nan=False)
+    sfx: float = Field(default=0, ge=-60, le=12, allow_inf_nan=False)
+
+
+class ProjectAudioMixRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_audio_enabled: bool = True
+    source_audio_denoise: bool = False
+    levels_db: AudioMixLevels = Field(default_factory=AudioMixLevels)
+    clips: list[AudioMixClipRequest] = Field(default_factory=list, max_length=100)
+
+
 def _source_path(project_id: str, asset_id: str) -> tuple[dict, Path]:
     try:
         asset = get_asset(project_id, asset_id)
@@ -136,6 +168,10 @@ async def upload_asset(project_id: str, file: Annotated[UploadFile, File()]) -> 
             stream.get("codec_type") == "video" for stream in streams
         ):
             raise ValueError("Uploaded file does not contain a video stream.")
+        if manifest["asset_type"] == "audio" and not any(
+            stream.get("codec_type") == "audio" for stream in streams
+        ):
+            raise ValueError("Uploaded file does not contain an audio stream.")
         manifest = await run_in_threadpool(
             update_asset_manifest,
             project_id,
@@ -413,6 +449,7 @@ async def save_project_timeline(project_id: str, payload: ProjectTimelineRequest
             preview.unlink(missing_ok=True)
             (timeline_dir / f"project-{timeline_id}.srt").unlink(missing_ok=True)
             (timeline_dir / f"project-{timeline_id}-subtitles.json").unlink(missing_ok=True)
+            _audio_mix_path(project_id).unlink(missing_ok=True)
             return {**manifest, "timeline_path": None}
 
         sources: dict[str, Path] = {}
@@ -445,6 +482,7 @@ async def save_project_timeline(project_id: str, payload: ProjectTimelineRequest
         timeline_id = str(UUID(project_id))
         (timeline_dir / f"project-{timeline_id}.srt").unlink(missing_ok=True)
         (timeline_dir / f"project-{timeline_id}-subtitles.json").unlink(missing_ok=True)
+        _audio_mix_path(project_id).unlink(missing_ok=True)
         return {
             **manifest,
             "timeline_path": str(timeline_path.relative_to(project_dir(project_id))),
@@ -487,6 +525,36 @@ async def render_project_timeline_route(
                 )
             sources[asset_id] = source
 
+        audio_mix_path = _audio_mix_path(project_id)
+        audio_mix = (
+            read_json(audio_mix_path)
+            if audio_mix_path.is_file()
+            else _empty_audio_mix(project_id, timeline)
+        )
+        if (
+            audio_mix.get("schema_version") != 1
+            or audio_mix.get("project_id") != str(UUID(project_id))
+            or not isinstance(audio_mix.get("clips"), list)
+        ):
+            raise HTTPException(status_code=409, detail="Saved audio mix manifest is invalid.")
+        audio_sources: dict[str, Path] = {}
+        for audio_clip in audio_mix.get("clips", []):
+            asset_id = str(UUID(str(audio_clip["asset_id"])))
+            if asset_id in audio_sources:
+                continue
+            asset, source = _source_path(project_id, asset_id)
+            if asset["asset_type"] not in {"audio", "video"}:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Audio mix sources must be audio files or videos with an audio stream.",
+                )
+            if not any(
+                stream.get("codec_type") == "audio"
+                for stream in probe_media(source).get("streams", [])
+            ):
+                raise HTTPException(status_code=422, detail="Audio mix source has no audio stream.")
+            audio_sources[asset_id] = source
+
         destination = (
             project_dir(project_id)
             / "exports"
@@ -501,6 +569,8 @@ async def render_project_timeline_route(
             height=payload.height,
             fps=payload.fps,
             crf=payload.crf,
+            audio_mix_manifest=audio_mix,
+            audio_sources=audio_sources,
         )
         return {
             **result,
@@ -514,6 +584,162 @@ async def render_project_timeline_route(
         raise HTTPException(
             status_code=404, detail="Project or timeline source not found."
         ) from exc
+
+
+def _audio_mix_path(project_id: str) -> Path:
+    timeline_id = str(UUID(project_id))
+    return project_dir(project_id) / "timelines" / f"project-{timeline_id}-audio-mix.json"
+
+
+def _empty_audio_mix(project_id: str, timeline: dict | None = None) -> dict:
+    return {
+        "schema_version": 1,
+        "project_id": str(UUID(project_id)),
+        "timeline_duration_seconds": float((timeline or {}).get("duration_seconds", 0)),
+        "source_audio_enabled": True,
+        "source_audio_denoise": False,
+        "levels_db": {"voice": 0.0, "music": 0.0, "sfx": 0.0},
+        "clips": [],
+        "status": "draft",
+    }
+
+
+@router.get("/audio-mix")
+def get_project_audio_mix(project_id: str) -> dict:
+    try:
+        get_project(project_id)
+        timeline_path = project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
+        if not timeline_path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail="Save the video timeline before editing audio.",
+            )
+        timeline = read_json(timeline_path)
+        path = _audio_mix_path(project_id)
+        if not path.is_file():
+            return _empty_audio_mix(project_id, timeline)
+        manifest = read_json(path)
+        if (
+            manifest.get("schema_version") != 1
+            or manifest.get("project_id") != str(UUID(project_id))
+            or not isinstance(manifest.get("clips"), list)
+        ):
+            raise HTTPException(status_code=409, detail="Saved audio mix manifest is invalid.")
+        return manifest
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found.") from exc
+
+
+@router.put("/audio-mix")
+def save_project_audio_mix(project_id: str, payload: ProjectAudioMixRequest) -> dict:
+    try:
+        get_project(project_id)
+        timeline_path = project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
+        if not timeline_path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail="Save the video timeline before editing audio.",
+            )
+        timeline = read_json(timeline_path)
+        if timeline.get("project_id") != str(UUID(project_id)):
+            raise HTTPException(
+                status_code=409,
+                detail="Video timeline belongs to another project.",
+            )
+        timeline_duration = float(timeline.get("duration_seconds", 0))
+        if (
+            not math.isfinite(timeline_duration)
+            or timeline_duration < 0
+            or timeline_duration > 3600
+        ):
+            raise HTTPException(status_code=409, detail="Video timeline duration is invalid.")
+
+        clips: list[dict] = []
+        seen_clip_ids: set[str] = set()
+        for clip in payload.clips:
+            clip_id = str(clip.clip_id)
+            asset_id = str(clip.asset_id)
+            if clip_id in seen_clip_ids:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Audio clip identifiers must be unique.",
+                )
+            seen_clip_ids.add(clip_id)
+            if not timeline.get("clips"):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Add and save at least one video clip before adding timeline audio.",
+                )
+            if clip.timeline_start_seconds + clip.duration_seconds > timeline_duration + 0.001:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Audio clip extends beyond the saved video timeline.",
+                )
+            if clip.fade_in_seconds + clip.fade_out_seconds > clip.duration_seconds:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Audio fade-in and fade-out cannot exceed the clip duration.",
+                )
+            asset, source = _source_path(project_id, asset_id)
+            if asset["asset_type"] not in {"audio", "video"}:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Audio mix sources must be audio files or videos with an audio stream.",
+                )
+            metadata = probe_media(source)
+            if not any(
+                stream.get("codec_type") == "audio"
+                for stream in metadata.get("streams", [])
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Selected media does not contain an audio stream.",
+                )
+            source_duration_value = metadata.get("format", {}).get("duration")
+            try:
+                source_duration = (
+                    float(source_duration_value)
+                    if source_duration_value is not None
+                    else None
+                )
+            except (TypeError, ValueError):
+                source_duration = None
+            if source_duration is not None and (
+                clip.source_start_seconds + clip.duration_seconds > source_duration + 0.001
+            ):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Audio clip exceeds its source media duration.",
+                )
+            clips.append(clip.model_dump(mode="json"))
+
+        manifest = {
+            "schema_version": 1,
+            "project_id": str(UUID(project_id)),
+            "timeline_duration_seconds": round(timeline_duration, 6),
+            "source_audio_enabled": payload.source_audio_enabled,
+            "source_audio_denoise": payload.source_audio_denoise,
+            "levels_db": payload.levels_db.model_dump(),
+            "clips": clips,
+            "status": "draft",
+        }
+        path = _audio_mix_path(project_id)
+        atomic_write_json(path, manifest)
+        preview = (
+            project_dir(project_id)
+            / "exports"
+            / f"project-{UUID(project_id)}-preview.mp4"
+        )
+        preview.unlink(missing_ok=True)
+        return manifest
+    except MediaToolError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project or audio source not found.") from exc
 
 
 def _srt_timestamp(seconds: float) -> str:

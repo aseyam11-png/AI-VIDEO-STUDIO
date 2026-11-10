@@ -490,9 +490,11 @@ def render_multi_source_timeline(
     height: int = 1080,
     fps: int = 30,
     crf: int = 20,
+    audio_mix_manifest: dict | None = None,
+    audio_sources: dict[str, Path] | None = None,
     cancel_check: Callable[[], bool] | None = None,
 ) -> dict:
-    """Render an ordered, multi-asset cut timeline without overlays or transitions."""
+    """Render the video timeline and mix synchronized project audio tracks."""
     _check_cancel(cancel_check)
     if width < 320 or width > 3840 or height < 240 or height > 2160:
         raise ValueError("Render resolution is outside the supported range.")
@@ -510,9 +512,42 @@ def render_multi_source_timeline(
         str(UUID(key)): Path(value).expanduser().resolve()
         for key, value in sources.items()
     }
+    normalized_audio_sources = {
+        str(UUID(key)): Path(value).expanduser().resolve()
+        for key, value in (audio_sources or {}).items()
+    }
     inputs: list[Path] = []
     clip_metadata: list[dict] = []
-    any_audio = False
+    any_source_audio = False
+    source_audio_enabled = True
+    source_audio_denoise = False
+    levels_db = {"voice": 0.0, "music": 0.0, "sfx": 0.0}
+    audio_mix_clips: list[dict] = []
+
+    if audio_mix_manifest is not None:
+        if audio_mix_manifest.get("schema_version") != 1:
+            raise ValueError("Unsupported audio mix manifest version.")
+        if audio_mix_manifest.get("project_id") != timeline_manifest.get("project_id"):
+            raise ValueError("Audio mix project does not match the video timeline.")
+        source_audio_enabled = bool(audio_mix_manifest.get("source_audio_enabled", True))
+        source_audio_denoise = bool(audio_mix_manifest.get("source_audio_denoise", False))
+        raw_levels = audio_mix_manifest.get("levels_db", {})
+        for role in ("voice", "music", "sfx"):
+            try:
+                level = float(raw_levels.get(role, 0.0))
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise ValueError("Audio mix contains an invalid master level.") from exc
+            if not math.isfinite(level) or level < -60 or level > 12:
+                raise ValueError("Audio master levels must be between -60 and +12 dB.")
+            levels_db[role] = level
+        raw_mix_clips = audio_mix_manifest.get("clips", [])
+        if not isinstance(raw_mix_clips, list) or len(raw_mix_clips) > 100:
+            raise ValueError("Audio mix must contain between 0 and 100 clips.")
+        audio_mix_clips = raw_mix_clips
+
+    timeline_duration = sum(float(item["duration_seconds"]) for item in clips)
+    if not math.isfinite(timeline_duration) or timeline_duration <= 0 or timeline_duration > 3600:
+        raise ValueError("Video timeline duration is invalid.")
 
     for clip in clips:
         _check_cancel(cancel_check)
@@ -547,7 +582,7 @@ def render_multi_source_timeline(
             raise ValueError("Timeline clip exceeds its source video duration.")
 
         has_audio = any(stream.get("codec_type") == "audio" for stream in streams)
-        any_audio = any_audio or has_audio
+        any_source_audio = any_source_audio or (source_audio_enabled and has_audio)
         inputs.append(source)
         clip_metadata.append(
             {
@@ -557,8 +592,80 @@ def render_multi_source_timeline(
             }
         )
 
+    audio_input_metadata: list[dict] = []
+    seen_clip_ids: set[str] = set()
+    for item in audio_mix_clips:
+        _check_cancel(cancel_check)
+        try:
+            clip_id = str(UUID(str(item["clip_id"])))
+            asset_id = str(UUID(str(item["asset_id"])))
+            role = str(item["role"])
+            start = float(item["source_start_seconds"])
+            duration = float(item["duration_seconds"])
+            timeline_start = float(item["timeline_start_seconds"])
+            gain_db = float(item.get("gain_db", 0.0))
+            fade_in = float(item.get("fade_in_seconds", 0.0))
+            fade_out = float(item.get("fade_out_seconds", 0.0))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("Audio mix contains an invalid clip definition.") from exc
+        if clip_id in seen_clip_ids:
+            raise ValueError("Audio mix clip identifiers must be unique.")
+        seen_clip_ids.add(clip_id)
+        if role not in {"voice", "music", "sfx"}:
+            raise ValueError("Audio clip role must be voice, music or sfx.")
+        if asset_id not in normalized_audio_sources:
+            raise ValueError("Audio mix references an asset outside the supplied project assets.")
+        values = (start, duration, timeline_start, gain_db, fade_in, fade_out)
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("Audio clip timing and levels must be finite numbers.")
+        if (
+            start < 0
+            or duration <= 0
+            or timeline_start < 0
+            or gain_db < -60
+            or gain_db > 12
+            or fade_in < 0
+            or fade_out < 0
+            or fade_in + fade_out > duration
+            or timeline_start + duration > timeline_duration + (1.0 / fps)
+        ):
+            raise ValueError("Audio clip range, fades or gain are outside the supported limits.")
+
+        source = normalized_audio_sources[asset_id]
+        if not source.is_file():
+            raise ValueError("An audio mix source file is missing.")
+        metadata = probe_media(source)
+        streams = metadata.get("streams", [])
+        if not any(stream.get("codec_type") == "audio" for stream in streams):
+            raise ValueError("Every audio mix source must contain an audio stream.")
+        source_duration_value = metadata.get("format", {}).get("duration")
+        try:
+            source_duration = (
+                float(source_duration_value)
+                if source_duration_value is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            source_duration = None
+        if source_duration is not None and start + duration > source_duration + (1.0 / fps):
+            raise ValueError("Audio clip exceeds its source media duration.")
+        inputs.append(source)
+        audio_input_metadata.append(
+            {
+                "role": role,
+                "source_start": start,
+                "duration": duration,
+                "timeline_start": timeline_start,
+                "gain_db": gain_db,
+                "fade_in": fade_in,
+                "fade_out": fade_out,
+                "denoise": bool(item.get("denoise", False)),
+            }
+        )
+
     filters: list[str] = []
-    concat_inputs: list[str] = []
+    video_concat_inputs: list[str] = []
+    audio_output_inputs: list[str] = []
     for index, clip in enumerate(clip_metadata):
         _check_cancel(cancel_check)
         start = clip["start"]
@@ -569,29 +676,71 @@ def render_multi_source_timeline(
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},"
             f"format=yuv420p[v{index}]"
         )
-        concat_inputs.append(f"[v{index}]")
-        if any_audio:
-            if clip["has_audio"]:
-                filters.append(
+        video_concat_inputs.append(f"[v{index}]")
+        if any_source_audio:
+            if source_audio_enabled and clip["has_audio"]:
+                voice_gain = 10 ** (levels_db["voice"] / 20.0)
+                audio_chain = (
                     f"[{index}:a:0]atrim=start={start:.6f}:duration={duration:.6f},"
                     f"asetpts=PTS-STARTPTS,aresample=48000,"
                     f"aformat=sample_fmts=fltp:channel_layouts=stereo,"
-                    f"apad,atrim=duration={duration:.6f}[a{index}]"
+                    f"volume={voice_gain:.8f}"
                 )
+                if source_audio_denoise:
+                    audio_chain += ",afftdn=nr=12:nf=-30"
+                audio_chain += f",apad,atrim=duration={duration:.6f}[a{index}]"
+                filters.append(audio_chain)
             else:
                 filters.append(
                     f"anullsrc=r=48000:cl=stereo,aformat=sample_fmts=fltp:channel_layouts=stereo,"
                     f"atrim=duration={duration:.6f}[a{index}]"
                 )
-            concat_inputs.append(f"[a{index}]")
+            video_concat_inputs.append(f"[a{index}]")
 
-    if any_audio:
+    if any_source_audio:
         filters.append(
-            f"{''.join(concat_inputs)}concat=n={len(clips)}:v=1:a=1[vout][aout]"
+            f"{''.join(video_concat_inputs)}concat=n={len(clips)}:v=1:a=1[vout][aout]"
         )
+        audio_output_inputs.append("[aout]")
     else:
         filters.append(
-            f"{''.join(concat_inputs)}concat=n={len(clips)}:v=1:a=0[vout]"
+            f"{''.join(video_concat_inputs)}concat=n={len(clips)}:v=1:a=0[vout]"
+        )
+
+    first_audio_input_index = len(clip_metadata)
+    for index, clip in enumerate(audio_input_metadata):
+        _check_cancel(cancel_check)
+        input_index = first_audio_input_index + index
+        master_gain = levels_db[clip["role"]]
+        linear_gain = 10 ** ((master_gain + clip["gain_db"]) / 20.0)
+        chain = (
+            f"[{input_index}:a:0]atrim=start={clip['source_start']:.6f}:"
+            f"duration={clip['duration']:.6f},asetpts=PTS-STARTPTS,aresample=48000,"
+            f"aformat=sample_fmts=fltp:channel_layouts=stereo,volume={linear_gain:.8f}"
+        )
+        if clip["denoise"]:
+            chain += ",afftdn=nr=12:nf=-30"
+        if clip["fade_in"] > 0:
+            chain += f",afade=t=in:st=0:d={clip['fade_in']:.6f}"
+        if clip["fade_out"] > 0:
+            fade_start = clip["duration"] - clip["fade_out"]
+            chain += f",afade=t=out:st={fade_start:.6f}:d={clip['fade_out']:.6f}"
+        delay_ms = max(0, round(clip["timeline_start"] * 1000))
+        chain += (
+            f",adelay=delays={delay_ms}|{delay_ms}:all=1,"
+            f"apad,atrim=duration={timeline_duration:.6f}[mix{index}]"
+        )
+        filters.append(chain)
+        audio_output_inputs.append(f"[mix{index}]")
+
+    has_audio_output = bool(audio_output_inputs)
+    if len(audio_output_inputs) == 1:
+        filters.append(f"{audio_output_inputs[0]}alimiter=limit=0.95[a_final]")
+    elif len(audio_output_inputs) > 1:
+        filters.append(
+            f"{''.join(audio_output_inputs)}amix=inputs={len(audio_output_inputs)}:"
+            "duration=longest:dropout_transition=0:normalize=0,"
+            "alimiter=limit=0.95[a_final]"
         )
 
     ffmpeg = require_binary("ffmpeg")
@@ -601,8 +750,8 @@ def render_multi_source_timeline(
     for source in inputs:
         command.extend(["-i", str(source)])
     command.extend(["-filter_complex", ";".join(filters), "-map", "[vout]"])
-    if any_audio:
-        command.extend(["-map", "[aout]", "-c:a", "aac", "-b:a", "192k"])
+    if has_audio_output:
+        command.extend(["-map", "[a_final]", "-c:a", "aac", "-b:a", "192k"])
     else:
         command.append("-an")
     command.extend(
@@ -633,6 +782,8 @@ def render_multi_source_timeline(
         "filename": destination.name,
         "size_bytes": destination.stat().st_size,
         "clip_count": len(clips),
+        "audio_clip_count": len(audio_input_metadata),
         "settings": {"width": width, "height": height, "fps": fps, "crf": crf},
         "metadata": metadata,
     }
+

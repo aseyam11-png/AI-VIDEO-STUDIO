@@ -12,6 +12,12 @@
     timelineClips: [],
     timelineDirty: false,
     timelineRendered: false,
+    audioMixManifest: null,
+    audioMixClips: [],
+    audioMixDirty: false,
+    audioMixLevels: { voice: 0, music: 0, sfx: 0 },
+    sourceAudioEnabled: true,
+    sourceAudioDenoise: false,
     sceneManifest: null,
     sceneAssetId: null,
     transcriptionManifest: null,
@@ -237,6 +243,7 @@
       state.selectedAsset = matching || state.assets.find((asset) => asset.asset_type === "video") || null;
       renderAssets();
       await loadProjectTimeline(projectId);
+      await loadProjectAudioMix(projectId);
       await loadAssetScenes($("timeline-source").value);
       await loadAssetTranscription($("timeline-source").value);
       await loadTimelineSubtitleStatus(projectId);
@@ -279,6 +286,7 @@
       $("asset-meta").textContent = `${formatBytes(state.selectedAsset.size_bytes)} · ${state.selectedAsset.status || "ready"}`;
     }
     renderTimelineEditor();
+    renderAudioMixEditor();
     setProjectControls();
   }
 
@@ -306,6 +314,12 @@
     state.timelineClips = [];
     state.timelineDirty = false;
     state.timelineRendered = false;
+    state.audioMixManifest = null;
+    state.audioMixClips = [];
+    state.audioMixDirty = false;
+    state.audioMixLevels = { voice: 0, music: 0, sfx: 0 };
+    state.sourceAudioEnabled = true;
+    state.sourceAudioDenoise = false;
     state.subtitleManifest = null;
     $("timeline-subtitles-download").hidden = true;
     $("timeline-subtitles-download").removeAttribute("href");
@@ -322,6 +336,7 @@
       $("timeline-download").removeAttribute("href");
     }
     renderTimelineEditor();
+    renderAudioMixEditor();
   }
 
   async function loadProjectTimeline(projectId) {
@@ -347,6 +362,387 @@
       }
     }
     renderTimelineEditor();
+  }
+
+  function audioMixEndpoint() {
+    return state.project
+      ? "/v1/projects/" + encodeURIComponent(state.project.id) + "/audio-mix"
+      : null;
+  }
+
+  function audioSourceAssets() {
+    return state.assets.filter((asset) =>
+      asset.asset_type === "audio" ||
+      (asset.asset_type === "video" &&
+        (asset.probe?.streams || []).some((stream) => stream.codec_type === "audio"))
+    );
+  }
+
+  async function loadProjectAudioMix(projectId) {
+    state.audioMixManifest = null;
+    state.audioMixClips = [];
+    state.audioMixDirty = false;
+    state.audioMixLevels = { voice: 0, music: 0, sfx: 0 };
+    state.sourceAudioEnabled = true;
+    state.sourceAudioDenoise = false;
+    if (!projectId) {
+      renderAudioMixEditor();
+      return;
+    }
+    try {
+      const manifest = await api("/v1/projects/" + encodeURIComponent(projectId) + "/audio-mix");
+      if (manifest.project_id !== projectId || !Array.isArray(manifest.clips)) {
+        throw new Error("إعدادات الصوت لا تخص المشروع المحدد أو أن بنيتها غير صالحة.");
+      }
+      state.audioMixManifest = manifest;
+      state.audioMixClips = manifest.clips.map((clip) => ({
+        clip_id: clip.clip_id,
+        asset_id: clip.asset_id,
+        role: clip.role,
+        timeline_start_seconds: Number(clip.timeline_start_seconds),
+        source_start_seconds: Number(clip.source_start_seconds),
+        duration_seconds: Number(clip.duration_seconds),
+        gain_db: Number(clip.gain_db ?? 0),
+        fade_in_seconds: Number(clip.fade_in_seconds ?? 0),
+        fade_out_seconds: Number(clip.fade_out_seconds ?? 0),
+        denoise: Boolean(clip.denoise)
+      }));
+      state.audioMixLevels = {
+        voice: Number(manifest.levels_db?.voice ?? 0),
+        music: Number(manifest.levels_db?.music ?? 0),
+        sfx: Number(manifest.levels_db?.sfx ?? 0)
+      };
+      state.sourceAudioEnabled = manifest.source_audio_enabled !== false;
+      state.sourceAudioDenoise = Boolean(manifest.source_audio_denoise);
+      state.audioMixDirty =
+        Math.abs(Number(manifest.timeline_duration_seconds || 0) - timelineTotalDuration()) > 0.001;
+      if (state.audioMixDirty) {
+        $("audio-mix-help").textContent =
+          "تغيّرت مدة الفيديو بعد آخر حفظ للصوت. راجع مواضع المسارات ثم احفظ إعدادات الصوت مجددًا.";
+      }
+    } catch (error) {
+      if (error.status !== 404) {
+        notice("تعذّر تحميل إعدادات الصوت: " + error.message, "error");
+      }
+    }
+    renderAudioMixEditor();
+  }
+
+  function audioRoleLabel(role) {
+    return ({ voice: "تعليق صوتي", music: "موسيقى", sfx: "مؤثر صوتي" })[role] || role;
+  }
+
+  function renderAudioMixEditor() {
+    const source = $("audio-mix-source");
+    const list = $("audio-mix-list");
+    if (!source || !list) return;
+    const available = audioSourceAssets();
+    const previous = source.value;
+    source.replaceChildren();
+    if (!available.length) {
+      source.add(new Option("ارفع ملفًا صوتيًا أو فيديو يحتوي على صوت", ""));
+      source.disabled = true;
+    } else {
+      available.forEach((asset) => {
+        const prefix = asset.asset_type === "audio" ? "صوت" : "فيديو بصوت";
+        source.add(new Option(prefix + " · " + getAssetLabel(asset), asset.id));
+      });
+      source.value = available.some((asset) => asset.id === previous)
+        ? previous
+        : available[0].id;
+      source.disabled = false;
+    }
+
+    ["voice", "music", "sfx"].forEach((role) => {
+      const slider = $("audio-level-" + role);
+      if (slider) slider.value = String(state.audioMixLevels[role] ?? 0);
+      const output = $("audio-level-" + role + "-value");
+      if (output) output.textContent = String(state.audioMixLevels[role] ?? 0) + " dB";
+    });
+    $("source-audio-enabled").checked = state.sourceAudioEnabled;
+    $("source-audio-denoise").checked = state.sourceAudioDenoise;
+
+    list.replaceChildren();
+    if (!state.audioMixClips.length) {
+      const empty = document.createElement("div");
+      empty.className = "audio-mix-empty";
+      empty.textContent =
+        "لم تتم إضافة مسارات صوتية مستقلة بعد. يمكنك إبقاء صوت الفيديو الأصلي أو إضافة تعليق وموسيقى ومؤثرات.";
+      list.append(empty);
+    }
+
+    state.audioMixClips.forEach((clip, index) => {
+      const asset = state.assets.find((item) => item.id === clip.asset_id);
+      const card = document.createElement("article");
+      card.className = "audio-mix-card";
+      card.dataset.audioClipId = clip.clip_id;
+      const header = document.createElement("div");
+      header.className = "audio-mix-card-header";
+      const heading = document.createElement("strong");
+      heading.textContent = String(index + 1).padStart(2, "0") + " · " + getAssetLabel(asset);
+      const role = document.createElement("span");
+      role.textContent = audioRoleLabel(clip.role);
+      header.append(heading, role);
+
+      const fields = document.createElement("div");
+      fields.className = "audio-mix-card-fields";
+      [
+        { key: "role", label: "نوع المسار", type: "select" },
+        { key: "timeline_start_seconds", label: "موضع البداية (ث)", type: "number", min: 0, max: 3600 },
+        { key: "source_start_seconds", label: "بداية المصدر (ث)", type: "number", min: 0, max: 3600 },
+        { key: "duration_seconds", label: "المدة (ث)", type: "number", min: 0.01, max: 3600 },
+        { key: "gain_db", label: "مستوى المقطع (dB)", type: "number", min: -60, max: 12 },
+        { key: "fade_in_seconds", label: "تلاشي الدخول (ث)", type: "number", min: 0, max: 30 },
+        { key: "fade_out_seconds", label: "تلاشي الخروج (ث)", type: "number", min: 0, max: 30 },
+        { key: "denoise", label: "خفض الضوضاء", type: "checkbox" }
+      ].forEach((field) => {
+        const wrap = document.createElement("label");
+        wrap.className = "audio-mix-card-field";
+        const caption = document.createElement("span");
+        caption.textContent = field.label;
+        let input;
+        if (field.type === "select") {
+          input = document.createElement("select");
+          input.className = "control";
+          [
+            ["voice", "تعليق صوتي"],
+            ["music", "موسيقى"],
+            ["sfx", "مؤثر صوتي"]
+          ].forEach((option) => input.add(new Option(option[1], option[0])));
+          input.value = clip.role;
+        } else if (field.type === "checkbox") {
+          input = document.createElement("input");
+          input.type = "checkbox";
+          input.checked = Boolean(clip.denoise);
+        } else {
+          input = document.createElement("input");
+          input.className = "control";
+          input.type = "number";
+          input.min = String(field.min);
+          input.max = String(field.max);
+          input.step = "0.1";
+          input.value = String(clip[field.key]);
+        }
+        input.dataset.audioClipId = clip.clip_id;
+        input.dataset.audioClipField = field.key;
+        if (field.type === "checkbox") input.dataset.audioClipType = "checkbox";
+        wrap.append(caption, input);
+        fields.append(wrap);
+      });
+
+      const actions = document.createElement("div");
+      actions.className = "audio-mix-card-actions";
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.dataset.audioClipAction = "remove";
+      remove.dataset.audioClipId = clip.clip_id;
+      remove.textContent = "حذف المسار";
+      actions.append(remove);
+      card.append(header, fields, actions);
+      list.append(card);
+    });
+
+    $("audio-mix-count").textContent = state.audioMixClips.length + " مسار صوتي";
+    $("audio-mix-state").textContent = state.audioMixDirty ? "تغييرات غير محفوظة" : "تم الحفظ";
+    $("audio-mix-save").disabled = !state.project || !state.audioMixDirty;
+    $("audio-mix-add").disabled = !state.project || !available.length || !state.timelineClips.length;
+    if (!state.audioMixDirty) {
+      $("audio-mix-help").textContent =
+        "احفظ إعدادات الصوت. تُطبّق عند إنشاء معاينة MP4 أو تصدير الفيديو.";
+    }
+  }
+
+  function markAudioMixDirty() {
+    state.audioMixDirty = true;
+    state.timelineRendered = false;
+    if ($("timeline-preview-wrap")) $("timeline-preview-wrap").hidden = true;
+    if ($("timeline-download")) $("timeline-download").hidden = true;
+    $("audio-mix-state").textContent = "تغييرات غير محفوظة";
+    $("audio-mix-save").disabled = !state.project;
+  }
+
+  function addAudioMixClip() {
+    const assetId = $("audio-mix-source").value;
+    const asset = audioSourceAssets().find((item) => item.id === assetId);
+    if (!state.project || !asset) {
+      notice("اختر ملفًا يحتوي على مسار صوت صالح.", "error");
+      return;
+    }
+    if (!state.timelineClips.length || !state.timelineManifest) {
+      notice("أضف مقاطع الفيديو واحفظ الخط الزمني أولاً.", "error");
+      return;
+    }
+    if (state.audioMixClips.length >= 100) {
+      notice("الحد الأقصى هو 100 مسار صوتي.", "error");
+      return;
+    }
+    const timelineStart = Number($("audio-mix-timeline-start").value);
+    const sourceStart = Number($("audio-mix-source-start").value);
+    const duration = Number($("audio-mix-duration").value);
+    const gain = Number($("audio-mix-gain").value);
+    const fadeIn = Number($("audio-mix-fade-in").value);
+    const fadeOut = Number($("audio-mix-fade-out").value);
+    const sourceDuration = getAssetDuration(asset);
+    const totalDuration = timelineTotalDuration();
+    if (![timelineStart, sourceStart, duration, gain, fadeIn, fadeOut].every(Number.isFinite) ||
+        timelineStart < 0 || sourceStart < 0 || duration <= 0 ||
+        gain < -60 || gain > 12 || fadeIn < 0 || fadeOut < 0 ||
+        fadeIn + fadeOut > duration ||
+        timelineStart + duration > totalDuration + 0.001 ||
+        (sourceDuration !== null && sourceStart + duration > sourceDuration + 0.001)) {
+      notice("تحقق من توقيت الصوت ومستواه والتلاشي؛ يجب أن يبقى المسار داخل مدة الفيديو ومصدر الصوت.", "error");
+      return;
+    }
+    state.audioMixClips.push({
+      clip_id: uuid(),
+      asset_id: asset.id,
+      role: $("audio-mix-role").value,
+      timeline_start_seconds: timelineStart,
+      source_start_seconds: sourceStart,
+      duration_seconds: duration,
+      gain_db: gain,
+      fade_in_seconds: fadeIn,
+      fade_out_seconds: fadeOut,
+      denoise: $("audio-mix-denoise").checked
+    });
+    markAudioMixDirty();
+    renderAudioMixEditor();
+    notice("أُضيف المسار الصوتي. احفظ إعدادات الصوت لتطبيقه عند التصدير.", "success");
+  }
+
+  function handleAudioMixChange(event) {
+    const target = event.target;
+    const clipId = target.dataset.audioClipId;
+    const field = target.dataset.audioClipField;
+    if (clipId && field) {
+      const clip = state.audioMixClips.find((item) => item.clip_id === clipId);
+      if (!clip) return;
+      if (target.dataset.audioClipType === "checkbox") {
+        clip[field] = target.checked;
+      } else if (field === "role") {
+        clip[field] = target.value;
+      } else {
+        const value = Number(target.value);
+        if (!Number.isFinite(value)) {
+          notice("أدخل قيمة رقمية صالحة لمسار الصوت.", "error");
+          renderAudioMixEditor();
+          return;
+        }
+        clip[field] = value;
+      }
+      markAudioMixDirty();
+      renderAudioMixEditor();
+      return;
+    }
+
+    if (target.id && target.id.indexOf("audio-level-") === 0) {
+      const role = target.id.replace("audio-level-", "");
+      if (["voice", "music", "sfx"].includes(role)) {
+        state.audioMixLevels[role] = Number(target.value);
+        $("audio-level-" + role + "-value").textContent = target.value + " dB";
+        markAudioMixDirty();
+      }
+    } else if (target.id === "source-audio-enabled") {
+      state.sourceAudioEnabled = target.checked;
+      markAudioMixDirty();
+    } else if (target.id === "source-audio-denoise") {
+      state.sourceAudioDenoise = target.checked;
+      markAudioMixDirty();
+    }
+  }
+
+  function handleAudioMixAction(event) {
+    const button = event.target.closest("[data-audio-clip-action]");
+    if (!button) return;
+    if (button.dataset.audioClipAction === "remove") {
+      state.audioMixClips = state.audioMixClips.filter(
+        (clip) => clip.clip_id !== button.dataset.audioClipId
+      );
+      markAudioMixDirty();
+      renderAudioMixEditor();
+    }
+  }
+
+  async function saveProjectAudioMix() {
+    if (!state.project) return false;
+    if (state.timelineDirty) {
+      const timelineSaved = await saveProjectTimeline();
+      if (!timelineSaved) return false;
+    }
+    const button = $("audio-mix-save");
+    button.disabled = true;
+    try {
+      const manifest = await api(audioMixEndpoint(), {
+        method: "PUT",
+        body: JSON.stringify({
+          source_audio_enabled: state.sourceAudioEnabled,
+          source_audio_denoise: state.sourceAudioDenoise,
+          levels_db: state.audioMixLevels,
+          clips: state.audioMixClips
+        })
+      });
+      state.audioMixManifest = manifest;
+      state.audioMixClips = manifest.clips;
+      state.audioMixDirty = false;
+      renderAudioMixEditor();
+      notice("تم حفظ مزج الصوت والمزامنة داخل المشروع.", "success");
+      return true;
+    } catch (error) {
+      notice("تعذّر حفظ إعدادات الصوت: " + error.message, "error");
+      return false;
+    } finally {
+      button.disabled = false;
+      renderAudioMixEditor();
+    }
+  }
+
+  function syncAudioSourceFields() {
+    const asset = audioSourceAssets().find((item) => item.id === $("audio-mix-source").value);
+    const duration = getAssetDuration(asset);
+    if (duration !== null) {
+      $("audio-mix-duration").max = String(duration);
+      if (Number($("audio-mix-duration").value) > duration) {
+        $("audio-mix-duration").value = String(Math.min(5, duration));
+      }
+    } else {
+      $("audio-mix-duration").max = "3600";
+    }
+  }
+
+  async function uploadAudioAsset(file) {
+    if (!state.project) {
+      notice("اختر مشروعًا قبل رفع ملف الصوت.", "error");
+      return;
+    }
+    const allowed = [".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus"];
+    const name = file.name.toLowerCase();
+    if (!allowed.some((extension) => name.endsWith(extension))) {
+      notice("صيغة الصوت غير مدعومة. استخدم WAV أو MP3 أو M4A أو AAC أو FLAC أو OGG أو OPUS.", "error");
+      return;
+    }
+    state.uploading = true;
+    setProjectControls();
+    $("audio-upload-button").disabled = true;
+    notice("جارٍ رفع ملف الصوت والتحقق من مساره الصوتي…", "info");
+    try {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      const asset = await api("/v1/projects/" + encodeURIComponent(state.project.id) + "/assets", {
+        method: "POST",
+        body: form
+      });
+      await reloadAssets();
+      $("audio-mix-source").value = asset.id;
+      syncAudioSourceFields();
+      renderAudioMixEditor();
+      notice("تم رفع ملف الصوت والتحقق منه بنجاح.", "success");
+    } catch (error) {
+      notice("تعذّر رفع ملف الصوت: " + error.message, "error");
+    } finally {
+      state.uploading = false;
+      $("audio-upload-button").disabled = false;
+      setProjectControls();
+    }
   }
 
   function clearTranscriptionPreview() {
@@ -882,6 +1278,8 @@
     if ($("timeline-preview-wrap")) $("timeline-preview-wrap").hidden = true;
     if ($("timeline-download")) $("timeline-download").hidden = true;
     state.timelineRendered = false;
+    state.audioMixDirty = true;
+    renderAudioMixEditor();
     updateTimelineSummary();
   }
 
@@ -1018,6 +1416,10 @@
     if (state.timelineDirty) {
       const saved = await saveProjectTimeline();
       if (!saved) return;
+    }
+    if (state.audioMixDirty) {
+      const audioSaved = await saveProjectAudioMix();
+      if (!audioSaved) return;
     }
     const button = $("timeline-render");
     button.disabled = true;
@@ -1474,8 +1876,8 @@
     $("project-form").addEventListener("submit", createProject);
     $("director-form").addEventListener("submit", createPlan);
     $("project-select").addEventListener("change", (event) => {
-      if (state.timelineDirty &&
-          !window.confirm("لديك تغييرات غير محفوظة في الخط الزمني. هل تريد تجاهلها والانتقال؟")) {
+      if ((state.timelineDirty || state.audioMixDirty) &&
+          !window.confirm("لديك تغييرات غير محفوظة في الخط الزمني أو الصوت. هل تريد تجاهلها والانتقال؟")) {
         event.target.value = state.project?.id || "";
         return;
       }
@@ -1495,8 +1897,23 @@
     $("timeline-clip-list").addEventListener("click", handleTimelineClipAction);
     $("timeline-save").addEventListener("click", saveProjectTimeline);
     $("timeline-render").addEventListener("click", renderProjectTimeline);
+    $("audio-mix-add").addEventListener("click", addAudioMixClip);
+    $("audio-mix-save").addEventListener("click", saveProjectAudioMix);
+    $("audio-mix-list").addEventListener("change", handleAudioMixChange);
+    $("audio-mix-list").addEventListener("click", handleAudioMixAction);
+    $("audio-mix-source").addEventListener("change", syncAudioSourceFields);
+    ["audio-level-voice", "audio-level-music", "audio-level-sfx",
+      "source-audio-enabled", "source-audio-denoise"].forEach((id) => {
+      $(id).addEventListener("input", handleAudioMixChange);
+      $(id).addEventListener("change", handleAudioMixChange);
+    });
+    $("audio-upload-button").addEventListener("click", () => $("audio-file").click());
+    $("audio-file").addEventListener("change", (event) => {
+      if (event.target.files?.[0]) void uploadAudioAsset(event.target.files[0]);
+      event.target.value = "";
+    });
     window.addEventListener("beforeunload", (event) => {
-      if (!state.timelineDirty) return;
+      if (!state.timelineDirty && !state.audioMixDirty) return;
       event.preventDefault();
       event.returnValue = "";
     });
