@@ -200,12 +200,17 @@ def execute_video_enhancement(
         frame_output_dir = output_root / "comfyui" / f"frame-{index:06d}"
         source_frame_relative = source_frame.resolve().relative_to(media_root).as_posix()
 
-        def frame_progress(percent: int, stage: str, message: str) -> None:
-            scaled = 10 + int(((index - 1 + percent / 100) / frame_count) * 78)
+        def frame_progress(
+            percent: int,
+            stage: str,
+            message: str,
+            frame_index: int = index,
+        ) -> None:
+            scaled = 10 + int(((frame_index - 1 + percent / 100) / frame_count) * 78)
             progress(
                 min(88, scaled),
-                f"frame_{index}_{stage}",
-                f"Frame {index}/{frame_count}: {message}",
+                f"frame_{frame_index}_{stage}",
+                f"Frame {frame_index}/{frame_count}: {message}",
             )
 
         try:
