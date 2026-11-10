@@ -7,7 +7,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 from app.core.config import settings
 from app.integrations.blender import render_project_template
-from app.integrations.comfyui import ComfyUIClient, ComfyUIError
+from app.integrations.comfyui import ComfyUICancelled, ComfyUIClient, ComfyUIError
 from app.integrations.ffmpeg import MediaToolError, probe_media
 from app.media.audio import enhance_video_audio
 from app.media.pipeline import (
@@ -213,13 +213,16 @@ def execute_video_enhancement(
                 f"Frame {index}/{frame_count}: {message}",
             )
 
-        result = client.run_workflow(
-            "realesrgan_upscale_v1",
-            {"source_path": source_frame_relative, "scale": payload["scale"]},
-            frame_output_dir,
-            progress=frame_progress,
-            cancel_check=cancel_check,
-        )
+        try:
+            result = client.run_workflow(
+                "realesrgan_upscale_v1",
+                {"source_path": source_frame_relative, "scale": payload["scale"]},
+                frame_output_dir,
+                progress=frame_progress,
+                cancel_check=cancel_check,
+            )
+        except ComfyUICancelled as exc:
+            raise MediaJobCancelled("Video enhancement was cancelled during frame inference.") from exc
         selected = None
         for output in result.get("outputs", []):
             output_path = frame_output_dir / output["saved_as"]
@@ -262,7 +265,11 @@ def execute_video_enhancement(
     if cancel_check():
         raise MediaJobCancelled("Video enhancement was cancelled before MP4 assembly.")
     destination = output_root / f"{job_id}-enhanced.mp4"
-    progress(90, "assembling_enhanced_video", "Reassembling enhanced frames and restoring source audio.")
+    progress(
+        90,
+        "assembling_enhanced_video",
+        "Reassembling enhanced frames and restoring source audio.",
+    )
     render = assemble_upscaled_video(
         source=source,
         frames_directory=enhanced_dir,
