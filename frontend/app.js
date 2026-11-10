@@ -1681,6 +1681,7 @@
     state.timelineRendered = false;
     state.audioMixDirty = true;
     renderAudioMixEditor();
+    renderVisualEffectsEditor();
     updateTimelineSummary();
   }
 
@@ -2302,6 +2303,7 @@
     $("timeline-clip-list").addEventListener("click", handleTimelineClipAction);
     $("timeline-save").addEventListener("click", saveProjectTimeline);
     $("timeline-render").addEventListener("click", renderProjectTimeline);
+    $("visual-transition-after").addEventListener("change", renderVisualEffectsEditor);
     $("visual-transition-add").addEventListener("click", addVisualTransition);
     $("visual-title-add").addEventListener("click", addVisualTitle);
     $("visual-overlay-add").addEventListener("click", addVisualOverlay);
