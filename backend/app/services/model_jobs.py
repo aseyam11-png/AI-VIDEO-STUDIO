@@ -9,8 +9,8 @@ from app.integrations.blender import render_project_template
 from app.integrations.comfyui import ComfyUIClient, ComfyUIError
 from app.integrations.ffmpeg import MediaToolError, probe_media
 from app.media.audio import enhance_video_audio
-from app.media.speech import transcribe_local
 from app.media.pipeline import render_multi_source_timeline
+from app.media.speech import transcribe_local
 from app.media.storage import (
     asset_dir,
     atomic_write_json,
@@ -361,7 +361,11 @@ def execute_video_sequence(
         "render": rendered,
     }
     atomic_write_json(output_root / "sequence.json", sequence_manifest)
-    progress(96, "sequence_complete", "The multi-shot video is assembled and registered as a project asset.")
+    progress(
+        96,
+        "sequence_complete",
+        "The multi-shot video is assembled and registered as a project asset.",
+    )
     return {
         "shot_count": len(shot_assets),
         "duration_seconds": round(cursor, 6),
