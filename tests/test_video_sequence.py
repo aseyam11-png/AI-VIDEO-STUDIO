@@ -280,8 +280,8 @@ def test_video_sequence_executes_wan_shots_registers_assets_and_assembles_mp4(
         "asset_id": image_asset["id"],
         "payload": {
             "shots": [
-                {"prompt": "Product close-up", "negative_prompt": "", "duration_seconds": 2},
-                {"prompt": "Slow side movement", "negative_prompt": "", "duration_seconds": 2},
+                {"prompt": "Product close-up. Canonical product identity lock: preserve the exact product.", "negative_prompt": "", "duration_seconds": 2},
+                {"prompt": "Slow side movement. Canonical product identity lock: preserve the exact product.", "negative_prompt": "", "duration_seconds": 2},
             ],
             "generation_width": 832,
             "generation_height": 480,
