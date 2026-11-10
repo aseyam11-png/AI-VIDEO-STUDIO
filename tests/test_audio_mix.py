@@ -325,6 +325,7 @@ def test_audio_mix_api_accepts_video_audio_source_and_render_passes_manifest(
     voice, _ = _asset(project["id"], "voice.wav")
     monkeypatch.setattr(media_route, "probe_media", _probe)
     monkeypatch.setattr(pipeline, "probe_media", _probe)
+    monkeypatch.setattr(pipeline, "probe_media", _probe)
     client = TestClient(app)
     assert _saved_timeline(client, project, video).status_code == 200
     mixed = client.put(
