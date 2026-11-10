@@ -76,7 +76,9 @@
         ? data.detail
         : Array.isArray(data.detail)
           ? data.detail.map((item) => item.msg || JSON.stringify(item)).join("، ")
-          : `HTTP ${response.status}`;
+          : data.detail && typeof data.detail === "object"
+            ? data.detail.message || JSON.stringify(data.detail)
+            : `HTTP ${response.status}`;
       const error = new Error(detail);
       error.status = response.status;
       throw error;
@@ -409,6 +411,8 @@
         throw new Error("ملف التفريغ المحفوظ غير صالح.");
       }
       state.transcriptionManifest = manifest;
+      $("transcription-language").value = manifest.language;
+      $("transcription-align").checked = manifest.alignment_status === "completed";
       renderTranscriptionPreview();
     } catch (error) {
       if (error.status === 404) {
@@ -451,14 +455,20 @@
       }
       state.transcriptionAssetId = assetId;
       state.transcriptionManifest = manifest;
+      state.subtitleManifest = null;
+      $("timeline-subtitles-download").hidden = true;
+      $("timeline-subtitles-download").removeAttribute("href");
+      $("timeline-subtitles-state").textContent =
+        "تم تحديث التفريغ؛ أنشئ ملف SRT جديدًا ليعكس أحدث النص.";
       renderTranscriptionPreview();
       notice(
         `اكتمل تفريغ الكلام: ${manifest.segments.length} مقطع. ${alignmentLabel(manifest.alignment_status)}.`,
         "success"
       );
     } catch (error) {
-      state.transcriptionState = null;
-      $("transcription-state").textContent = "فشل التفريغ";
+      $("transcription-state").textContent = state.transcriptionManifest
+        ? "تعذّر التحديث؛ التفريغ المحفوظ السابق ما زال متاحًا"
+        : "فشل التفريغ";
       notice(`تعذّر تفريغ الصوت: ${error.message}`, "error");
     } finally {
       button.disabled = false;
