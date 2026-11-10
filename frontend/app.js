@@ -434,6 +434,7 @@
     });
     syncTimelineSourceFields();
     updateTimelineSummary();
+    if (!state.workflow) setStepper(state.timelineClips.length ? 2 : 1);
   }
 
   function syncTimelineSourceFields() {
