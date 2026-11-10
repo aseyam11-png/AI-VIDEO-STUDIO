@@ -35,6 +35,7 @@
 
   const statusLabels = {
     awaiting_approval: "بانتظار موافقتك",
+    awaiting_identity_review: "مراجعة هوية المنتج مطلوبة",
     queued: "في قائمة التنفيذ",
     running: "قيد التنفيذ",
     cancel_requested: "جارٍ الإيقاف",
@@ -201,10 +202,14 @@
       const grounding = models["grounding-dino"] || {};
       const sam2 = models.sam2 || {};
       const realesrgan = models.realesrgan || {};
+      const wan = models["wan-2.2-ti2v-5b"] || {};
+      const rife = models.rife || {};
       const optional = [
         { id: "transcribe-audio", ready: Boolean(whisper.worker_enabled), label: "WhisperX" },
         { id: "enhance-audio", ready: Boolean(deepfilter.configured), label: "DeepFilterNet" },
         { id: "upscale-video", ready: Boolean(realesrgan.workflow_configured), label: "Real-ESRGAN" },
+        { id: "generate-video", ready: Boolean(wan.workflow_configured), label: "Wan 2.2" },
+        { id: "interpolate-generated-video", ready: Boolean(rife.workflow_configured), label: "RIFE" },
         { id: "detection-prompt", ready: Boolean(grounding.workflow_configured), label: "Grounding DINO" },
         { id: "tracking-prompt", ready: Boolean(sam2.workflow_configured), label: "SAM 2" }
       ];
@@ -230,7 +235,7 @@
       director.className = "hint readiness-warning";
       summary.textContent = "حالة الخدمات غير معروفة. لم يتم تمكين الخيارات الاختيارية.";
       summary.className = "hint readiness-warning";
-      ["transcribe-audio","enhance-audio","upscale-video","detection-prompt","tracking-prompt"].forEach((id) => {
+      ["transcribe-audio","enhance-audio","upscale-video","generate-video","interpolate-generated-video","detection-prompt","tracking-prompt"].forEach((id) => {
         $(id).disabled = true;
       });
       setProjectControls();
