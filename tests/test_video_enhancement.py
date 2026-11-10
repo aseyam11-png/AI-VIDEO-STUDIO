@@ -19,7 +19,7 @@ from app.schemas.workflows import WorkflowCreateRequest
 from app.services import jobs, model_jobs, workflow_engine
 
 
-def _make_source_video(path: Path, duration: int = 1) -> None:
+def _make_source_video(path: Path, duration: int = 1, fps: int = 24) -> None:
     binary = shutil.which("ffmpeg")
     if not binary:
         pytest.skip("FFmpeg is required for video enhancement integration tests.")
@@ -33,7 +33,7 @@ def _make_source_video(path: Path, duration: int = 1) -> None:
             "-f",
             "lavfi",
             "-i",
-            f"testsrc2=size=320x240:rate=24:duration={duration}",
+            f"testsrc2=size=320x240:rate={fps}:duration={duration}",
             "-f",
             "lavfi",
             "-i",
@@ -219,6 +219,59 @@ def test_extract_and_assemble_upscaled_frames_preserves_audio(tmp_path):
     assert result["height"] == 480
     assert result["has_audio"] is True
     assert result["duration_seconds"] == pytest.approx(1, abs=0.15)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg is required")
+def test_extract_and_assemble_preserve_non_preset_source_fps(tmp_path):
+    source = tmp_path / "source-20fps.mp4"
+    _make_source_video(source, duration=1, fps=20)
+    extracted = tmp_path / "extracted-20fps"
+    enhanced = tmp_path / "enhanced-20fps"
+    metadata = pipeline.extract_video_frames(
+        source=source,
+        destination=extracted,
+        fps=24,
+        max_duration_seconds=1,
+    )
+    assert metadata["fps"] == 20
+    assert metadata["frame_count"] == 20
+
+    binary = shutil.which("ffmpeg")
+    enhanced.mkdir(parents=True)
+    for index in range(1, metadata["frame_count"] + 1):
+        subprocess.run(
+            [
+                binary,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                str(extracted / f"frame-{index:06d}.png"),
+                "-vf",
+                "scale=640:480",
+                str(enhanced / f"frame-{index:06d}.png"),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    destination = tmp_path / "exports" / "enhanced-20fps.mp4"
+    result = pipeline.assemble_upscaled_video(
+        source=source,
+        frames_directory=enhanced,
+        destination=destination,
+        frame_count=metadata["frame_count"],
+        fps=metadata["fps"],
+        duration_seconds=metadata["source_duration_seconds"],
+        expected_width=640,
+        expected_height=480,
+        crf=28,
+    )
+    assert result["fps"] == 20
+    assert result["has_audio"] is True
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg is required")
