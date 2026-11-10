@@ -212,6 +212,24 @@ async def detect_scenes_route(project_id: str, asset_id: str, payload: SceneRequ
     return manifest
 
 
+@router.get("/assets/{asset_id}/scenes")
+def get_scenes_route(project_id: str, asset_id: str) -> dict:
+    asset, _ = _source_path(project_id, asset_id)
+    if asset["asset_type"] != "video":
+        raise HTTPException(status_code=422, detail="Scene results require a video asset.")
+    scenes_path = asset_dir(project_id, asset_id) / "scenes.json"
+    if not scenes_path.is_file():
+        raise HTTPException(status_code=404, detail="Scene detection has not been run for this asset.")
+    manifest = read_json(scenes_path)
+    if (
+        manifest.get("project_id") != project_id
+        or manifest.get("asset_id") != asset_id
+        or not isinstance(manifest.get("scenes"), list)
+    ):
+        raise HTTPException(status_code=409, detail="Saved scene manifest is invalid or belongs to another asset.")
+    return manifest
+
+
 @router.post("/assets/{asset_id}/transcription")
 async def transcribe_route(
     project_id: str, asset_id: str, payload: TranscriptionRequest
