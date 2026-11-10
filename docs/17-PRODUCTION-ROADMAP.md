@@ -84,11 +84,16 @@ Adds a saved scene-results read endpoint and an RTL scene-selection workspace. U
 
 See [Phase 6.3 — Scene and Shot Selection](21-PHASE-6.3-SCENE-SHOT-SELECTION.md). This increment uses deterministic scene-boundary detection; it does not claim semantic AI ranking or transcript-aware recommendations.
 
+### Phase 6.4 — Arabic transcription and timeline SRT (implemented in this branch)
+
+Adds a saved-transcription read endpoint, a Studio control for explicit WhisperX transcription (Arabic/English, with optional word alignment), and a project-level SRT generator. Transcript segments are intersected with each clip's source in/out range, cropped to that range, and shifted to the clip's position on the assembled timeline. Reused source videos therefore receive correctly repeated captions at each timeline position. SRT files are UTF-8 with BOM for Arabic compatibility and are invalidated whenever the project timeline changes.
+
+See [Phase 6.4 — Arabic Captions and Speech Sync](22-PHASE-6.4-ARABIC-CAPTIONS-SPEECH-SYNC.md). This increment produces a separate downloadable SRT file; burned-in captions and embedded MP4 subtitle streams remain future work. Word-level alignment is reported accurately and is not claimed when the language/model cannot provide it.
+
 ### Remaining Phase 6 increments
 
 Deliver in independently testable increments:
 
-- Subtitle/caption generation with Arabic RTL, timing and font tests (6.4).
 - Audio mixing, voice/music levels, denoise and synchronization (6.5).
 - Transitions, titles, overlays and motion graphics using reviewed Blender/ComfyUI templates (6.6).
 - Multi-shot generation and deterministic assembly of generated clips (6.7).

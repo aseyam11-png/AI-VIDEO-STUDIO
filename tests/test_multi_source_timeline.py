@@ -393,3 +393,131 @@ def test_scene_detection_results_can_be_reloaded_for_the_project_video(
         f"/v1/projects/{foreign_project['id']}/assets/{asset['id']}/scenes"
     )
     assert foreign.status_code == 404
+
+
+def test_timeline_srt_crops_source_segments_and_maps_them_to_project_time(
+    tmp_path, monkeypatch
+):
+    pytest.importorskip("opentimelineio")
+    project = _project(tmp_path, monkeypatch)
+    first, _ = _video_asset(project["id"], "first.mp4")
+    second, _ = _video_asset(project["id"], "second.mp4")
+    monkeypatch.setattr(pipeline, "probe_media", _probe_with_audio)
+    client = TestClient(app)
+
+    payload = {
+        "fps": 24,
+        "clips": [
+            {
+                "asset_id": first["id"],
+                "source_start_seconds": 2,
+                "duration_seconds": 2,
+            },
+            {
+                "asset_id": second["id"],
+                "source_start_seconds": 1,
+                "duration_seconds": 2,
+            },
+        ],
+    }
+    saved = client.put(f"/v1/projects/{project['id']}/timeline", json=payload)
+    assert saved.status_code == 200, saved.text
+
+    first_transcription = {
+        "language": "ar",
+        "model": "small",
+        "alignment_status": "completed",
+        "segments": [
+            {"start": 1.0, "end": 3.0, "text": "مرحبا بكم"},
+            {"start": 3.5, "end": 4.5, "text": "في الاستديو"},
+        ],
+        "text": "مرحبا بكم في الاستديو",
+    }
+    second_transcription = {
+        "language": "en",
+        "model": "small",
+        "alignment_status": "completed",
+        "segments": [{"start": 0.5, "end": 2.5, "text": "Hello there"}],
+        "text": "Hello there",
+    }
+    media_route.atomic_write_json(
+        media_route.asset_dir(project["id"], first["id"]) / "transcription.json",
+        first_transcription,
+    )
+    media_route.atomic_write_json(
+        media_route.asset_dir(project["id"], second["id"]) / "transcription.json",
+        second_transcription,
+    )
+
+    loaded_transcription = client.get(
+        f"/v1/projects/{project['id']}/assets/{first['id']}/transcription"
+    )
+    assert loaded_transcription.status_code == 200
+    assert loaded_transcription.json()["segments"] == first_transcription["segments"]
+
+    created = client.post(
+        f"/v1/projects/{project['id']}/timeline/subtitles",
+        json={"require_alignment": True},
+    )
+    assert created.status_code == 200, created.text
+    manifest = created.json()
+    assert manifest["caption_count"] == 3
+    assert manifest["languages"] == ["ar", "en"]
+    assert manifest["alignment_status"] == "completed"
+
+    downloaded = client.get(f"/v1/projects/{project['id']}/timeline/subtitles")
+    assert downloaded.status_code == 200
+    srt = downloaded.content.decode("utf-8-sig")
+    assert "00:00:00,000 --> 00:00:01,000" in srt
+    assert "00:00:01,500 --> 00:00:02,000" in srt
+    assert "00:00:02,000 --> 00:00:03,500" in srt
+    assert "مرحبا بكم" in srt and "في الاستديو" in srt and "Hello there" in srt
+
+    status = client.get(
+        f"/v1/projects/{project['id']}/timeline/subtitles/manifest"
+    )
+    assert status.status_code == 200
+    assert status.json()["caption_count"] == 3
+
+    resaved = client.put(f"/v1/projects/{project['id']}/timeline", json=payload)
+    assert resaved.status_code == 200, resaved.text
+    stale_download = client.get(f"/v1/projects/{project['id']}/timeline/subtitles")
+    assert stale_download.status_code == 404
+    stale_manifest = client.get(
+        f"/v1/projects/{project['id']}/timeline/subtitles/manifest"
+    )
+    assert stale_manifest.status_code == 404
+
+
+def test_timeline_srt_requires_transcription_for_every_used_video(
+    tmp_path, monkeypatch
+):
+    pytest.importorskip("opentimelineio")
+    project = _project(tmp_path, monkeypatch)
+    asset, _ = _video_asset(project["id"], "without-transcription.mp4")
+    monkeypatch.setattr(pipeline, "probe_media", _probe_with_audio)
+    client = TestClient(app)
+    saved = client.put(
+        f"/v1/projects/{project['id']}/timeline",
+        json={
+            "fps": 24,
+            "clips": [
+                {
+                    "asset_id": asset["id"],
+                    "source_start_seconds": 0,
+                    "duration_seconds": 2,
+                }
+            ],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    missing = client.get(
+        f"/v1/projects/{project['id']}/assets/{asset['id']}/transcription"
+    )
+    assert missing.status_code == 404
+    created = client.post(
+        f"/v1/projects/{project['id']}/timeline/subtitles",
+        json={"require_alignment": False},
+    )
+    assert created.status_code == 409
+    assert "missing_asset_ids" in created.json()["detail"]
