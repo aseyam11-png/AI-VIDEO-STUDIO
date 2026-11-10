@@ -105,6 +105,17 @@ TOOL_SPECS: tuple[dict[str, typing.Any], ...] = (
         "capability_key": "wan-2.2-ti2v-5b",
     },
     {
+        "tool_id": "video.generate_sequence",
+        "name": "Multi-Shot Video Generation",
+        "category": "generation",
+        "runtime": "ComfyUI / Wan 2.2 TI2V 5B + FFmpeg",
+        "description": "Generate 2–8 approved shots from a project image reference and assemble them in order.",
+        "execution": "durable_job",
+        "approval_required": True,
+        "workflow_id": "wan22_ti2v_5b_v1",
+        "capability_key": "wan-2.2-ti2v-5b",
+    },
+    {
         "tool_id": "video.upscale",
         "name": "Image and Frame Upscaling",
         "category": "restoration",
