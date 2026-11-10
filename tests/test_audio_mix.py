@@ -97,9 +97,9 @@ def test_audio_mix_api_saves_levels_and_timing_and_invalidates_preview(
     tmp_path, monkeypatch
 ):
     project = _project(tmp_path, monkeypatch)
-    video, video_path = _asset(project["id"], "video.mp4")
-    voice, voice_path = _asset(project["id"], "voice.wav")
-    music, music_path = _asset(project["id"], "music.mp3")
+    video, _ = _asset(project["id"], "video.mp4")
+    voice, _ = _asset(project["id"], "voice.wav")
+    music, _ = _asset(project["id"], "music.mp3")
     monkeypatch.setattr(media_route, "probe_media", _probe)
     client = TestClient(app)
     saved_timeline = _saved_timeline(client, project, video)
@@ -167,7 +167,13 @@ def test_audio_mix_rejects_foreign_assets_invalid_ranges_and_non_audio_sources(
     tmp_path, monkeypatch
 ):
     project = _project(tmp_path, monkeypatch)
-    other = _project(tmp_path / "other", monkeypatch)
+    other = create_project(
+        {
+            "name": "Foreign audio project",
+            "target_duration_seconds": 30,
+            "brief": "Separate project for scope validation.",
+        }
+    )
     video, _ = _asset(project["id"], "video.mp4")
     audio, _ = _asset(project["id"], "voice.wav")
     foreign_audio, _ = _asset(other["id"], "foreign.wav")
@@ -236,11 +242,12 @@ def test_render_pipeline_builds_voice_music_sync_denoise_and_fades(tmp_path, mon
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(pipeline, "_run", fake_run)
+    project_id = str(uuid4())
     result = pipeline.render_multi_source_timeline(
         sources={video_id: video},
         timeline_manifest={
             "schema_version": 2,
-            "project_id": str(uuid4()),
+            "project_id": project_id,
             "clips": [
                 {
                     "asset_id": video_id,
@@ -251,7 +258,7 @@ def test_render_pipeline_builds_voice_music_sync_denoise_and_fades(tmp_path, mon
         },
         audio_mix_manifest={
             "schema_version": 1,
-            "project_id": "00000000-0000-4000-8000-000000000099",
+            "project_id": project_id,
             "source_audio_enabled": True,
             "source_audio_denoise": True,
             "levels_db": {"voice": -6, "music": -10, "sfx": -4},
@@ -282,7 +289,7 @@ def test_render_pipeline_builds_voice_music_sync_denoise_and_fades(tmp_path, mon
                 },
             ],
         },
-        audio_sources={},
+        audio_sources={voice_id: voice, music_id: music},
         destination=tmp_path / "output.mp4",
     )
     filter_graph = captured["command"][captured["command"].index("-filter_complex") + 1]
@@ -380,18 +387,19 @@ def test_audio_mix_pipeline_can_render_music_without_original_video_audio(
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(pipeline, "_run", fake_run)
+    project_id = str(uuid4())
     result = pipeline.render_multi_source_timeline(
         sources={video_id: video},
         timeline_manifest={
             "schema_version": 2,
-            "project_id": str(uuid4()),
+            "project_id": project_id,
             "clips": [
                 {"asset_id": video_id, "source_start_seconds": 0, "duration_seconds": 10}
             ],
         },
         audio_mix_manifest={
             "schema_version": 1,
-            "project_id": None,
+            "project_id": project_id,
             "source_audio_enabled": False,
             "levels_db": {"voice": 0, "music": -5, "sfx": 0},
             "clips": [
@@ -448,11 +456,12 @@ def test_audio_mix_real_ffmpeg_places_and_mixes_external_music(tmp_path):
         check=True, capture_output=True, text=True, timeout=60,
     )
     video_id, music_id = str(uuid4()), str(uuid4())
+    project_id = str(uuid4())
     result = pipeline.render_multi_source_timeline(
         sources={video_id: video},
         timeline_manifest={
             "schema_version": 2,
-            "project_id": str(uuid4()),
+            "project_id": project_id,
             "clips": [
                 {"asset_id": video_id, "source_start_seconds": 0, "duration_seconds": 3}
             ],
