@@ -14,6 +14,7 @@ JobToolId = Literal[
     "vision.detect",
     "vision.track",
     "video.generate",
+    "video.generate_sequence",
     "video.upscale",
     "video.interpolate",
     "motion.blender",
