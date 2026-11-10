@@ -31,7 +31,7 @@ def test_studio_ui_and_static_assets_are_served():
     assert 'id="timeline-save"' in page.text
     assert 'id="timeline-render"' in page.text
     assert "saveProjectTimeline" in script.text
-    assert "/timeline/render" in script.text
+    assert "renderProjectTimeline" in script.text
 
 
 def test_project_history_endpoint_lists_created_projects(tmp_path, monkeypatch):
