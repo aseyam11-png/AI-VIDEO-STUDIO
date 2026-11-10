@@ -614,7 +614,7 @@
       const downloadUrl = `${timelineEndpoint()}/rendered?preview=${Date.now()}`;
       $("timeline-preview").src = downloadUrl;
       $("timeline-preview-wrap").hidden = false;
-      $("timeline-download").href = `${timelineEndpoint()}/rendered`;
+      $("timeline-download").href = `${timelineEndpoint()}/rendered?download=${Date.now()}`;
       $("timeline-download").hidden = false;
       state.timelineRendered = true;
       $("timeline-state").textContent = "المعاينة جاهزة";
