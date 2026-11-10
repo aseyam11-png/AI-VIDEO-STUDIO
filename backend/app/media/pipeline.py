@@ -599,9 +599,14 @@ def render_multi_source_timeline(
     clip_durations: dict[str, float] = {}
     for index, item in enumerate(clips):
         try:
-            clip_id = str(UUID(str(item["clip_id"])))
+            raw_clip_id = item.get("clip_id")
+            clip_id = (
+                str(UUID(str(raw_clip_id)))
+                if raw_clip_id
+                else str(UUID(int=index + 1))
+            )
             clip_duration = float(item["duration_seconds"])
-        except (KeyError, TypeError, ValueError) as exc:
+        except (AttributeError, KeyError, TypeError, ValueError) as exc:
             raise ValueError("Timeline clip identifiers or durations are invalid.") from exc
         if clip_id in clip_positions:
             raise ValueError("Timeline clip identifiers must be unique.")
