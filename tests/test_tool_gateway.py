@@ -50,6 +50,7 @@ def test_tool_catalog_exposes_a_single_dispatch_contract(monkeypatch):
     assert "vision.detect" in ids
     assert "video.generate" in ids
     assert "video.generate_sequence" in ids
+    assert "video.enhance" in ids
     assert "motion.blender" in ids
 
 

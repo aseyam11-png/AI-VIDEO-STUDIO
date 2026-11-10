@@ -1,3 +1,4 @@
+import shutil
 import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -31,6 +32,7 @@ from app.services.model_jobs import (
     execute_blender_job,
     execute_comfyui_job,
     execute_speech_transcription,
+    execute_video_enhancement,
     execute_video_sequence,
 )
 from sqlalchemy import select
@@ -170,6 +172,17 @@ def _execute_media_job(
             "relative_path": output_asset["relative_path"],
         }
         return result
+
+    if job_type == JobType.VIDEO_ENHANCE.value:
+        if asset_type != "video":
+            raise ValueError("Video enhancement requires a video asset.")
+        progress(8, "preparing_video_enhancement", "Preparing bounded frame-by-frame enhancement.")
+        return execute_video_enhancement(
+            job,
+            source,
+            progress=progress,
+            cancel_check=cancel_check,
+        )
 
     if job_type == JobType.VIDEO_GENERATE_SEQUENCE.value:
         if asset_type != "image":
@@ -479,6 +492,13 @@ def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
             raise JobCancelled("Cancellation requested.")
         _finish_job(job_id, dispatch_generation, result=result)
     except Exception as exc:
+        if snapshot.get("job_type") == JobType.VIDEO_ENHANCE.value:
+            output_root = (
+                project_dir(snapshot["project_id"])
+                / "ai_outputs"
+                / str(snapshot["id"])
+            )
+            shutil.rmtree(output_root, ignore_errors=True)
         _finish_job(job_id, dispatch_generation, error=exc)
     finally:
         stop_event.set()

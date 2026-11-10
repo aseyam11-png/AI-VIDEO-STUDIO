@@ -595,6 +595,7 @@
               <div class="advanced-grid">
                 <label class="check-option"><input id="transcribe-audio" type="checkbox"><span>تفريغ الكلام باستخدام WhisperX</span></label>
                 <label class="check-option"><input id="enhance-audio" type="checkbox"><span>تحسين الصوت باستخدام DeepFilterNet</span></label>
+                <label class="check-option"><input id="upscale-video" type="checkbox"><span>تحسين وضوح الفيديو (Real-ESRGAN، حتى 10 ثوانٍ)</span></label>
                 <div>
                   <label class="field-label" for="detection-prompt">عنصر تريد اكتشافه (اختياري)</label>
                   <input id="detection-prompt" class="control" maxlength="500" placeholder="مثال: the main product">
@@ -604,7 +605,7 @@
                   <input id="tracking-prompt" class="control" maxlength="500" placeholder="مثال: the main product">
                 </div>
               </div>
-              <p class="hint">تتطلب هذه الخيارات تثبيت وتشغيل الخدمات والنماذج المرتبطة بها. تركها دون تحديد هو الخيار المناسب لأول تجربة.</p>
+              <p class="hint">تحسين الفيديو متاح للفيديوهات التي لا تتجاوز 10 ثوانٍ، ويعالج الإطارات بالتتابع مع إعادة الصوت الأصلي. يتطلب ComfyUI وReal-ESRGAN. تتطلب الخيارات الأخرى تثبيت وتشغيل الخدمات والنماذج المرتبطة بها.</p>
             </details>
 
             <button id="generate-plan" class="button button-primary" type="submit" disabled>

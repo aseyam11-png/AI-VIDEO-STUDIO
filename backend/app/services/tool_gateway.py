@@ -130,6 +130,20 @@ TOOL_SPECS: tuple[dict[str, typing.Any], ...] = (
         "capability_key": "realesrgan",
     },
     {
+        "tool_id": "video.enhance",
+        "name": "Video Enhancement",
+        "category": "restoration",
+        "runtime": "ComfyUI / Real-ESRGAN + FFmpeg",
+        "description": (
+            "Upscale a short video by enhancing each frame and restoring its original audio. "
+            "Limited to 10 seconds and 300 frames per job."
+        ),
+        "execution": "durable_job",
+        "approval_required": True,
+        "workflow_id": "realesrgan_upscale_v1",
+        "capability_key": "realesrgan",
+    },
+    {
         "tool_id": "video.interpolate",
         "name": "Frame Interpolation",
         "category": "restoration",
@@ -246,6 +260,7 @@ def get_tool_catalog() -> dict[str, typing.Any]:
                     JobType.VISION_TRACK,
                     JobType.VIDEO_GENERATE,
                     JobType.VIDEO_GENERATE_SEQUENCE,
+                    JobType.VIDEO_ENHANCE,
                     JobType.VIDEO_UPSCALE,
                     JobType.VIDEO_INTERPOLATE,
                     JobType.MOTION_BLENDER,
@@ -267,6 +282,7 @@ def get_tool_catalog() -> dict[str, typing.Any]:
             "user_approval_required_for": [
                 "video.generate",
                 "video.generate_sequence",
+                "video.enhance",
                 "motion.blender",
             ],
             "model_weights_downloaded_automatically": False,
