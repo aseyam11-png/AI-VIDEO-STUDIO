@@ -235,6 +235,35 @@ def test_wan_generation_requires_approval_and_stays_within_ten_seconds(monkeypat
     assert payload["approved"] is True
 
 
+def test_product_identity_lock_requires_a_verified_reference_hash(monkeypatch):
+    monkeypatch.setattr(settings, "comfyui_base_url", "http://127.0.0.1:8188")
+    with pytest.raises(JobRequestError, match="Product identity lock requires a verified reference"):
+        normalize_payload(
+            JobType.VIDEO_GENERATE,
+            {
+                "prompt": "A product shot",
+                "approved": True,
+                "product_identity_lock": True,
+            },
+        )
+
+    fingerprint = "a" * 64
+    payload = normalize_payload(
+        JobType.VIDEO_GENERATE_SEQUENCE,
+        {
+            "shots": [
+                {"prompt": "Product shot one", "duration_seconds": 2},
+                {"prompt": "Product shot two", "duration_seconds": 2},
+            ],
+            "approved": True,
+            "product_identity_lock": True,
+            "identity_reference_sha256": fingerprint,
+        },
+    )
+    assert payload["product_identity_lock"] is True
+    assert payload["identity_reference_sha256"] == fingerprint
+
+
 def test_model_job_queue_routing_is_separate_from_cpu_queue():
     from app.services.jobs import _MODEL_QUEUE_TYPES, _SPEECH_QUEUE_TYPES
 
