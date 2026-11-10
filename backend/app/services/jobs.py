@@ -107,6 +107,15 @@ class _VideoSequenceOptions(_StrictOptions):
 class _VideoUpscaleOptions(_StrictOptions):
     scale: int = Field(default=2, ge=2, le=4)
 
+class _VideoEnhanceOptions(_StrictOptions):
+    scale: Literal[2, 4] = 2
+    fps: Literal[15, 24, 30] = 24
+    max_duration_seconds: int = Field(default=10, ge=1, le=10)
+    crf: int = Field(default=20, ge=0, le=35)
+    approved: bool = False
+
+
+
 
 class _VideoInterpolateOptions(_StrictOptions):
     factor: int = Field(default=2, ge=2, le=4)
@@ -133,6 +142,7 @@ _OPTION_MODELS = {
     JobType.VISION_TRACK: _VisionTrackOptions,
     JobType.VIDEO_GENERATE: _VideoGenerateOptions,
     JobType.VIDEO_GENERATE_SEQUENCE: _VideoSequenceOptions,
+    JobType.VIDEO_ENHANCE: _VideoEnhanceOptions,
     JobType.VIDEO_UPSCALE: _VideoUpscaleOptions,
     JobType.VIDEO_INTERPOLATE: _VideoInterpolateOptions,
     JobType.MOTION_BLENDER: _BlenderOptions,
@@ -145,12 +155,14 @@ _MODEL_QUEUE_TYPES = {
     JobType.VISION_TRACK,
     JobType.VIDEO_GENERATE,
     JobType.VIDEO_GENERATE_SEQUENCE,
+    JobType.VIDEO_ENHANCE,
     JobType.VIDEO_UPSCALE,
     JobType.VIDEO_INTERPOLATE,
     JobType.MOTION_BLENDER,
 }
 
 _VIDEO_REQUIRED_TYPES = {
+    JobType.VIDEO_ENHANCE,
     JobType.MEDIA_PROXY,
     JobType.MEDIA_SCENES,
     JobType.MEDIA_TIMELINE,
@@ -170,6 +182,7 @@ def normalize_payload(job_type: JobType, payload: dict[str, Any]) -> dict[str, A
     if job_type in {
         JobType.VIDEO_GENERATE,
         JobType.VIDEO_GENERATE_SEQUENCE,
+        JobType.VIDEO_ENHANCE,
         JobType.MOTION_BLENDER,
     } and not normalized["approved"]:
         raise JobRequestError("This operation requires explicit user approval.")
@@ -192,6 +205,11 @@ def normalize_payload(job_type: JobType, payload: dict[str, Any]) -> dict[str, A
         raise JobRequestError(
             "COMFYUI_BASE_URL must be configured before submitting ComfyUI model jobs."
         )
+    if job_type == JobType.VIDEO_ENHANCE:
+        if not settings.comfyui_base_url:
+            raise JobRequestError(
+                "COMFYUI_BASE_URL must be configured before video enhancement."
+            )
     if job_type == JobType.MOTION_BLENDER and not settings.blender_executable:
         raise JobRequestError(
             "BLENDER_EXECUTABLE must point to Blender inside the model worker environment."
