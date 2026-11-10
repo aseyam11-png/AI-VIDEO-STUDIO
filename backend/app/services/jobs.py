@@ -200,20 +200,19 @@ def normalize_payload(job_type: JobType, payload: dict[str, Any]) -> dict[str, A
         total_duration = sum(shot["duration_seconds"] for shot in shots)
         if not 2 <= len(shots) <= 8 or total_duration > 80:
             raise JobRequestError("A generated sequence supports 2–8 shots and at most 80 seconds.")
-        if job_type == JobType.VIDEO_GENERATE_SEQUENCE:
-            try:
-                from app.services.job_policy import validate_generation_request
+        try:
+            from app.services.job_policy import validate_generation_request
 
-                for shot in shots:
-                    validate_generation_request(
-                        {
-                            "duration_seconds": shot["duration_seconds"],
-                            "workflow_id": "wan22_ti2v_5b_v1",
-                        },
-                        approved=normalized["approved"],
-                    )
-            except (PermissionError, ValueError) as exc:
-                raise JobRequestError(str(exc)) from exc
+            for shot in shots:
+                validate_generation_request(
+                    {
+                        "duration_seconds": shot["duration_seconds"],
+                        "workflow_id": "wan22_ti2v_5b_v1",
+                    },
+                    approved=normalized["approved"],
+                )
+        except (PermissionError, ValueError) as exc:
+            raise JobRequestError(str(exc)) from exc
     if job_type == JobType.VIDEO_GENERATE:
         try:
             from app.services.job_policy import validate_generation_request
