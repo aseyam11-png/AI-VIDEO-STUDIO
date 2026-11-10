@@ -78,6 +78,23 @@ class MultiSourceClipRequest(BaseModel):
     asset_id: UUID
     source_start_seconds: float = Field(ge=0, le=3600)
     duration_seconds: float = Field(gt=0, le=3600)
+    audio_gain_db: float = Field(default=0, ge=-60, le=12)
+    audio_muted: bool = False
+    audio_fade_in_seconds: float = Field(default=0, ge=0, le=60)
+    audio_fade_out_seconds: float = Field(default=0, ge=0, le=60)
+
+
+class TimelineAudioTrackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    track_id: UUID = Field(default_factory=uuid4)
+    asset_id: UUID
+    source_start_seconds: float = Field(default=0, ge=0, le=3600)
+    timeline_start_seconds: float = Field(default=0, ge=0, le=3600)
+    duration_seconds: float = Field(gt=0, le=3600)
+    gain_db: float = Field(default=-16, ge=-60, le=12)
+    fade_in_seconds: float = Field(default=0, ge=0, le=60)
+    fade_out_seconds: float = Field(default=0, ge=0, le=60)
 
 
 class ProjectTimelineRequest(BaseModel):
@@ -85,6 +102,7 @@ class ProjectTimelineRequest(BaseModel):
 
     fps: int = Field(default=30, ge=1, le=60)
     clips: list[MultiSourceClipRequest] = Field(max_length=100)
+    audio_tracks: list[TimelineAudioTrackRequest] = Field(default_factory=list, max_length=4)
 
 
 class ProjectTimelineRenderRequest(BaseModel):
@@ -136,6 +154,10 @@ async def upload_asset(project_id: str, file: Annotated[UploadFile, File()]) -> 
             stream.get("codec_type") == "video" for stream in streams
         ):
             raise ValueError("Uploaded file does not contain a video stream.")
+        if manifest["asset_type"] == "audio" and not any(
+            stream.get("codec_type") == "audio" for stream in streams
+        ):
+            raise ValueError("Uploaded file does not contain an audio stream.")
         manifest = await run_in_threadpool(
             update_asset_manifest,
             project_id,
