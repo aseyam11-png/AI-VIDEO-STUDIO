@@ -322,6 +322,7 @@ def test_video_sequence_executes_wan_shots_registers_assets_and_assembles_mp4(
         "wan22_ti2v_5b_v1",
     ]
     assert all(item[1]["source_path"] for item in calls)
+    assert len({item[1]["source_path"] for item in calls}) == 1
     assert result["shot_count"] == 2
     assert result["duration_seconds"] == pytest.approx(4.0)
     assert result["output_asset_id"]
