@@ -282,8 +282,6 @@ def _step_specs(
             )
         steps.append((JobType.MEDIA_PROXY, {"max_width": 1280, "fps": fps}))
         steps.append((JobType.MEDIA_SCENES, {"threshold": 27.0, "min_scene_len": 15}))
-        if request.upscale_output:
-            steps.append((JobType.VIDEO_UPSCALE, {"scale": 2}))
     else:
         raise WorkflowRequestError("Workflows support image or video source assets only.")
 
