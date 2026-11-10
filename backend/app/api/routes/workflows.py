@@ -79,6 +79,7 @@ def review_workflow_identity_route(
             str(workflow_id),
             approved=payload.approved,
             notes=payload.notes,
+            checks=payload.checks.model_dump(),
         )
     except WorkflowNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
