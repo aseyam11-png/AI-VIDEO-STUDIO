@@ -133,7 +133,7 @@ def test_video_enhancement_job_is_models_queue_and_requires_video_asset():
 
 
 def test_workflow_upscale_option_adds_video_enhancement_and_rejects_long_sources():
-    project = type("Project", (), {"target_fps": 24, "target_resolution": "640x480"})()
+    project = type("Project", (), {"target_fps": 25, "target_resolution": "640x480"})()
     request = WorkflowCreateRequest(
         project_id=uuid4(),
         asset_id=uuid4(),
@@ -152,6 +152,7 @@ def test_workflow_upscale_option_adds_video_enhancement_and_rejects_long_sources
     enhance_payload = next(payload for kind, payload in steps if kind == JobType.VIDEO_ENHANCE)
     assert enhance_payload["approved"] is True
     assert enhance_payload["scale"] == 2
+    assert enhance_payload["fps"] == 24
 
     with pytest.raises(workflow_engine.WorkflowRequestError, match="10 seconds"):
         workflow_engine._step_specs(
