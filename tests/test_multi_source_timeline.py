@@ -338,3 +338,58 @@ def test_render_multi_source_timeline_with_real_ffmpeg_and_mixed_audio(tmp_path)
     duration = float(result["metadata"]["format"]["duration"])
     assert 1.8 <= duration <= 2.2
 
+
+def test_scene_detection_results_can_be_reloaded_for_the_project_video(
+    tmp_path, monkeypatch
+):
+    project = _project(tmp_path, monkeypatch)
+    asset, _ = _video_asset(project["id"], "scenes.mp4")
+    client = TestClient(app)
+
+    missing = client.get(
+        f"/v1/projects/{project['id']}/assets/{asset['id']}/scenes"
+    )
+    assert missing.status_code == 404
+
+    detected_scenes = [
+        {
+            "id": "scene_0001",
+            "index": 1,
+            "start_seconds": 0.0,
+            "end_seconds": 2.5,
+            "duration_seconds": 2.5,
+        },
+        {
+            "id": "scene_0002",
+            "index": 2,
+            "start_seconds": 2.5,
+            "end_seconds": 5.0,
+            "duration_seconds": 2.5,
+        },
+    ]
+
+    def fake_detect_scenes(source, *, threshold, min_scene_len):
+        assert Path(source).is_file()
+        assert threshold == 27.0
+        assert min_scene_len == 15
+        return detected_scenes
+
+    monkeypatch.setattr(media_route, "detect_scenes", fake_detect_scenes)
+    detected = client.post(
+        f"/v1/projects/{project['id']}/assets/{asset['id']}/scenes",
+        json={"threshold": 27, "min_scene_len": 15},
+    )
+    assert detected.status_code == 200, detected.text
+    assert detected.json()["scene_count"] == 2
+
+    loaded = client.get(
+        f"/v1/projects/{project['id']}/assets/{asset['id']}/scenes"
+    )
+    assert loaded.status_code == 200, loaded.text
+    assert loaded.json()["scenes"] == detected_scenes
+
+    foreign_project = _project(tmp_path / "foreign", monkeypatch)
+    foreign = client.get(
+        f"/v1/projects/{foreign_project['id']}/assets/{asset['id']}/scenes"
+    )
+    assert foreign.status_code == 404
