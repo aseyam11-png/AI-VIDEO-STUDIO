@@ -638,7 +638,10 @@ def save_project_audio_mix(project_id: str, payload: ProjectAudioMixRequest) -> 
         get_project(project_id)
         timeline_path = project_dir(project_id) / "timelines" / f"project-{UUID(project_id)}.json"
         if not timeline_path.is_file():
-            raise HTTPException(status_code=404, detail="Save the video timeline before editing audio.")
+            raise HTTPException(
+                status_code=404,
+                detail="Save the video timeline before editing audio.",
+            )
         timeline = read_json(timeline_path)
         if timeline.get("project_id") != str(UUID(project_id)):
             raise HTTPException(
