@@ -101,6 +101,7 @@ def test_audio_mix_api_saves_levels_and_timing_and_invalidates_preview(
     voice, _ = _asset(project["id"], "voice.wav")
     music, _ = _asset(project["id"], "music.mp3")
     monkeypatch.setattr(media_route, "probe_media", _probe)
+    monkeypatch.setattr(pipeline, "probe_media", _probe)
     client = TestClient(app)
     saved_timeline = _saved_timeline(client, project, video)
     assert saved_timeline.status_code == 200, saved_timeline.text
@@ -178,6 +179,7 @@ def test_audio_mix_rejects_foreign_assets_invalid_ranges_and_non_audio_sources(
     audio, _ = _asset(project["id"], "voice.wav")
     foreign_audio, _ = _asset(other["id"], "foreign.wav")
     monkeypatch.setattr(media_route, "probe_media", _probe)
+    monkeypatch.setattr(pipeline, "probe_media", _probe)
     client = TestClient(app)
     assert _saved_timeline(client, project, video).status_code == 200
 
@@ -357,6 +359,62 @@ def test_audio_mix_api_accepts_video_audio_source_and_render_passes_manifest(
     assert rendered.status_code == 200, rendered.text
     assert captured["audio_mix_manifest"]["clips"][0]["asset_id"] == voice["id"]
     assert voice["id"] in captured["audio_sources"]
+
+
+def test_saving_a_new_video_timeline_invalidates_previous_audio_mix(
+    tmp_path, monkeypatch
+):
+    project = _project(tmp_path, monkeypatch)
+    video, _ = _asset(project["id"], "video.mp4")
+    voice, _ = _asset(project["id"], "voice.wav")
+    monkeypatch.setattr(media_route, "probe_media", _probe)
+    monkeypatch.setattr(pipeline, "probe_media", _probe)
+    client = TestClient(app)
+
+    first_timeline = _saved_timeline(client, project, video)
+    assert first_timeline.status_code == 200, first_timeline.text
+    audio_mix = client.put(
+        f"/v1/projects/{project['id']}/audio-mix",
+        json={
+            "clips": [
+                {
+                    "asset_id": voice["id"],
+                    "role": "voice",
+                    "timeline_start_seconds": 1,
+                    "source_start_seconds": 0,
+                    "duration_seconds": 3,
+                }
+            ]
+        },
+    )
+    assert audio_mix.status_code == 200, audio_mix.text
+    audio_path = (
+        media_route.project_dir(project["id"])
+        / "timelines"
+        / f"project-{project['id']}-audio-mix.json"
+    )
+    assert audio_path.is_file()
+
+    second_timeline = client.put(
+        f"/v1/projects/{project['id']}/timeline",
+        json={
+            "fps": 24,
+            "clips": [
+                {
+                    "clip_id": str(uuid4()),
+                    "asset_id": video["id"],
+                    "source_start_seconds": 1,
+                    "duration_seconds": 8,
+                }
+            ],
+        },
+    )
+    assert second_timeline.status_code == 200, second_timeline.text
+    assert not audio_path.exists()
+    fresh = client.get(f"/v1/projects/{project['id']}/audio-mix")
+    assert fresh.status_code == 200
+    assert fresh.json()["clips"] == []
+    assert fresh.json()["timeline_duration_seconds"] == 8
 
 
 def test_audio_mix_pipeline_can_render_music_without_original_video_audio(
