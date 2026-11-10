@@ -72,29 +72,34 @@ Keep credentials out of browser bundles. The API currently binds to localhost in
 
 Merged in [PR #7](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/7). Adds project-scoped clip manifests, OpenTimelineIO serialization, validated trim/reorder/remove operations and FFmpeg MP4 previews. The renderer is one sequential video lane; overlapping tracks and effects remain outside 6.1.
 
-### Phase 6.2 — Arabic timeline editor UI (implemented in this branch)
+### Phase 6.2 — Arabic timeline editor UI (merged)
 
-Adds an RTL timeline workspace to the served `/studio/` application. Users can add video assets from the selected project, edit source in-points and clip durations, reorder and remove clips, save the ordered manifest through the Phase 6.1 API, render a preview and download the MP4. The API also supports an explicitly empty saved timeline, so removing the last clip is a valid edit.
+Merged in [PR #8](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/8). Adds an RTL timeline workspace to the served /studio/ application. Users can add video assets from the selected project, edit source in-points and clip durations, reorder and remove clips, save the ordered manifest, render a preview and download the MP4.
 
-See [Phase 6.2 — Arabic Timeline Editor](20-PHASE-6.2-ARABIC-TIMELINE-EDITOR.md). Automated checks validate the UI integration and JavaScript syntax; real browser and media acceptance on the target Windows host remain separate.
+See [Phase 6.2 — Arabic Timeline Editor](20-PHASE-6.2-ARABIC-TIMELINE-EDITOR.md).
 
-### Phase 6.3 — Scene/shot selection (implemented in this branch)
+### Phase 6.3 — Scene/shot selection (merged)
 
-Adds a saved scene-results read endpoint and an RTL scene-selection workspace. Users can run ContentDetector against the selected project video, reload its saved scene manifest, select individual scenes, and append the chosen source ranges as separate clips in the current sequential timeline. Scene selection validates source bounds, clip-count and total-duration limits before adding any selected scene.
+Merged in [PR #10](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/10). Adds saved scene-results reads and an RTL scene-selection workspace. Users can run ContentDetector against a selected project video, reload saved results, select individual scenes, and append the chosen source ranges as separate clips. This is deterministic scene-boundary detection; semantic AI ranking and transcript-aware recommendations are not claimed.
 
-See [Phase 6.3 — Scene and Shot Selection](21-PHASE-6.3-SCENE-SHOT-SELECTION.md). This increment uses deterministic scene-boundary detection; it does not claim semantic AI ranking or transcript-aware recommendations.
+See [Phase 6.3 — Scene and Shot Selection](21-PHASE-6.3-SCENE-SHOT-SELECTION.md).
 
-### Phase 6.4 — Arabic transcription and timeline SRT (implemented in this branch)
+### Phase 6.4 — Arabic transcription and timeline SRT (merged)
 
-Adds a saved-transcription read endpoint, a Studio control for explicit WhisperX transcription (Arabic/English, with optional word alignment), and a project-level SRT generator. Transcript segments are intersected with each clip's source in/out range, cropped to that range, and shifted to the clip's position on the assembled timeline. Reused source videos therefore receive correctly repeated captions at each timeline position. SRT files are UTF-8 with BOM for Arabic compatibility and are invalidated whenever the project timeline changes.
+Merged in [PR #11](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/11). Adds saved-transcription reads, explicit WhisperX transcription controls for Arabic/English with optional word alignment, and project-level SRT generation. Transcript segments are cropped to each clip's source in/out range and shifted to their positions on the assembled timeline. Timeline edits invalidate the saved SRT.
 
-See [Phase 6.4 — Arabic Captions and Speech Sync](22-PHASE-6.4-ARABIC-CAPTIONS-SPEECH-SYNC.md). This increment produces a separate downloadable SRT file; burned-in captions and embedded MP4 subtitle streams remain future work. Word-level alignment is reported accurately and is not claimed when the language/model cannot provide it.
+See [Phase 6.4 — Arabic Captions and Speech Sync](22-PHASE-6.4-ARABIC-CAPTIONS-SPEECH-SYNC.md). This produces a separate downloadable SRT; burned-in captions and embedded MP4 subtitle streams remain future work.
+
+### Phase 6.5 — Audio mixing and synchronization (implemented in this branch)
+
+Adds project-scoped audio asset uploads and a saved audio-mix manifest. Users can place voice, music and sound-effect clips on the video timeline, trim their source ranges, set gain and master levels, apply fades and optional FFmpeg noise reduction, and choose whether to retain or denoise source-video audio. The FFmpeg preview export mixes the selected sources into one synchronized stereo AAC stream. Saving a changed video timeline invalidates the previous audio mix and preview.
+
+See [Phase 6.5 — Audio Mixing and Sync](23-PHASE-6.5-AUDIO-MIXING-SYNC.md). This is not a waveform editor or real-time audio engine. The current noise reduction uses FFmpeg afftdn; it does not claim DeepFilterNet inference. CI and target-host listening acceptance remain required before merging and production use.
 
 ### Remaining Phase 6 increments
 
 Deliver in independently testable increments:
 
-- Audio mixing, voice/music levels, denoise and synchronization (6.5).
 - Transitions, titles, overlays and motion graphics using reviewed Blender/ComfyUI templates (6.6).
 - Multi-shot generation and deterministic assembly of generated clips (6.7).
 - Video enhancement pipeline with frame extraction/reassembly only after output and storage validation (6.8).
