@@ -205,6 +205,51 @@
             <p id="scene-detection-help" class="hint">يُحفظ تحليل المشاهد مع ملف الفيديو داخل المشروع، ويمكن إعادة تحميله دون تشغيل التحليل مرة أخرى.</p>
           </div>
 
+          <div class="subtitle-workspace">
+            <div class="subtitle-workspace-heading">
+              <div>
+                <span class="eyebrow">SPEECH & CAPTIONS</span>
+                <h4>تفريغ الكلام والترجمة المتزامنة</h4>
+                <p>فرّغ صوت فيديو المصدر، ثم أنشئ ملف ترجمة SRT بتوقيت يتبع قصّ وترتيب المقاطع في المشروع.</p>
+              </div>
+              <span id="transcription-state" class="quiet">لم يتم التفريغ</span>
+            </div>
+            <div class="subtitle-controls">
+              <div>
+                <label class="field-label" for="transcription-language">لغة الكلام</label>
+                <select id="transcription-language" class="control">
+                  <option value="ar" selected>العربية</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+              <label class="subtitle-align-option">
+                <input id="transcription-align" type="checkbox" checked>
+                <span>طلب محاذاة الكلمات</span>
+              </label>
+              <div class="subtitle-control-action">
+                <button id="transcription-run" class="button button-outline" type="button" disabled>تفريغ صوت الفيديو الحالي</button>
+              </div>
+            </div>
+            <div id="transcription-preview-panel" class="transcription-preview-panel" hidden>
+              <div class="subtitle-preview-heading">
+                <strong id="transcription-segment-count">0 مقطع كلام</strong>
+                <span id="transcription-alignment-status">حالة المحاذاة: غير مطلوبة</span>
+              </div>
+              <div id="transcription-segments" class="transcription-segments"></div>
+            </div>
+            <div class="timeline-subtitle-export">
+              <div>
+                <strong>ترجمة المشروع بالكامل</strong>
+                <p>تُقصّ الجمل على حدود كل مقطع ويُعاد حساب توقيتها حسب موضعه في الخط الزمني. يتطلب ذلك تفريغ كل فيديو مستخدم في المشروع.</p>
+              </div>
+              <div class="subtitle-export-actions">
+                <button id="timeline-subtitles-create" class="button button-primary" type="button" disabled>إنشاء ترجمة SRT للخط الزمني</button>
+                <a id="timeline-subtitles-download" class="button button-secondary" href="#" download hidden>تحميل ملف SRT</a>
+              </div>
+              <p id="timeline-subtitles-state" class="hint">لم تُنشأ ترجمة لهذا الخط الزمني بعد.</p>
+            </div>
+          </div>
+
           <div class="timeline-summary">
             <span id="timeline-clip-count">0 مقطع</span>
             <span id="timeline-total-duration">المدة الإجمالية: 0 ثانية</span>
