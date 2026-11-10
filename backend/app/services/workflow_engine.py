@@ -110,6 +110,8 @@ def _step_specs(
     asset_type: str,
     request: WorkflowCreateRequest,
     project: ProjectRecord,
+    *,
+    asset_metadata: dict | None = None,
 ) -> list[tuple[JobType, dict]]:
     plan = request.creative_plan
     fps = min(project.target_fps, 60)
@@ -242,7 +244,7 @@ def _step_specs(
                 "Video generation is an image-to-video operation; source asset is already a video."
             )
         if request.upscale_output:
-            source_probe = (asset.metadata_json or {}).get("probe", {})
+            source_probe = (asset_metadata or {}).get("probe", {})
             try:
                 source_duration = float(source_probe.get("format", {}).get("duration"))
             except (AttributeError, TypeError, ValueError):
@@ -370,7 +372,12 @@ def create_workflow_run(
                     "Source asset does not belong to the requested project."
                 )
 
-            specs = _step_specs(asset.asset_type, request, project)
+            specs = _step_specs(
+                asset.asset_type,
+                request,
+                project,
+                asset_metadata=asset.metadata_json or {},
+            )
             normalized_specs = []
             for job_type, payload in specs:
                 try:
