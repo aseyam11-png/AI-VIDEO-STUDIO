@@ -1,3 +1,4 @@
+import shutil
 import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -491,6 +492,14 @@ def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
             raise JobCancelled("Cancellation requested.")
         _finish_job(job_id, dispatch_generation, result=result)
     except Exception as exc:
+        if snapshot.get("job_type") == JobType.VIDEO_ENHANCE.value:
+            output_root = (
+                project_dir(snapshot["project_id"])
+                / "ai_outputs"
+                / str(snapshot["id"])
+            )
+            shutil.rmtree(output_root / "frames", ignore_errors=True)
+            shutil.rmtree(output_root / "comfyui", ignore_errors=True)
         _finish_job(job_id, dispatch_generation, error=exc)
     finally:
         stop_event.set()
