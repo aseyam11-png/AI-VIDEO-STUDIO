@@ -147,8 +147,6 @@ def execute_comfyui_job(
     return result
 
 
-
-
 def execute_video_sequence(
     job: dict[str, Any],
     source: Path,
@@ -192,8 +190,10 @@ def execute_video_sequence(
         shot_dir = output_root / f"shot-{index + 1:02d}"
         shot_dir.mkdir(parents=True, exist_ok=True)
 
-        def shot_progress(percent: int, stage: str, message: str) -> None:
-            report_shot_progress(index, percent, stage, message)
+        def shot_progress(
+            percent: int, stage: str, message: str, shot_index: int = index
+        ) -> None:
+            report_shot_progress(shot_index, percent, stage, message)
 
         generated = client.run_workflow(
             "wan22_ti2v_5b_v1",
