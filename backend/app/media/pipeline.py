@@ -378,6 +378,21 @@ def extract_video_frames(
     except (TypeError, ValueError, KeyError) as exc:
         raise ValueError("Source video dimensions are invalid.") from exc
 
+    rotation_value = None
+    for side_data in video_stream.get("side_data_list", []):
+        if side_data.get("rotation") is not None:
+            rotation_value = side_data["rotation"]
+            break
+    if rotation_value is None:
+        rotation_value = (video_stream.get("tags") or {}).get("rotate")
+    try:
+        rotation = round(float(rotation_value or 0)) % 360
+    except (TypeError, ValueError):
+        rotation = 0
+    if rotation in {90, 270}:
+        # FFmpeg auto-rotates decoded frames; use display dimensions for validation.
+        width, height = height, width
+
     source_rate = video_stream.get("avg_frame_rate") or video_stream.get("r_frame_rate")
     try:
         if isinstance(source_rate, str) and "/" in source_rate:
@@ -483,7 +498,7 @@ def assemble_upscaled_video(
     cancel_check: Callable[[], bool] | None = None,
 ) -> dict:
     """Rebuild the enhanced image sequence and retain the original audio stream."""
-    if not 1 <= frame_count <= 300 or fps not in {15, 24, 30}:
+    if not 1 <= frame_count <= 300 or not 1 <= fps <= 30:
         raise ValueError("Enhanced frame sequence is outside supported limits.")
     if not all(math.isfinite(value) for value in (duration_seconds,)):
         raise ValueError("Enhanced video duration must be finite.")
