@@ -130,6 +130,20 @@ TOOL_SPECS: tuple[dict[str, typing.Any], ...] = (
         "capability_key": "realesrgan",
     },
     {
+        "tool_id": "video.enhance",
+        "name": "Video Enhancement",
+        "category": "restoration",
+        "runtime": "ComfyUI / Real-ESRGAN + FFmpeg",
+        "description": (
+            "Upscale a short video by enhancing each frame and restoring its original audio. "
+            "Limited to 10 seconds and 300 frames per job."
+        ),
+        "execution": "durable_job",
+        "approval_required": True,
+        "workflow_id": "realesrgan_upscale_v1",
+        "capability_key": "realesrgan",
+    },
+    {
         "tool_id": "video.interpolate",
         "name": "Frame Interpolation",
         "category": "restoration",
