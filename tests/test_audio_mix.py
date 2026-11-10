@@ -468,7 +468,7 @@ def test_audio_mix_real_ffmpeg_places_and_mixes_external_music(tmp_path):
         },
         audio_mix_manifest={
             "schema_version": 1,
-            "project_id": None,
+            "project_id": project_id,
             "source_audio_enabled": True,
             "levels_db": {"voice": -8, "music": -12, "sfx": -6},
             "clips": [
