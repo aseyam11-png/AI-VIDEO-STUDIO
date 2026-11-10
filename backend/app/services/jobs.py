@@ -86,6 +86,24 @@ class _VideoGenerateOptions(_StrictOptions):
     approved: bool = False
 
 
+class _VideoShotOptions(_StrictOptions):
+    prompt: str = Field(min_length=1, max_length=4000)
+    negative_prompt: str = Field(default="", max_length=2000)
+    duration_seconds: int = Field(ge=1, le=10)
+
+
+class _VideoSequenceOptions(_StrictOptions):
+    shots: list[_VideoShotOptions] = Field(min_length=2, max_length=8)
+    generation_width: int = Field(default=832, ge=256, le=1280, multiple_of=16)
+    generation_height: int = Field(default=480, ge=256, le=1280, multiple_of=16)
+    output_width: int = Field(default=1920, ge=320, le=3840)
+    output_height: int = Field(default=1080, ge=240, le=2160)
+    fps: int = Field(default=30, ge=1, le=60)
+    crf: int = Field(default=20, ge=0, le=35)
+    interpolate_factor: Literal[1, 2] = 1
+    approved: bool = False
+
+
 class _VideoUpscaleOptions(_StrictOptions):
     scale: int = Field(default=2, ge=2, le=4)
 
@@ -114,6 +132,7 @@ _OPTION_MODELS = {
     JobType.VISION_DETECT: _VisionDetectOptions,
     JobType.VISION_TRACK: _VisionTrackOptions,
     JobType.VIDEO_GENERATE: _VideoGenerateOptions,
+    JobType.VIDEO_GENERATE_SEQUENCE: _VideoSequenceOptions,
     JobType.VIDEO_UPSCALE: _VideoUpscaleOptions,
     JobType.VIDEO_INTERPOLATE: _VideoInterpolateOptions,
     JobType.MOTION_BLENDER: _BlenderOptions,
@@ -125,6 +144,7 @@ _MODEL_QUEUE_TYPES = {
     JobType.VISION_DETECT,
     JobType.VISION_TRACK,
     JobType.VIDEO_GENERATE,
+    JobType.VIDEO_GENERATE_SEQUENCE,
     JobType.VIDEO_UPSCALE,
     JobType.VIDEO_INTERPOLATE,
     JobType.MOTION_BLENDER,
@@ -147,7 +167,11 @@ def normalize_payload(job_type: JobType, payload: dict[str, Any]) -> dict[str, A
         normalized = _OPTION_MODELS[job_type].model_validate(payload).model_dump()
     except ValidationError as exc:
         raise JobRequestError(exc.errors(include_url=False)) from exc
-    if job_type in {JobType.VIDEO_GENERATE, JobType.MOTION_BLENDER} and not normalized["approved"]:
+    if job_type in {
+        JobType.VIDEO_GENERATE,
+        JobType.VIDEO_GENERATE_SEQUENCE,
+        JobType.MOTION_BLENDER,
+    } and not normalized["approved"]:
         raise JobRequestError("This operation requires explicit user approval.")
     if job_type == JobType.SPEECH_TRANSCRIBE and not settings.speech_worker_enabled:
         raise JobRequestError(
@@ -172,6 +196,24 @@ def normalize_payload(job_type: JobType, payload: dict[str, Any]) -> dict[str, A
         raise JobRequestError(
             "BLENDER_EXECUTABLE must point to Blender inside the model worker environment."
         )
+    if job_type == JobType.VIDEO_GENERATE_SEQUENCE:
+        shots = normalized["shots"]
+        total_duration = sum(shot["duration_seconds"] for shot in shots)
+        if not 2 <= len(shots) <= 8 or total_duration > 80:
+            raise JobRequestError("A generated sequence supports 2–8 shots and at most 80 seconds.")
+        try:
+            from app.services.job_policy import validate_generation_request
+
+            for shot in shots:
+                validate_generation_request(
+                    {
+                        "duration_seconds": shot["duration_seconds"],
+                        "workflow_id": "wan22_ti2v_5b_v1",
+                    },
+                    approved=normalized["approved"],
+                )
+        except (PermissionError, ValueError) as exc:
+            raise JobRequestError(str(exc)) from exc
     if job_type == JobType.VIDEO_GENERATE:
         try:
             from app.services.job_policy import validate_generation_request
@@ -302,9 +344,12 @@ def create_job(data: JobCreate) -> tuple[dict[str, Any], bool]:
                 raise JobRequestError("Asset was not found in the requested project.")
             if data.job_type in _VIDEO_REQUIRED_TYPES and asset.asset_type != "video":
                 raise JobRequestError("This job type requires a video asset.")
-            if data.job_type == JobType.VIDEO_GENERATE and asset.asset_type != "image":
+            if data.job_type in {
+                JobType.VIDEO_GENERATE,
+                JobType.VIDEO_GENERATE_SEQUENCE,
+            } and asset.asset_type != "image":
                 raise JobRequestError(
-                    "The initial Wan 2.2 TI2V workflow requires an image reference asset."
+                    "Wan 2.2 generation requires an image reference asset."
                 )
             if asset.asset_type not in {"video", "image"}:
                 raise JobRequestError("The selected asset type is not supported for model jobs.")
