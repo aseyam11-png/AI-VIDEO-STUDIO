@@ -230,7 +230,10 @@ def _step_specs(
                     JobType.VIDEO_ENHANCE,
                     {
                         "scale": 2,
-                        "fps": min((15, 24, 30), key=lambda supported_fps: abs(supported_fps - fps)),
+                        "fps": min(
+                            (15, 24, 30),
+                            key=lambda supported_fps: abs(supported_fps - fps),
+                        ),
                         "max_duration_seconds": 10,
                         "crf": 20,
                         "approved": True,
@@ -259,7 +262,10 @@ def _step_specs(
                     JobType.VIDEO_ENHANCE,
                     {
                         "scale": 2,
-                        "fps": min((15, 24, 30), key=lambda supported_fps: abs(supported_fps - fps)),
+                        "fps": min(
+                            (15, 24, 30),
+                            key=lambda supported_fps: abs(supported_fps - fps),
+                        ),
                         "max_duration_seconds": 10,
                         "crf": 20,
                         "approved": True,
