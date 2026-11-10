@@ -12,13 +12,13 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.drop_constraint("ck_workflow_runs_status", "workflow_runs", type_="check")
-    op.create_check_constraint(
-        "ck_workflow_runs_status",
-        "workflow_runs",
-        "status IN ('awaiting_approval', 'awaiting_identity_review', 'queued', "
-        "'running', 'cancel_requested', 'succeeded', 'failed', 'cancelled')",
-    )
+    with op.batch_alter_table("workflow_runs") as batch_op:
+        batch_op.drop_constraint("ck_workflow_runs_status", type_="check")
+        batch_op.create_check_constraint(
+            "ck_workflow_runs_status",
+            "status IN ('awaiting_approval', 'awaiting_identity_review', 'queued', "
+            "'running', 'cancel_requested', 'succeeded', 'failed', 'cancelled')",
+        )
 
 
 def downgrade() -> None:
@@ -27,10 +27,10 @@ def downgrade() -> None:
         "error_message = COALESCE(error_message, 'Identity review was pending during downgrade.') "
         "WHERE status = 'awaiting_identity_review'"
     )
-    op.drop_constraint("ck_workflow_runs_status", "workflow_runs", type_="check")
-    op.create_check_constraint(
-        "ck_workflow_runs_status",
-        "workflow_runs",
-        "status IN ('awaiting_approval', 'queued', 'running', "
-        "'cancel_requested', 'succeeded', 'failed', 'cancelled')",
-    )
+    with op.batch_alter_table("workflow_runs") as batch_op:
+        batch_op.drop_constraint("ck_workflow_runs_status", type_="check")
+        batch_op.create_check_constraint(
+            "ck_workflow_runs_status",
+            "status IN ('awaiting_approval', 'queued', 'running', "
+            "'cancel_requested', 'succeeded', 'failed', 'cancelled')",
+        )
