@@ -738,7 +738,7 @@ def advance_workflow_for_job(db: Session, job: JobRecord) -> None:
                 "reference_asset_id": run.asset_id,
                 "reference_sha256": (run.options_json or {}).get("identity_reference_sha256"),
                 "output_asset_id": effective_asset_id,
-                "preview_url": (job.result_json or {}).get("download_url"),
+                "preview_url": f"/v1/projects/{run.project_id}/assets/{effective_asset_id}/file",
                 "generation_job_id": job.id,
                 "required_before_export": True,
                 "created_at": now.isoformat(),
