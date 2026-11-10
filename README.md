@@ -4,7 +4,7 @@
 
 Describe a video in Arabic, provide source media and product references, approve a creative plan, then orchestrate analysis, selected AI generation, editing, motion graphics, audio processing, quality checks, and final export.
 
-> **Current state (2026-11-09): Phases 0.5–3 are merged into `main`.** Phase 3 adds durable sequential workflows and passed GitHub Actions run 120 (Python checks and Compose integration) before merge. The repository is still **not production-ready**: model weights and exported ComfyUI workflows are not provisioned, real inference/GPU performance has not been accepted on the target machine, and the Arabic UI is not yet connected to the API.
+> **Current state (2026-11-10): Phases 0.5–6.5 are merged into `main`.** Phase 6.5 audio mixing is merged in PR #12 after Python/Ruff, FFmpeg integration, Windows script and Compose integration checks passed. Phase 6.6 transitions, Arabic titles and image overlays are being implemented on `feat/phase-6.6-transitions-titles-motion`. The Arabic RTL Studio is connected to the API. The repository is still **not production-ready**: real model weights/workflows, target-host GPU inference, audio listening, browser acceptance, security/operations and full release acceptance remain open.
 
 ## Product scope
 
@@ -68,7 +68,7 @@ Download the preview:
 
     GET /v1/projects/{project_id}/assets/{asset_id}/rendered
 
-The current timeline renderer handles ordered cuts from **one source video**. It does not yet support multi-source editing, overlays, transitions, subtitles, motion graphics, or AI-generated shots. Those are later phases.
+The current timeline renderer supports sequential cuts across **multiple source videos**, with saved project timelines, Arabic transcription/SRT and synchronized audio mixing. Phase 6.6 adds transitions, titles, basic motion and image overlays; advanced template-driven Blender/ComfyUI motion graphics and generated shots remain later work.
 
 ## Phase 1 durable job API
 
