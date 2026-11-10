@@ -164,10 +164,8 @@ def execute_video_enhancement(
     job_id = str(UUID(job["id"]))
     payload = job["payload"]
     media_root = Path(settings.media_root).expanduser().resolve()
-    try:
-        source_relative = source.resolve().relative_to(media_root).as_posix()
-    except ValueError as exc:
-        raise ValueError("Video enhancement source must remain inside MEDIA_ROOT.") from exc
+    if not source.resolve().is_relative_to(media_root):
+        raise ValueError("Video enhancement source must remain inside MEDIA_ROOT.")
 
     output_root = project_dir(project_id) / "ai_outputs" / str(job_id)
     extracted_dir = output_root / "frames" / "source"
