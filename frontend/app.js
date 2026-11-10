@@ -8,6 +8,9 @@
     project: null,
     assets: [],
     selectedAsset: null,
+    timelineManifest: null,
+    timelineClips: [],
+    timelineDirty: false,
     workflow: null,
     pollHandle: null,
     uploading: false
@@ -68,7 +71,9 @@
         : Array.isArray(data.detail)
           ? data.detail.map((item) => item.msg || JSON.stringify(item)).join("، ")
           : `HTTP ${response.status}`;
-      throw new Error(detail);
+      const error = new Error(detail);
+      error.status = response.status;
+      throw error;
     }
     return data;
   }
@@ -223,6 +228,7 @@
       const matching = state.assets.find((asset) => asset.id === preferredAsset && asset.asset_type === "video");
       state.selectedAsset = matching || state.assets.find((asset) => asset.asset_type === "video") || null;
       renderAssets();
+      await loadProjectTimeline(projectId);
       setProjectControls();
       const savedWorkflow = localStorage.getItem("studio.workflowId");
       if (savedWorkflow && localStorage.getItem("studio.workflowProjectId") === projectId) {
@@ -261,7 +267,337 @@
       $("asset-name").textContent = state.selectedAsset.original_filename || state.selectedAsset.stored_filename;
       $("asset-meta").textContent = `${formatBytes(state.selectedAsset.size_bytes)} · ${state.selectedAsset.status || "ready"}`;
     }
+    renderTimelineEditor();
     setProjectControls();
+  }
+
+  function getAssetDuration(asset) {
+    const value = Number(asset?.probe?.format?.duration);
+    return Number.isFinite(value) && value > 0 ? value : null;
+  }
+
+  function getAssetLabel(asset) {
+    return asset?.original_filename || asset?.stored_filename || "فيديو دون اسم";
+  }
+
+  function timelineEndpoint() {
+    return state.project
+      ? `/v1/projects/${encodeURIComponent(state.project.id)}/timeline`
+      : null;
+  }
+
+  function timelineTotalDuration() {
+    return state.timelineClips.reduce((total, clip) => total + Number(clip.duration_seconds || 0), 0);
+  }
+
+  function resetTimeline() {
+    state.timelineManifest = null;
+    state.timelineClips = [];
+    state.timelineDirty = false;
+    const preview = $("timeline-preview");
+    if (preview) {
+      preview.pause();
+      preview.removeAttribute("src");
+      preview.load();
+    }
+    if ($("timeline-preview-wrap")) $("timeline-preview-wrap").hidden = true;
+    if ($("timeline-download")) {
+      $("timeline-download").hidden = true;
+      $("timeline-download").removeAttribute("href");
+    }
+    renderTimelineEditor();
+  }
+
+  async function loadProjectTimeline(projectId) {
+    resetTimeline();
+    if (!projectId) return;
+    try {
+      const manifest = await api(`/v1/projects/${encodeURIComponent(projectId)}/timeline`);
+      if (manifest.project_id !== projectId || !Array.isArray(manifest.clips)) {
+        throw new Error("بيانات الخط الزمني لا تخص المشروع المحدد أو أن بنيتها غير صالحة.");
+      }
+      state.timelineManifest = manifest;
+      state.timelineClips = manifest.clips.map((clip) => ({
+        clip_id: clip.clip_id,
+        asset_id: clip.asset_id,
+        source_start_seconds: Number(clip.source_start_seconds),
+        duration_seconds: Number(clip.duration_seconds)
+      }));
+    } catch (error) {
+      if (error.status !== 404) {
+        notice(`تعذّر تحميل الخط الزمني: ${error.message}`, "error");
+      }
+    }
+    renderTimelineEditor();
+  }
+
+  function updateTimelineSummary() {
+    const videos = state.assets.filter((asset) => asset.asset_type === "video");
+    const total = timelineTotalDuration();
+    $("timeline-clip-count").textContent = `${state.timelineClips.length} مقطع`;
+    $("timeline-total-duration").textContent = `المدة الإجمالية: ${formatDuration(total)}`;
+    $("timeline-empty").hidden = state.timelineClips.length > 0;
+    $("timeline-state").textContent = state.timelineDirty
+      ? "تغييرات غير محفوظة"
+      : state.timelineClips.length
+        ? "تم الحفظ"
+        : "لا توجد مقاطع";
+    $("timeline-save").disabled = !state.project || !state.timelineClips.length || !state.timelineDirty;
+    $("timeline-render").disabled = !state.project || !state.timelineClips.length;
+    $("timeline-add-clip").disabled = !state.project || !videos.length;
+    $("timeline-source").disabled = !videos.length;
+    $("timeline-help").textContent = state.timelineDirty
+      ? "لديك تغييرات لم تُحفظ. احفظ الخط الزمني قبل تصدير المعاينة."
+      : "يمكنك تعديل القص وإعادة ترتيب المقاطع. تبقى المعاينة السابقة صالحة حتى تغيّر الخط الزمني.";
+  }
+
+  function renderTimelineEditor() {
+    const sourceSelect = $("timeline-source");
+    const list = $("timeline-clip-list");
+    if (!sourceSelect || !list) return;
+    const videos = state.assets.filter((asset) => asset.asset_type === "video");
+    const previousSource = sourceSelect.value;
+    sourceSelect.replaceChildren();
+    if (!videos.length) {
+      sourceSelect.add(new Option("ارفع فيديوهات للمشروع أولاً", ""));
+    } else {
+      videos.forEach((asset) => sourceSelect.add(new Option(getAssetLabel(asset), asset.id)));
+      sourceSelect.value = videos.some((asset) => asset.id === previousSource)
+        ? previousSource
+        : videos[0].id;
+    }
+
+    list.replaceChildren();
+    state.timelineClips.forEach((clip, index) => {
+      const asset = videos.find((item) => item.id === clip.asset_id);
+      const card = document.createElement("article");
+      card.className = "timeline-clip";
+      card.dataset.clipId = clip.clip_id;
+
+      const header = document.createElement("div");
+      header.className = "timeline-clip-header";
+      const heading = document.createElement("strong");
+      heading.textContent = `${String(index + 1).padStart(2, "0")} · ${getAssetLabel(asset)}`;
+      const position = document.createElement("span");
+      position.textContent = `موضع ${index + 1}`;
+      header.append(heading, position);
+
+      const fields = document.createElement("div");
+      fields.className = "timeline-clip-fields";
+      [
+        { key: "source_start_seconds", label: "بداية المصدر", min: 0, max: 3600 },
+        { key: "duration_seconds", label: "مدة المقطع", min: 0.01, max: 3600 }
+      ].forEach((field) => {
+        const wrap = document.createElement("label");
+        wrap.className = "timeline-clip-field";
+        const caption = document.createElement("span");
+        caption.textContent = `${field.label} (ث)`;
+        const input = document.createElement("input");
+        input.className = "control";
+        input.type = "number";
+        input.min = String(field.min);
+        input.max = String(field.max);
+        input.step = "0.01";
+        input.value = String(clip[field.key]);
+        input.dataset.clipId = clip.clip_id;
+        input.dataset.clipField = field.key;
+        input.inputMode = "decimal";
+        wrap.append(caption, input);
+        fields.append(wrap);
+      });
+
+      const actions = document.createElement("div");
+      actions.className = "timeline-clip-actions";
+      [
+        { action: "up", label: "↑ للأعلى", disabled: index === 0 },
+        { action: "down", label: "↓ للأسفل", disabled: index === state.timelineClips.length - 1 },
+        { action: "remove", label: "حذف المقطع", disabled: false }
+      ].forEach((item) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = item.action === "remove" ? "timeline-remove" : "timeline-move";
+        button.textContent = item.label;
+        button.disabled = item.disabled;
+        button.dataset.clipAction = item.action;
+        button.dataset.clipId = clip.clip_id;
+        actions.append(button);
+      });
+
+      card.append(header, fields, actions);
+      list.append(card);
+    });
+    updateTimelineSummary();
+  }
+
+  function markTimelineDirty() {
+    state.timelineDirty = true;
+    if ($("timeline-preview-wrap")) $("timeline-preview-wrap").hidden = true;
+    if ($("timeline-download")) $("timeline-download").hidden = true;
+    updateTimelineSummary();
+  }
+
+  function addTimelineClip() {
+    const assetId = $("timeline-source").value;
+    const asset = state.assets.find((item) => item.id === assetId && item.asset_type === "video");
+    if (!asset) {
+      notice("اختر فيديو صالحًا من مواد المشروع أولاً.", "error");
+      return;
+    }
+    if (state.timelineClips.length >= 100) {
+      notice("الحد الأقصى للخط الزمني هو 100 مقطع.", "error");
+      return;
+    }
+    const sourceStart = Number($("timeline-in").value);
+    const duration = Number($("timeline-duration").value);
+    const sourceDuration = getAssetDuration(asset);
+    if (!Number.isFinite(sourceStart) || sourceStart < 0 ||
+        !Number.isFinite(duration) || duration <= 0) {
+      notice("أدخل بداية مصدر غير سالبة ومدة أكبر من صفر.", "error");
+      return;
+    }
+    if (sourceDuration !== null && sourceStart + duration > sourceDuration + 0.001) {
+      notice("نهاية القص تتجاوز مدة الفيديو المصدر.", "error");
+      return;
+    }
+    if (timelineTotalDuration() + duration > 3600) {
+      notice("لا يمكن أن تتجاوز مدة الخط الزمني 60 دقيقة.", "error");
+      return;
+    }
+    state.timelineClips.push({
+      clip_id: uuid(),
+      asset_id: asset.id,
+      source_start_seconds: sourceStart,
+      duration_seconds: duration
+    });
+    markTimelineDirty();
+    renderTimelineEditor();
+    notice("أُضيف المقطع إلى الخط الزمني. احفظ التعديلات لتثبيتها.", "success");
+  }
+
+  function handleTimelineClipChange(event) {
+    const input = event.target.closest("[data-clip-field]");
+    if (!input) return;
+    const clip = state.timelineClips.find((item) => item.clip_id === input.dataset.clipId);
+    if (!clip) return;
+    const value = Number(input.value);
+    const asset = state.assets.find((item) => item.id === clip.asset_id);
+    const sourceDuration = getAssetDuration(asset);
+    const field = input.dataset.clipField;
+    const valid = Number.isFinite(value) &&
+      (field === "source_start_seconds" ? value >= 0 : value > 0) &&
+      value <= 3600;
+    if (!valid) {
+      notice("قيمة القص أو المدة غير صالحة.", "error");
+      input.value = String(clip[field]);
+      return;
+    }
+    const nextStart = field === "source_start_seconds" ? value : clip.source_start_seconds;
+    const nextDuration = field === "duration_seconds" ? value : clip.duration_seconds;
+    if (sourceDuration !== null && nextStart + nextDuration > sourceDuration + 0.001) {
+      notice("نهاية القص تتجاوز مدة الفيديو المصدر.", "error");
+      input.value = String(clip[field]);
+      return;
+    }
+    if (field === "duration_seconds" &&
+        timelineTotalDuration() - clip.duration_seconds + value > 3600) {
+      notice("لا يمكن أن تتجاوز مدة الخط الزمني 60 دقيقة.", "error");
+      input.value = String(clip[field]);
+      return;
+    }
+    clip[field] = value;
+    markTimelineDirty();
+  }
+
+  function handleTimelineClipAction(event) {
+    const button = event.target.closest("[data-clip-action]");
+    if (!button || button.disabled) return;
+    const index = state.timelineClips.findIndex((item) => item.clip_id === button.dataset.clipId);
+    if (index < 0) return;
+    const action = button.dataset.clipAction;
+    if (action === "remove") {
+      state.timelineClips.splice(index, 1);
+    } else if (action === "up" && index > 0) {
+      [state.timelineClips[index - 1], state.timelineClips[index]] =
+        [state.timelineClips[index], state.timelineClips[index - 1]];
+    } else if (action === "down" && index < state.timelineClips.length - 1) {
+      [state.timelineClips[index + 1], state.timelineClips[index]] =
+        [state.timelineClips[index], state.timelineClips[index + 1]];
+    }
+    markTimelineDirty();
+    renderTimelineEditor();
+  }
+
+  async function saveProjectTimeline() {
+    if (!state.project || !state.timelineClips.length) return false;
+    const button = $("timeline-save");
+    button.disabled = true;
+    try {
+      const manifest = await api(timelineEndpoint(), {
+        method: "PUT",
+        body: JSON.stringify({
+          fps: Number($("timeline-fps").value),
+          clips: state.timelineClips.map((clip) => ({
+            clip_id: clip.clip_id,
+            asset_id: clip.asset_id,
+            source_start_seconds: clip.source_start_seconds,
+            duration_seconds: clip.duration_seconds
+          }))
+        })
+      });
+      state.timelineManifest = manifest;
+      state.timelineClips = manifest.clips.map((clip) => ({
+        clip_id: clip.clip_id,
+        asset_id: clip.asset_id,
+        source_start_seconds: Number(clip.source_start_seconds),
+        duration_seconds: Number(clip.duration_seconds)
+      }));
+      state.timelineDirty = false;
+      renderTimelineEditor();
+      notice("تم حفظ الخط الزمني في المشروع بنجاح.", "success");
+      return true;
+    } catch (error) {
+      notice(`تعذّر حفظ الخط الزمني: ${error.message}`, "error");
+      return false;
+    } finally {
+      button.disabled = false;
+      updateTimelineSummary();
+    }
+  }
+
+  async function renderProjectTimeline() {
+    if (!state.project || !state.timelineClips.length) return;
+    if (state.timelineDirty) {
+      const saved = await saveProjectTimeline();
+      if (!saved) return;
+    }
+    const button = $("timeline-render");
+    button.disabled = true;
+    button.textContent = "جارٍ إنشاء المعاينة…";
+    try {
+      const [width, height] = $("timeline-resolution").value.split("x").map(Number);
+      const result = await api(`${timelineEndpoint()}/render`, {
+        method: "POST",
+        body: JSON.stringify({
+          width,
+          height,
+          fps: Number($("timeline-fps").value),
+          crf: 22
+        })
+      });
+      const downloadUrl = `${timelineEndpoint()}/rendered?preview=${Date.now()}`;
+      $("timeline-preview").src = downloadUrl;
+      $("timeline-preview-wrap").hidden = false;
+      $("timeline-download").href = `${timelineEndpoint()}/rendered`;
+      $("timeline-download").hidden = false;
+      $("timeline-state").textContent = "المعاينة جاهزة";
+      notice(`اكتملت معاينة MP4 · ${formatBytes(result.size_bytes)} · ${result.clip_count} مقطع.`, "success");
+    } catch (error) {
+      notice(`تعذّر تصدير المعاينة: ${error.message}`, "error");
+    } finally {
+      button.disabled = false;
+      button.textContent = "إنشاء معاينة MP4";
+      updateTimelineSummary();
+    }
   }
 
   function uploadFile(file) {
@@ -692,6 +1028,26 @@
       state.selectedAsset = state.assets.find((asset) => asset.id === event.target.value) || null;
       if (state.selectedAsset) localStorage.setItem("studio.assetId", state.selectedAsset.id);
       renderAssets();
+    });
+    $("timeline-add-clip").addEventListener("click", addTimelineClip);
+    $("timeline-clip-list").addEventListener("change", handleTimelineClipChange);
+    $("timeline-clip-list").addEventListener("click", handleTimelineClipAction);
+    $("timeline-save").addEventListener("click", saveProjectTimeline);
+    $("timeline-render").addEventListener("click", renderProjectTimeline);
+    $("timeline-source").addEventListener("change", () => {
+      $("timeline-in").value = "0";
+      $("timeline-duration").value = "5";
+      const asset = state.assets.find((item) => item.id === $("timeline-source").value);
+      const duration = getAssetDuration(asset);
+      if (duration !== null) {
+        $("timeline-duration").value = String(Math.min(5, duration));
+        $("timeline-duration").max = String(duration);
+      } else {
+        $("timeline-duration").max = "3600";
+      }
+    });
+    $("timeline-fps").addEventListener("change", () => {
+      if (state.timelineClips.length) markTimelineDirty();
     });
     $("approve-workflow").addEventListener("click", approveWorkflow);
     $("cancel-workflow").addEventListener("click", cancelDraft);
