@@ -305,6 +305,8 @@ def execute_video_enhancement(
     }
     manifest_path = output_root / "enhancement.json"
     atomic_write_json(manifest_path, manifest)
+    shutil.rmtree(output_root / "frames", ignore_errors=True)
+    shutil.rmtree(output_root / "comfyui", ignore_errors=True)
     progress(97, "enhancement_complete", "Enhanced MP4 was verified and registered in the project.")
     return {
         "output_asset_id": output_asset["id"],
