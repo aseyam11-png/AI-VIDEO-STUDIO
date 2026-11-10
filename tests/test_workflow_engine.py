@@ -1,3 +1,4 @@
+import io
 import shutil
 import subprocess
 from pathlib import Path
@@ -7,7 +8,12 @@ from app.core.config import settings
 from app.db.models import OutboxRecord
 from app.db.session import session_scope
 from app.main import app
-from app.media.storage import create_project, ingest_file_stream, project_dir
+from app.media.storage import (
+    create_project,
+    ingest_file_stream,
+    project_dir,
+    register_generated_video_asset,
+)
 from app.schemas.models import CreativePlan
 from app.services import job_runner, workflow_engine
 from app.services.job_runner import run_job_attempt
@@ -340,3 +346,138 @@ def test_workflow_can_plan_grounding_dino_and_sam2_before_video_editing(
         "media.proxy",
         "media.scenes",
     ]
+
+
+def _create_identity_locked_workflow_at_review(tmp_path, monkeypatch, *, idempotency_key: str):
+    monkeypatch.setattr(settings, "comfyui_base_url", "http://comfyui.test:8188")
+    fixture = tmp_path / "identity-review-output.mp4"
+    _make_video(fixture, duration=4)
+    project, reference_asset, _ = _project_asset(
+        tmp_path,
+        monkeypatch,
+        filename="product-reference.png",
+        content=b"synthetic-product-image-reference",
+    )
+
+    def fake_sequence(job, source, *, progress, cancel_check):
+        assert source.is_file()
+        output_dir = project_dir(job["project_id"]) / "exports"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output = output_dir / f"{job['id']}-identity-review.mp4"
+        shutil.copyfile(fixture, output)
+        asset = register_generated_video_asset(
+            job["project_id"],
+            job["id"],
+            output,
+            max_bytes=settings.max_model_output_bytes,
+        )
+        return {
+            "output_asset_id": asset["id"],
+            "output_asset": asset,
+            "download_url": f"/v1/projects/{job['project_id']}/assets/{asset['id']}/file",
+        }
+
+    monkeypatch.setattr(job_runner, "execute_video_sequence", fake_sequence)
+    client = TestClient(app)
+    created = client.post(
+        "/v1/workflows",
+        json={
+            "project_id": project["id"],
+            "asset_id": reference_asset["id"],
+            "idempotency_key": idempotency_key,
+            "brief": "أنشئ إعلانًا قصيرًا من صورة المنتج وحافظ على هويته في كل اللقطات.",
+            "language": "ar",
+            "creative_plan": _plan().model_dump(),
+            "generate_video": True,
+            "product_identity_lock": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    workflow_id = created.json()["id"]
+    approved = client.post(f"/v1/workflows/{workflow_id}/approve")
+    assert approved.status_code == 202, approved.text
+    generation_step = approved.json()["steps"][0]
+    job = client.get(f"/v1/jobs/{generation_step['job_id']}").json()
+    execution = run_job_attempt(job["id"], job["dispatch_generation"])
+    assert execution["status"] == "succeeded"
+
+    pending = client.get(f"/v1/workflows/{workflow_id}").json()
+    assert pending["status"] == "awaiting_identity_review"
+    assert pending["options"]["product_identity_review"]["status"] == "pending"
+    sequence_step, timeline_step, render_step = pending["steps"]
+    assert sequence_step["status"] == "succeeded"
+    assert timeline_step["status"] == "planned"
+    assert timeline_step["job_id"] is None
+    assert render_step["status"] == "planned"
+    assert render_step["job_id"] is None
+    review_video = client.get(pending["options"]["product_identity_review"]["preview_url"])
+    assert review_video.status_code == 200
+    assert review_video.headers["content-type"].startswith("video/mp4")
+    return client, workflow_id, pending
+
+
+def test_product_identity_lock_pauses_before_timeline_until_checklist_is_approved(
+    tmp_path, monkeypatch
+):
+    client, workflow_id, pending = _create_identity_locked_workflow_at_review(
+        tmp_path, monkeypatch, idempotency_key="identity-lock-review-approve-0001"
+    )
+    checks = {
+        "silhouette_and_proportions": True,
+        "colors_and_materials": True,
+        "logo_and_labels": True,
+        "components_and_packaging": True,
+        "consistency_across_shots": True,
+    }
+    incomplete = client.post(
+        f"/v1/workflows/{workflow_id}/identity-review",
+        json={"approved": True, "notes": "يجب أن ترفض الموافقة الناقصة."},
+    )
+    assert incomplete.status_code == 422, incomplete.text
+
+    approved = client.post(
+        f"/v1/workflows/{workflow_id}/identity-review",
+        json={"approved": True, "notes": "تمت مراجعة هوية المنتج.", "checks": checks},
+    )
+    assert approved.status_code == 202, approved.text
+    state = approved.json()
+    assert state["status"] == "queued"
+    review = state["options"]["product_identity_review"]
+    assert review["status"] == "approved"
+    assert review["checks"] == checks
+    _, _, timeline_step = state["steps"]
+    assert timeline_step["status"] == "queued"
+    assert timeline_step["asset_id"] == review["output_asset_id"]
+    timeline_job_id = timeline_step["job_id"]
+
+    replay = client.post(
+        f"/v1/workflows/{workflow_id}/identity-review",
+        json={"approved": True, "notes": "تمت مراجعة هوية المنتج.", "checks": checks},
+    )
+    assert replay.status_code == 202, replay.text
+    assert replay.json()["steps"][1]["job_id"] == timeline_job_id
+
+
+def test_rejected_product_identity_blocks_all_timeline_and_export_jobs(
+    tmp_path, monkeypatch
+):
+    client, workflow_id, _ = _create_identity_locked_workflow_at_review(
+        tmp_path, monkeypatch, idempotency_key="identity-lock-review-reject-0001"
+    )
+    rejected = client.post(
+        f"/v1/workflows/{workflow_id}/identity-review",
+        json={
+            "approved": False,
+            "notes": "الشعار تغير وشكل المنتج لا يطابق الصورة المرجعية.",
+        },
+    )
+    assert rejected.status_code == 202, rejected.text
+    state = rejected.json()
+    assert state["status"] == "failed"
+    assert "rejected" in state["error_message"].lower()
+    _, timeline_step, render_step = state["steps"]
+    assert timeline_step["status"] == "cancelled"
+    assert timeline_step["job_id"] is None
+    assert render_step["status"] == "cancelled"
+    assert render_step["job_id"] is None
+
