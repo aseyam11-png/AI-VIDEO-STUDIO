@@ -32,6 +32,11 @@ def test_studio_ui_and_static_assets_are_served():
     assert 'id="timeline-render"' in page.text
     assert "saveProjectTimeline" in script.text
     assert "renderProjectTimeline" in script.text
+    assert 'id="scene-detect"' in page.text
+    assert 'id="scene-results"' in page.text
+    assert 'id="scene-add-selected"' in page.text
+    assert "detectProjectScenes" in script.text
+    assert "addSelectedScenesToTimeline" in script.text
 
 
 def test_project_history_endpoint_lists_created_projects(tmp_path, monkeypatch):
