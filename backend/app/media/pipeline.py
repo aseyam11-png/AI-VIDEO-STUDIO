@@ -354,7 +354,11 @@ def extract_video_frames(
     """Extract a bounded, constant-FPS image sequence for per-frame enhancement."""
     if fps not in {15, 24, 30}:
         raise ValueError("Frame extraction FPS must be 15, 24 or 30.")
-    if not 1 <= max_duration_seconds <= 10 or not 1 <= max_frames <= 300:
+    if (
+        not 1 <= max_duration_seconds <= 10
+        or not 1 <= max_frames <= 300
+        or max_total_bytes <= 0
+    ):
         raise ValueError("Video enhancement limits are outside the supported range.")
 
     metadata = probe_media(source)
@@ -538,7 +542,7 @@ def assemble_upscaled_video(
         "0:v:0",
     ]
     if has_audio:
-        command.extend(["-map", "1:a:0?"])
+        command.extend(["-map", "1:a?"])
     else:
         command.append("-an")
     command.extend(
