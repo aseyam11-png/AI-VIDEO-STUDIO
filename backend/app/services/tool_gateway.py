@@ -105,6 +105,20 @@ TOOL_SPECS: tuple[dict[str, typing.Any], ...] = (
         "capability_key": "wan-2.2-ti2v-5b",
     },
     {
+        "tool_id": "video.generate_sequence",
+        "name": "Multi-Shot Video Generation",
+        "category": "generation",
+        "runtime": "ComfyUI / Wan 2.2 TI2V 5B + FFmpeg",
+        "description": (
+            "Generate 2–8 approved shots from a project image reference "
+            "and assemble them in order."
+        ),
+        "execution": "durable_job",
+        "approval_required": True,
+        "workflow_id": "wan22_ti2v_5b_v1",
+        "capability_key": "wan-2.2-ti2v-5b",
+    },
+    {
         "tool_id": "video.upscale",
         "name": "Image and Frame Upscaling",
         "category": "restoration",
@@ -231,6 +245,7 @@ def get_tool_catalog() -> dict[str, typing.Any]:
                     JobType.VISION_DETECT,
                     JobType.VISION_TRACK,
                     JobType.VIDEO_GENERATE,
+                    JobType.VIDEO_GENERATE_SEQUENCE,
                     JobType.VIDEO_UPSCALE,
                     JobType.VIDEO_INTERPOLATE,
                     JobType.MOTION_BLENDER,
@@ -249,7 +264,11 @@ def get_tool_catalog() -> dict[str, typing.Any]:
         "execution_policy": {
             "long_running_operations": "durable_jobs",
             "idempotency_required": True,
-            "user_approval_required_for": ["video.generate", "motion.blender"],
+            "user_approval_required_for": [
+                "video.generate",
+                "video.generate_sequence",
+                "motion.blender",
+            ],
             "model_weights_downloaded_automatically": False,
             "inference_verification": (
                 "A successful real job is required; "

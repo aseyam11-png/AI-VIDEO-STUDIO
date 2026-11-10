@@ -45,6 +45,7 @@ _MODEL_QUEUE_TYPES = {
     JobType.VISION_DETECT,
     JobType.VISION_TRACK,
     JobType.VIDEO_GENERATE,
+    JobType.VIDEO_GENERATE_SEQUENCE,
     JobType.VIDEO_UPSCALE,
     JobType.VIDEO_INTERPOLATE,
     JobType.MOTION_BLENDER,
@@ -151,34 +152,77 @@ def _step_specs(
             raise WorkflowRequestError(
                 "An image workflow must explicitly enable video generation."
             )
-        if len(plan.scenes) != 1 or plan.target_duration_seconds > 10:
-            raise WorkflowRequestError(
-                "Image-to-video workflow v1 supports one shot of at most 10 seconds. "
-                "Use a video source for multi-scene projects."
+        if len(plan.scenes) == 1:
+            scene = plan.scenes[0]
+            if scene.duration_seconds > 10:
+                raise WorkflowRequestError("A generated shot cannot exceed 10 seconds.")
+            prompt = (
+                f"{plan.logline}. Style: {plan.visual_style}. "
+                f"Scene: {scene.visual_description}. "
+                f"Camera: {scene.camera_movement}. Audience: {plan.audience}."
+            )[:4000]
+            steps.append(
+                (
+                    JobType.VIDEO_GENERATE,
+                    {
+                        "prompt": prompt,
+                        "negative_prompt": (
+                            "low quality, flicker, distorted geometry, unreadable text"
+                        ),
+                        "duration_seconds": scene.duration_seconds,
+                        "width": 832,
+                        "height": 480,
+                        "approved": True,
+                    },
+                )
             )
-        scene = plan.scenes[0]
-        prompt = (
-            f"{plan.logline}. Style: {plan.visual_style}. "
-            f"Scene: {scene.visual_description}. "
-            f"Camera: {scene.camera_movement}. Audience: {plan.audience}."
-        )[:4000]
-        steps.append(
-            (
-                JobType.VIDEO_GENERATE,
-                {
-                    "prompt": prompt,
-                    "negative_prompt": (
-                        "low quality, flicker, distorted geometry, unreadable text"
-                    ),
-                    "duration_seconds": scene.duration_seconds,
-                    "width": 832,
-                    "height": 480,
-                    "approved": True,
-                },
+            if request.interpolate_generated_video:
+                steps.append((JobType.VIDEO_INTERPOLATE, {"factor": 2}))
+        else:
+            if len(plan.scenes) > 8 or plan.target_duration_seconds > 80:
+                raise WorkflowRequestError(
+                    "Multi-shot generation supports 2–8 scenes and at most 80 seconds."
+                )
+            shots = []
+            for scene in plan.scenes:
+                if scene.duration_seconds > 10:
+                    raise WorkflowRequestError(
+                        "Each generated scene must be 10 seconds or shorter."
+                    )
+                prompt = (
+                    f"{plan.logline}. Style: {plan.visual_style}. "
+                    f"Scene purpose: {scene.purpose}. "
+                    f"Visual: {scene.visual_description}. "
+                    f"Shot type: {scene.shot_type}. Camera: {scene.camera_movement}. "
+                    f"Audience: {plan.audience}. "
+                    f"On-screen direction: {scene.on_screen_text}."
+                )[:4000]
+                shots.append(
+                    {
+                        "prompt": prompt,
+                        "negative_prompt": (
+                            "low quality, flicker, temporal inconsistency, "
+                            "distorted geometry, unreadable text, product deformation"
+                        ),
+                        "duration_seconds": scene.duration_seconds,
+                    }
+                )
+            steps.append(
+                (
+                    JobType.VIDEO_GENERATE_SEQUENCE,
+                    {
+                        "shots": shots,
+                        "generation_width": 832,
+                        "generation_height": 480,
+                        "output_width": width,
+                        "output_height": height,
+                        "fps": fps,
+                        "crf": 20,
+                        "interpolate_factor": 2 if request.interpolate_generated_video else 1,
+                        "approved": True,
+                    },
+                )
             )
-        )
-        if request.interpolate_generated_video:
-            steps.append((JobType.VIDEO_INTERPOLATE, {"factor": 2}))
     elif asset_type == "video":
         if request.generate_video:
             raise WorkflowRequestError(

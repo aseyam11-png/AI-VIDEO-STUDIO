@@ -31,6 +31,7 @@ from app.services.model_jobs import (
     execute_blender_job,
     execute_comfyui_job,
     execute_speech_transcription,
+    execute_video_sequence,
 )
 from sqlalchemy import select
 
@@ -169,6 +170,17 @@ def _execute_media_job(
             "relative_path": output_asset["relative_path"],
         }
         return result
+
+    if job_type == JobType.VIDEO_GENERATE_SEQUENCE.value:
+        if asset_type != "image":
+            raise ValueError("Multi-shot generation requires an image reference asset.")
+        progress(10, "preparing_multi_shot", "Preparing the approved multi-shot generation plan.")
+        return execute_video_sequence(
+            job,
+            source,
+            progress=progress,
+            cancel_check=cancel_check,
+        )
 
     if job_type in {
         JobType.VISION_DETECT.value,

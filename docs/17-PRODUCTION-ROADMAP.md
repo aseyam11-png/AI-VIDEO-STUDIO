@@ -26,7 +26,7 @@ The following gaps remain open:
 - The five ComfyUI workflow registry entries must be populated from actual API-exported workflow JSON; placeholder node IDs/input names must not be guessed.
 - An initial connected Arabic RTL UI is merged in [PR #5](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/5). It covers project creation/history, video upload, Qwen plan review/approval, workflow monitoring, model-readiness indicators and MP4 preview/download. Browser acceptance on the target host remains open.
 - The Workflow Engine v1 is sequential. It is not a general branching DAG or autonomous multi-agent editing director.
-- Wan image-to-video workflow v1 is limited to one generated shot up to 10 seconds; multi-shot assembly is not implemented.
+- Wan image-to-video v1 now has a separate durable multi-shot path on the Phase 6.7 feature branch: 2–8 generated shots, up to 10 seconds each, registered as project assets and assembled by FFmpeg. Real Wan/RIFE inference and target-GPU performance still require target-host acceptance.
 - The deterministic renderer now supports sequential multi-source clips, Arabic transcription to a separate timeline SRT, and synchronized project audio mixing. Audio waveform editing, real-time playback editing, title/overlay rendering and advanced motion graphics remain outside the merged baseline while Phase 6.6 is implemented on its feature branch.
 - Product Identity Lock and automated creative/visual QA are not implemented.
 - Authentication/deployment controls, backup/restore testing, operational monitoring and a full production acceptance run remain outstanding.
@@ -104,12 +104,24 @@ This deterministic 6.6 slice does not claim arbitrary motion-graphics authoring,
 
 See [Phase 6.6 — Transitions, Titles and Motion Graphics](24-PHASE-6.6-TRANSITIONS-TITLES-MOTION.md).
 
+### Phase 6.6 — Transitions, titles and motion graphics (implementation branch)
+
+The deterministic FFmpeg slice is on `feat/phase-6.6-transitions-titles-motion` and tracked in [PR #13](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/13). It adds dip-to-black/white-flash transitions, Arabic titles, image/logo overlays and simple fade/slide motion. CI and human render/browser acceptance are the merge gates. This is not an arbitrary keyframe or 3D compositor; reviewed Blender/ComfyUI templates remain future enhancement work.
+
+See [Phase 6.6 — Transitions, Titles and Motion Graphics](24-PHASE-6.6-TRANSITIONS-TITLES-MOTION.md).
+
+### Phase 6.7 — Multi-shot generation and deterministic assembly (implementation branch)
+
+The stacked branch `feat/phase-6.7-multishot-assembly` adds a durable `video.generate_sequence` job. An approved image-reference workflow converts 2–8 creative-plan scenes into individual Wan 2.2 TI2V jobs, optionally applies RIFE interpolation to each shot, registers each shot as a project asset, then assembles the ordered clips into one verified MP4 with FFmpeg. The resulting sequence is registered as an output asset so the existing durable workflow can continue into timeline and export steps.
+
+The same reference image is supplied to each shot. This does not guarantee frame-to-frame identity or exact product preservation; that is a separate Phase 6.9 acceptance concern. Real Wan/RIFE execution still requires a configured registry and a target GPU; CI synthetic renders do not prove model inference.
+
+See [Phase 6.7 — Multi-Shot Generation and Assembly](25-PHASE-6.7-MULTISHOT-GENERATION-ASSEMBLY.md).
+
 ### Remaining Phase 6 increments
 
 Deliver in independently testable increments:
 
-- Transitions, titles, overlays and motion graphics using reviewed Blender/ComfyUI templates (6.6).
-- Multi-shot generation and deterministic assembly of generated clips (6.7).
 - Video enhancement pipeline with frame extraction/reassembly only after output and storage validation (6.8).
 - Product Identity Lock for product ads: reference preservation, logo/label checks and human review (6.9).
 - Technical and visual QA: black/frozen frame detection, audio clipping/silence, duration/resolution/FPS checks, missing files and corrupt exports (6.10).

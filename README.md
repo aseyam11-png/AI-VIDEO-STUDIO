@@ -4,7 +4,7 @@
 
 Describe a video in Arabic, provide source media and product references, approve a creative plan, then orchestrate analysis, selected AI generation, editing, motion graphics, audio processing, quality checks, and final export.
 
-> **Current state (2026-11-10): Phases 0.5–6.5 are merged into `main`.** Phase 6.5 audio mixing is merged in PR #12 after Python/Ruff, FFmpeg integration, Windows script and Compose integration checks passed. Phase 6.6 transitions, Arabic titles and image overlays are being implemented on `feat/phase-6.6-transitions-titles-motion`. The Arabic RTL Studio is connected to the API. The repository is still **not production-ready**: real model weights/workflows, target-host GPU inference, audio listening, browser acceptance, security/operations and full release acceptance remain open.
+> **Current state (2026-11-10): Phases 0.5–6.5 are merged into `main`.** Phase 6.5 audio mixing is merged in PR #12 after Python/Ruff, FFmpeg integration, Windows script and Compose integration checks passed. Phase 6.6 transitions, Arabic titles and image overlays are being implemented on `feat/phase-6.6-transitions-titles-motion`; Phase 6.7 multi-shot generation and FFmpeg assembly are being implemented on the stacked branch `feat/phase-6.7-multishot-assembly`. The Arabic RTL Studio is connected to the API. The repository is still **not production-ready**: real model weights/workflows, target-host GPU inference, audio listening, browser acceptance, security/operations and full release acceptance remain open.
 
 ## Product scope
 
