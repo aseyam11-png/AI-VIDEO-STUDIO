@@ -145,7 +145,7 @@ def get_model_capabilities() -> dict:
                 "weights_present": _path_exists(settings.deepfilter_model_dir, directory=True),
             },
             "realesrgan": {
-                "role": "Selected-frame/image upscaling",
+                "role": "Video-frame and image upscaling",
                 "ready": False,
                 "workflow_configured": workflow_configured("realesrgan_upscale_v1"),
             },
