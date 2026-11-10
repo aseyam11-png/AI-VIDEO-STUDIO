@@ -474,7 +474,7 @@ def test_product_identity_lock_pauses_before_timeline_until_checklist_is_approve
     review = state["options"]["product_identity_review"]
     assert review["status"] == "approved"
     assert review["checks"] == checks
-    _, _, timeline_step = state["steps"]
+    _, timeline_step, _ = state["steps"]
     assert timeline_step["status"] == "queued"
     assert timeline_step["asset_id"] == review["output_asset_id"]
     timeline_job_id = timeline_step["job_id"]
