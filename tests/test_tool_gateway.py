@@ -49,6 +49,7 @@ def test_tool_catalog_exposes_a_single_dispatch_contract(monkeypatch):
     assert "speech.transcribe" in ids
     assert "vision.detect" in ids
     assert "video.generate" in ids
+    assert "video.generate_sequence" in ids
     assert "motion.blender" in ids
 
 
