@@ -125,8 +125,12 @@ def execute_comfyui_job(
     if not result["outputs"]:
         raise ComfyUIError(f"ComfyUI workflow {workflow_id} produced no downloadable media.")
     video_stream_found = False
+    generated_video_path: Path | None = None
+    safe_output_dir = output_dir.resolve()
     for output in result["outputs"]:
-        output_path = output_dir / output["saved_as"]
+        output_path = (output_dir / output["saved_as"]).resolve()
+        if not output_path.is_relative_to(safe_output_dir):
+            raise ComfyUIError("ComfyUI returned an output path outside the job directory.")
         try:
             metadata = probe_media(output_path)
         except (MediaToolError, FileNotFoundError) as exc:
@@ -142,12 +146,33 @@ def execute_comfyui_job(
             and any(stream.get("codec_type") == "video" for stream in streams)
         ):
             video_stream_found = True
+            if job["job_type"] == "video.generate" and output_path.suffix.lower() in {
+                ".mp4", ".mov", ".mkv", ".webm"
+            }:
+                generated_video_path = output_path
         output["download_url"] = (
             f"/v1/projects/{job['project_id']}/jobs/{job['id']}/files/"
             f"{quote(output['saved_as'], safe='')}"
         )
     if job["job_type"] in {"video.generate", "video.interpolate"} and not video_stream_found:
         raise ComfyUIError(f"ComfyUI workflow {workflow_id} did not produce a video file.")
+    if job["job_type"] == "video.generate":
+        if generated_video_path is None:
+            raise ComfyUIError(
+                "Video generation must produce a supported MP4/MOV/MKV/WEBM asset."
+            )
+        output_asset = register_generated_video_asset(
+            job["project_id"],
+            job["id"],
+            generated_video_path,
+            max_bytes=settings.max_model_output_bytes,
+        )
+        result["output_asset_id"] = output_asset["id"]
+        result["output_asset"] = {
+            "id": output_asset["id"],
+            "asset_type": output_asset["asset_type"],
+            "relative_path": output_asset["relative_path"],
+        }
     result["files_directory"] = output_dir.relative_to(project_dir(job["project_id"])).as_posix()
     atomic_write_json(output_dir / "result.json", result)
     return result
