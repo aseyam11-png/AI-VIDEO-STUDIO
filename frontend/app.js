@@ -11,6 +11,7 @@
     timelineManifest: null,
     timelineClips: [],
     timelineDirty: false,
+    timelineRendered: false,
     workflow: null,
     pollHandle: null,
     uploading: false
@@ -294,6 +295,7 @@
     state.timelineManifest = null;
     state.timelineClips = [];
     state.timelineDirty = false;
+    state.timelineRendered = false;
     const preview = $("timeline-preview");
     if (preview) {
       preview.pause();
@@ -317,6 +319,8 @@
         throw new Error("بيانات الخط الزمني لا تخص المشروع المحدد أو أن بنيتها غير صالحة.");
       }
       state.timelineManifest = manifest;
+      const savedFps = String(Number(manifest.fps));
+      $("timeline-fps").value = ["24", "30", "60"].includes(savedFps) ? savedFps : "30";
       state.timelineClips = manifest.clips.map((clip) => ({
         clip_id: clip.clip_id,
         asset_id: clip.asset_id,
@@ -339,10 +343,12 @@
     $("timeline-empty").hidden = state.timelineClips.length > 0;
     $("timeline-state").textContent = state.timelineDirty
       ? "تغييرات غير محفوظة"
-      : state.timelineClips.length
-        ? "تم الحفظ"
-        : "لا توجد مقاطع";
-    $("timeline-save").disabled = !state.project || !state.timelineClips.length || !state.timelineDirty;
+      : state.timelineRendered
+        ? "المعاينة جاهزة"
+        : state.timelineClips.length
+          ? "تم الحفظ"
+          : "لا توجد مقاطع";
+    $("timeline-save").disabled = !state.project || !state.timelineDirty;
     $("timeline-render").disabled = !state.project || !state.timelineClips.length;
     $("timeline-add-clip").disabled = !state.project || !videos.length;
     $("timeline-source").disabled = !videos.length;
@@ -426,13 +432,33 @@
       card.append(header, fields, actions);
       list.append(card);
     });
+    syncTimelineSourceFields();
     updateTimelineSummary();
+  }
+
+  function syncTimelineSourceFields() {
+    const selected = $("timeline-source")?.value;
+    const asset = state.assets.find((item) => item.id === selected && item.asset_type === "video");
+    const duration = getAssetDuration(asset);
+    $("timeline-in").max = duration === null ? "3600" : String(duration);
+    $("timeline-duration").max = duration === null ? "3600" : String(duration);
+    const currentDuration = Number($("timeline-duration").value);
+    if (duration !== null &&
+        (!Number.isFinite(currentDuration) || currentDuration <= 0 || currentDuration > duration)) {
+      $("timeline-duration").value = String(Math.min(5, duration));
+    }
+    const currentStart = Number($("timeline-in").value);
+    if (duration !== null &&
+        (!Number.isFinite(currentStart) || currentStart < 0 || currentStart >= duration)) {
+      $("timeline-in").value = "0";
+    }
   }
 
   function markTimelineDirty() {
     state.timelineDirty = true;
     if ($("timeline-preview-wrap")) $("timeline-preview-wrap").hidden = true;
     if ($("timeline-download")) $("timeline-download").hidden = true;
+    state.timelineRendered = false;
     updateTimelineSummary();
   }
 
@@ -528,7 +554,7 @@
   }
 
   async function saveProjectTimeline() {
-    if (!state.project || !state.timelineClips.length) return false;
+    if (!state.project) return false;
     const button = $("timeline-save");
     button.disabled = true;
     try {
@@ -589,6 +615,7 @@
       $("timeline-preview-wrap").hidden = false;
       $("timeline-download").href = `${timelineEndpoint()}/rendered`;
       $("timeline-download").hidden = false;
+      state.timelineRendered = true;
       $("timeline-state").textContent = "المعاينة جاهزة";
       notice(`اكتملت معاينة MP4 · ${formatBytes(result.size_bytes)} · ${result.clip_count} مقطع.`, "success");
     } catch (error) {
@@ -729,7 +756,7 @@
     panel.hidden = false;
     $("plan-status").textContent = "بانتظار المراجعة";
     $("approval-actions").hidden = state.workflow?.status !== "awaiting_approval";
-    setStepper(2);
+    setStepper(3);
   }
 
   function renderWorkflowSteps(steps) {
@@ -795,12 +822,12 @@
 
     const terminal = ["succeeded", "failed", "cancelled"].includes(workflow.status);
     if (workflow.status === "succeeded") {
-      setStepper(4);
+      setStepper(5);
       renderFinalVideo(workflow);
     } else {
       $("render-result").hidden = true;
       $("video-preview-wrap").hidden = true;
-      if (workflow.status === "running" || workflow.status === "queued") setStepper(3);
+      if (workflow.status === "running" || workflow.status === "queued") setStepper(4);
     }
     if (workflow.status === "failed") {
       notice(workflow.error_message || "فشل أحد أجزاء التنفيذ. راجع تفاصيل الخطوات ويمكن إعادة محاولة المهمة الفاشلة.", "error");
@@ -1018,6 +1045,11 @@
     $("project-form").addEventListener("submit", createProject);
     $("director-form").addEventListener("submit", createPlan);
     $("project-select").addEventListener("change", (event) => {
+      if (state.timelineDirty &&
+          !window.confirm("لديك تغييرات غير محفوظة في الخط الزمني. هل تريد تجاهلها والانتقال؟")) {
+        event.target.value = state.project?.id || "";
+        return;
+      }
       stopPolling();
       state.workflow = null;
       $("plan-panel").hidden = true;
@@ -1034,17 +1066,15 @@
     $("timeline-clip-list").addEventListener("click", handleTimelineClipAction);
     $("timeline-save").addEventListener("click", saveProjectTimeline);
     $("timeline-render").addEventListener("click", renderProjectTimeline);
+    window.addEventListener("beforeunload", (event) => {
+      if (!state.timelineDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    });
     $("timeline-source").addEventListener("change", () => {
       $("timeline-in").value = "0";
       $("timeline-duration").value = "5";
-      const asset = state.assets.find((item) => item.id === $("timeline-source").value);
-      const duration = getAssetDuration(asset);
-      if (duration !== null) {
-        $("timeline-duration").value = String(Math.min(5, duration));
-        $("timeline-duration").max = String(duration);
-      } else {
-        $("timeline-duration").max = "3600";
-      }
+      syncTimelineSourceFields();
     });
     $("timeline-fps").addEventListener("change", () => {
       if (state.timelineClips.length) markTimelineDirty();
