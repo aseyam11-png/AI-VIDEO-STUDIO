@@ -160,6 +160,23 @@
       if (label) label.classList.toggle("option-disabled", interpolation.disabled);
       if (interpolation.disabled) interpolation.checked = false;
     }
+    ["transcribe-audio", "enhance-audio", "tracking-prompt"].forEach((id) => {
+      const input = $(id);
+      if (input) {
+        input.disabled = input.disabled || imageSelected;
+        const label = input.closest("label") || input.parentElement;
+        if (label) label.classList.toggle("option-disabled", input.disabled);
+      }
+    });
+    const targetDuration = $("target-duration");
+    if (targetDuration) {
+      [...targetDuration.options].forEach((option) => {
+        option.disabled = Boolean(generateVideo?.checked) && Number(option.value) > 80;
+      });
+      if (generateVideo?.checked && Number(targetDuration.value) > 80) {
+        targetDuration.value = "60";
+      }
+    }
     const ready = Boolean(
       state.project && state.selectedAsset && !state.uploading && qwenReady &&
       (videoSelected || (imageSelected && generateVideo?.checked && wanReady))
@@ -2206,6 +2223,13 @@
       return;
     }
     const brief = $("creative-brief").value.trim();
+    const generateVideo = state.selectedAsset.asset_type === "image" &&
+      !$("generate-video").disabled && $("generate-video").checked;
+    const requestedDuration = Number($("target-duration").value);
+    if (generateVideo && (requestedDuration < 2 || requestedDuration > 80)) {
+      notice("توليد Wan متعدد اللقطات يدعم مدة إجمالية من ثانيتين إلى 80 ثانية فقط.", "error");
+      return;
+    }
     if (brief.length < 20) {
       notice("اكتب وصفًا من 20 حرفًا على الأقل حتى يستطيع المخرج فهم المطلوب.", "error");
       return;
@@ -2218,9 +2242,11 @@
         project_id: state.project.id,
         asset_id: state.selectedAsset.id,
         idempotency_key: `studio-${uuid()}`,
-        brief,
+        brief: generateVideo
+          ? brief + "\n\nWan production constraints: create 2 to 8 scenes, each scene must be 1 to 10 seconds, and all scene durations must sum exactly to the requested total. Use the supplied product image as the canonical reference in every shot. Keep the product design and markings unchanged; prefer simple camera movement over changing product details."
+          : brief,
         language: $("plan-language").value,
-        target_duration_seconds: Number($("target-duration").value),
+        target_duration_seconds: requestedDuration,
         transcribe_audio: !$("transcribe-audio").disabled && $("transcribe-audio").checked,
         enhance_audio: !$("enhance-audio").disabled && $("enhance-audio").checked,
         upscale_output: !$("upscale-video").disabled && $("upscale-video").checked,
