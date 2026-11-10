@@ -188,6 +188,67 @@ def test_visual_effects_reject_foreign_and_non_image_assets(tmp_path, monkeypatc
     assert not_image.status_code == 422
 
 
+def test_timeline_render_passes_project_visual_effects_and_image_sources(
+    tmp_path, monkeypatch
+):
+    project = _project(tmp_path, monkeypatch)
+    video, _ = _asset(project["id"], "source.mp4")
+    logo, logo_path = _asset(project["id"], "logo.png")
+    monkeypatch.setattr(media_route, "probe_media", _probe)
+    monkeypatch.setattr(pipeline, "probe_media", _probe)
+    captured = {}
+
+    def fake_render(**kwargs):
+        captured.update(kwargs)
+        destination = kwargs["destination"]
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(b"rendered-video")
+        return {
+            "filename": destination.name,
+            "size_bytes": destination.stat().st_size,
+            "clip_count": 2,
+            "transition_count": 0,
+            "title_count": 0,
+            "overlay_count": 1,
+            "audio_clip_count": 0,
+            "settings": {"width": 320, "height": 240, "fps": 24, "crf": 28},
+            "metadata": {"format": {"duration": "10.0"}},
+        }
+
+    monkeypatch.setattr(media_route, "render_multi_source_timeline", fake_render)
+    client = TestClient(app)
+    clip_ids = [str(uuid4()), str(uuid4())]
+    timeline = _save_two_clip_timeline(client, project["id"], video["id"], clip_ids)
+    assert timeline.status_code == 200, timeline.text
+
+    saved = client.put(
+        f"/v1/projects/{project['id']}/visual-effects",
+        json={
+            "overlays": [
+                {
+                    "asset_id": logo["id"],
+                    "start_seconds": 1,
+                    "duration_seconds": 4,
+                    "width_ratio": 0.25,
+                    "opacity": 0.9,
+                    "position": "top_right",
+                    "animation": "slide_up",
+                }
+            ]
+        },
+    )
+    assert saved.status_code == 200, saved.text
+
+    rendered = client.post(
+        f"/v1/projects/{project['id']}/timeline/render",
+        json={"width": 320, "height": 240, "fps": 24, "crf": 28},
+    )
+    assert rendered.status_code == 200, rendered.text
+    assert captured["visual_effects_manifest"]["overlays"][0]["asset_id"] == logo["id"]
+    assert captured["overlay_sources"][logo["id"]] == logo_path
+    assert rendered.json()["overlay_count"] == 1
+
+
 def test_saving_new_timeline_invalidates_previous_visual_effects(tmp_path, monkeypatch):
     project = _project(tmp_path, monkeypatch)
     video, _ = _asset(project["id"], "source.mp4")
