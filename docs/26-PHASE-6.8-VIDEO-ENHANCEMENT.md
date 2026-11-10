@@ -43,6 +43,7 @@ A source that exceeds any bound is rejected instead of silently truncated or ren
 - FFprobe/FFmpeg extraction and assembly helpers in `backend/app/media/pipeline.py`.
 - Per-frame ComfyUI execution and project asset registration in `backend/app/services/model_jobs.py`.
 - Workflow planning uses the saved FFprobe metadata; generated image-to-video workflows may append enhancement only when their planned output is within the same 10-second bound.
+- Single-shot `video.generate` output is now registered as a project video asset and its `output_asset_id` is handed to the next workflow step, so a downstream enhancement job receives a video asset rather than the original image reference.
 - Arabic Studio toggle submits `upscale_output`; it is disabled when workflow readiness or source duration is not acceptable.
 
 ## Test evidence and limitations
