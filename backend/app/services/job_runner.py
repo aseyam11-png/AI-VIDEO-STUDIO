@@ -498,8 +498,7 @@ def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
                 / "ai_outputs"
                 / str(snapshot["id"])
             )
-            shutil.rmtree(output_root / "frames", ignore_errors=True)
-            shutil.rmtree(output_root / "comfyui", ignore_errors=True)
+            shutil.rmtree(output_root, ignore_errors=True)
         _finish_job(job_id, dispatch_generation, error=exc)
     finally:
         stop_event.set()
