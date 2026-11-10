@@ -189,7 +189,24 @@ def ingest_file_stream(
     safe_project_id = _uuid(project_id)
     get_project(safe_project_id)
     suffix = Path(original_filename or "").suffix.lower()
-    allowed = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".jpg", ".jpeg", ".png", ".webp", ".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus"}
+    allowed = {
+        ".mp4",
+        ".mov",
+        ".mkv",
+        ".webm",
+        ".m4v",
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp",
+        ".wav",
+        ".mp3",
+        ".m4a",
+        ".aac",
+        ".flac",
+        ".ogg",
+        ".opus",
+    }
     if suffix not in allowed:
         raise ValueError(f"Unsupported media extension: {suffix or '(none)'}")
 
