@@ -18,14 +18,14 @@ This is a bounded processing path, not a claim that every video can be enhanced 
 4. The workflow engine creates a durable `video.enhance` job on the serialized models queue.
 5. FFprobe validates the source. FFmpeg extracts a constant-FPS PNG sequence.
 6. The worker sends each frame to the approved `realesrgan_upscale_v1` ComfyUI workflow, sequentially. It validates that each returned image is inside that frame's output directory and has the expected dimensions.
-7. FFmpeg rebuilds the MP4, maps all source audio streams, and verifies output duration, dimensions and audio-stream presence.
+7. FFmpeg rebuilds the MP4, maps all source audio streams and re-encodes them as AAC, then verifies output duration, dimensions and audio-stream presence.
 8. The completed video is registered as a project-scoped asset. An `enhancement.json` manifest records source/output dimensions, FPS, scale, frame count and the registered output asset ID. Intermediate frame and ComfyUI artifacts are removed after successful registration.
 
 ## Enforced bounds
 
 - Duration: 1–10 seconds per job.
 - Extracted frames: maximum 300.
-- Extraction FPS: 15, 24 or 30 FPS, capped by the source frame rate.
+- Requested extraction FPS: 15, 24 or 30 FPS; the actual output rate is capped by the source and may be any integer from 1–30 FPS.
 - Model scale: 2× or 4×.
 - Output dimensions: maximum 7680×4320.
 - Aggregate extracted pixel budget: 650,000,000 pixel-frames.
