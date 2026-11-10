@@ -219,6 +219,9 @@ def test_project_timeline_api_saves_reads_and_renders_assets(
     empty_timeline = client.get(f"/v1/projects/{project['id']}/timeline")
     assert empty_timeline.status_code == 200
     assert empty_timeline.json()["clips"] == []
+    stale_preview = client.get(f"/v1/projects/{project['id']}/timeline/rendered")
+    assert stale_preview.status_code == 404
+
 
 @pytest.mark.skipif(
     shutil.which("ffmpeg") is None,
