@@ -161,7 +161,7 @@ def _step_specs(
             )[:4000]
             if request.product_identity_lock:
                 prompt = (
-                    f"{prompt} Canonical product identity lock: reproduce the exact product "
+                    f"{prompt[:2500]} Canonical product identity lock: reproduce the exact product "
                     "shown in the supplied reference image. Preserve its silhouette, "
                     "proportions, materials, colors, components, logo, label, packaging and "
                     "all visible markings. Do not redesign, replace, morph, omit or invent "
@@ -219,7 +219,7 @@ def _step_specs(
                 )[:4000]
                 if request.product_identity_lock:
                     prompt = (
-                        f"{prompt} Canonical product identity lock: the supplied reference "
+                        f"{prompt[:2400]} Canonical product identity lock: the supplied reference "
                         "image is the single source of truth for the product. Preserve the "
                         "exact silhouette, proportions, geometry, colors, materials, hardware, "
                         "logo, typography, labels and packaging in every shot. Do not redesign, "
