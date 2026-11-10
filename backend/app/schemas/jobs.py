@@ -17,6 +17,7 @@ class JobType(StrEnum):
     VISION_TRACK = "vision.track"
     VIDEO_GENERATE = "video.generate"
     VIDEO_GENERATE_SEQUENCE = "video.generate_sequence"
+    VIDEO_ENHANCE = "video.enhance"
     VIDEO_UPSCALE = "video.upscale"
     VIDEO_INTERPOLATE = "video.interpolate"
     MOTION_BLENDER = "motion.blender"
