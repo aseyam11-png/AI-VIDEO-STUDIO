@@ -449,6 +449,7 @@ async def save_project_timeline(project_id: str, payload: ProjectTimelineRequest
             preview.unlink(missing_ok=True)
             (timeline_dir / f"project-{timeline_id}.srt").unlink(missing_ok=True)
             (timeline_dir / f"project-{timeline_id}-subtitles.json").unlink(missing_ok=True)
+            _audio_mix_path(project_id).unlink(missing_ok=True)
             return {**manifest, "timeline_path": None}
 
         sources: dict[str, Path] = {}
@@ -481,6 +482,7 @@ async def save_project_timeline(project_id: str, payload: ProjectTimelineRequest
         timeline_id = str(UUID(project_id))
         (timeline_dir / f"project-{timeline_id}.srt").unlink(missing_ok=True)
         (timeline_dir / f"project-{timeline_id}-subtitles.json").unlink(missing_ok=True)
+        _audio_mix_path(project_id).unlink(missing_ok=True)
         return {
             **manifest,
             "timeline_path": str(timeline_path.relative_to(project_dir(project_id))),
@@ -716,6 +718,8 @@ def save_project_audio_mix(project_id: str, payload: ProjectAudioMixRequest) -> 
         )
         preview.unlink(missing_ok=True)
         return manifest
+    except MediaToolError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
