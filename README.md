@@ -4,7 +4,15 @@
 
 Describe a video in Arabic, provide source media and product references, approve a creative plan, then orchestrate analysis, selected AI generation, editing, motion graphics, audio processing, quality checks, and final export.
 
-> **Current state (2026-11-10): Phases 0.5–6.6 are merged into `main`.** Phase 6.6 transitions, Arabic titles and image overlays were merged in PR #13. Phase 6.7 multi-shot Wan generation and FFmpeg assembly are implemented on the open Draft PR #14 branch `feat/phase-6.7-multishot-assembly`; its initial CI run passed, while the latest documentation-alignment commit is being revalidated. The Arabic RTL Studio is connected to the API. The repository is still **not production-ready**: real model weights/workflows, target-host GPU inference, audio listening, browser acceptance, security/operations and full release acceptance remain open.
+> **Current state (2026-11-10): Phases 0.5–6.7 are merged into `main`.** Phase 6.6 transitions, Arabic titles and image overlays were merged in PR #13; Phase 6.7 multi-shot Wan generation and FFmpeg assembly were merged in PR #14 after all three CI jobs passed. Phase 6.8 bounded Real-ESRGAN video enhancement is implemented on the synchronized branch in Draft PR #16; CI and real target-host inference acceptance remain open. The Arabic RTL Studio now includes a 10-second enhancement option gated by workflow readiness and verified source duration. The repository is still **not production-ready**: real model weights/workflows, target-host GPU inference, visual/audio review, browser acceptance, security/operations and full release acceptance remain open.
+
+## Current feature status
+
+- **Phase 6.6 — merged:** transitions, Arabic titles and image/logo overlays with deterministic FFmpeg rendering.
+- **Phase 6.7 — merged:** approved 2–8-shot Wan generation and ordered MP4 assembly. Real Wan/RIFE inference is still unverified on the target GPU.
+- **Phase 6.8 — in review:** per-frame Real-ESRGAN video enhancement, up to 10 seconds / 300 frames, with source audio streams restored and verified. The implementation uses synthetic media and a mocked ComfyUI adapter in CI; actual model inference and visual quality still need target-host acceptance.
+
+See [Production Roadmap](docs/17-PRODUCTION-ROADMAP.md) and [Phase 6.8 — Bounded Video Enhancement](docs/26-PHASE-6.8-VIDEO-ENHANCEMENT.md).
 
 ## Product scope
 
