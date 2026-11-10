@@ -42,6 +42,16 @@ def test_studio_ui_and_static_assets_are_served():
     assert 'id="timeline-subtitles-download"' in page.text
     assert "transcribeSelectedAsset" in script.text
     assert "createTimelineSubtitles" in script.text
+    assert 'id="audio-mix-panel"' in page.text
+    assert 'id="audio-file"' in page.text
+    assert 'id="audio-mix-add"' in page.text
+    assert 'id="audio-mix-save"' in page.text
+    assert 'id="audio-level-voice"' in page.text
+    assert 'id="audio-level-music"' in page.text
+    assert 'id="audio-level-sfx"' in page.text
+    assert "loadProjectAudioMix" in script.text
+    assert "saveProjectAudioMix" in script.text
+    assert "uploadAudioAsset" in script.text
 
 
 def test_project_history_endpoint_lists_created_projects(tmp_path, monkeypatch):
