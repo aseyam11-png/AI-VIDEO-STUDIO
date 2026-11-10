@@ -260,6 +260,7 @@ def get_tool_catalog() -> dict[str, typing.Any]:
                     JobType.VISION_TRACK,
                     JobType.VIDEO_GENERATE,
                     JobType.VIDEO_GENERATE_SEQUENCE,
+                    JobType.VIDEO_ENHANCE,
                     JobType.VIDEO_UPSCALE,
                     JobType.VIDEO_INTERPOLATE,
                     JobType.MOTION_BLENDER,
@@ -281,6 +282,7 @@ def get_tool_catalog() -> dict[str, typing.Any]:
             "user_approval_required_for": [
                 "video.generate",
                 "video.generate_sequence",
+                "video.enhance",
                 "motion.blender",
             ],
             "model_weights_downloaded_automatically": False,
