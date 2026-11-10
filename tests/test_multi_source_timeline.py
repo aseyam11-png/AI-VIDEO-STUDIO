@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.main import app
 from app.media import pipeline
 from app.media.storage import create_project, ingest_file_stream
+from fastapi.testclient import TestClient
 
 
 def _project(tmp_path, monkeypatch):
