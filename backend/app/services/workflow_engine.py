@@ -800,6 +800,17 @@ def review_product_identity(
 
         options = dict(run.options_json or {})
         review = dict(options.get("product_identity_review") or {})
+        if not options.get("product_identity_lock"):
+            raise WorkflowConflictError("This workflow did not request product identity review.")
+
+        review_status = review.get("status")
+        if review_status in {"approved", "rejected"}:
+            if (review_status == "approved") == approved:
+                return _workflow_to_dict(db, run)
+            raise WorkflowConflictError("A different identity-review decision was already recorded.")
+        if run.status != "awaiting_identity_review" or review_status != "pending":
+            raise WorkflowConflictError("Workflow is not waiting for product identity review.")
+
         checks = dict(checks or {})
         required_checks = {
             "silhouette_and_proportions",
@@ -815,16 +826,6 @@ def review_product_identity(
             raise WorkflowRequestError(
                 "All five product identity checks must be confirmed before approval."
             )
-        if not options.get("product_identity_lock"):
-            raise WorkflowConflictError("This workflow did not request product identity review.")
-
-        review_status = review.get("status")
-        if review_status in {"approved", "rejected"}:
-            if (review_status == "approved") == approved:
-                return _workflow_to_dict(db, run)
-            raise WorkflowConflictError("A different identity-review decision was already recorded.")
-        if run.status != "awaiting_identity_review" or review_status != "pending":
-            raise WorkflowConflictError("Workflow is not waiting for product identity review.")
 
         output_asset_id = str(review.get("output_asset_id") or "")
         output_asset = db.get(AssetRecord, output_asset_id)
