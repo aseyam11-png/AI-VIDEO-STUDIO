@@ -1,4 +1,5 @@
 import io
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -212,3 +213,106 @@ def test_project_timeline_api_saves_reads_and_renders_assets(
     assert download.content == b"project-preview"
 
 from fastapi.testclient import TestClient
+
+
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None,
+    reason="FFmpeg is required for multi-source render integration test",
+)
+def test_render_multi_source_timeline_with_real_ffmpeg_and_mixed_audio(tmp_path):
+    ffmpeg = shutil.which("ffmpeg")
+    assert ffmpeg is not None
+
+    with_audio = tmp_path / "with-audio.mp4"
+    silent = tmp_path / "silent.mp4"
+    output = tmp_path / "exports" / "multi-source-preview.mp4"
+
+    subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x240:rate=24:duration=1.5",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=1.5",
+            "-shortest",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            str(with_audio),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    subprocess.run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x240:rate=30:duration=1.5",
+            "-an",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(silent),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    result = pipeline.render_multi_source_timeline(
+        sources={
+            "3eac5d2d-3a45-4cc4-a3b3-3a7f0fd2c021": with_audio,
+            "3eac5d2d-3a45-4cc4-a3b3-3a7f0fd2c022": silent,
+        },
+        timeline_manifest={
+            "schema_version": 2,
+            "clips": [
+                {
+                    "asset_id": "3eac5d2d-3a45-4cc4-a3b3-3a7f0fd2c021",
+                    "source_start_seconds": 0.25,
+                    "duration_seconds": 1.0,
+                },
+                {
+                    "asset_id": "3eac5d2d-3a45-4cc4-a3b3-3a7f0fd2c022",
+                    "source_start_seconds": 0.25,
+                    "duration_seconds": 1.0,
+                },
+            ],
+        },
+        destination=output,
+        width=320,
+        height=240,
+        fps=24,
+        crf=28,
+    )
+
+    assert output.is_file()
+    assert result["size_bytes"] > 0
+    assert result["clip_count"] == 2
+    streams = result["metadata"]["streams"]
+    assert any(stream.get("codec_type") == "video" for stream in streams)
+    assert any(stream.get("codec_type") == "audio" for stream in streams)
+    duration = float(result["metadata"]["format"]["duration"])
+    assert 1.8 <= duration <= 2.2
+
