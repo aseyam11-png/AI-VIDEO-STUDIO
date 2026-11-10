@@ -345,8 +345,10 @@ def build_multi_source_timeline(
     sources: dict[str, Path],
     clips: list[dict],
     fps: int = 30,
+    audio_sources: dict[str, Path] | None = None,
+    audio_tracks: list[dict] | None = None,
 ) -> tuple[dict, Path]:
-    """Build a project-wide sequential timeline from project-scoped video assets."""
+    """Build a project timeline with source audio controls and independent audio lanes."""
     _check_cancel(None)
     try:
         import opentimelineio as otio
@@ -355,20 +357,28 @@ def build_multi_source_timeline(
             "Timeline generation requires OpenTimelineIO. Install the 'media' extra."
         ) from exc
 
+    audio_tracks = audio_tracks or []
     if fps < 1 or fps > 60 or not clips or len(clips) > 100:
         raise ValueError("A multi-source timeline requires 1–100 clips and an FPS from 1 to 60.")
+    if len(audio_tracks) > 4:
+        raise ValueError("A project timeline supports at most four independent audio tracks.")
 
     safe_project_id = str(UUID(project_id))
     normalized_sources = {
         str(UUID(key)): Path(value).expanduser().resolve()
         for key, value in sources.items()
     }
+    normalized_audio_sources = {
+        str(UUID(key)): Path(value).expanduser().resolve()
+        for key, value in (audio_sources or {}).items()
+    }
     source_metadata: dict[str, dict] = {}
+    audio_metadata: dict[str, dict] = {}
     video_track = otio.schema.Track(name="V1", kind=otio.schema.TrackKind.Video)
-    audio_track = otio.schema.Track(name="A1", kind=otio.schema.TrackKind.Audio)
+    source_audio_track = otio.schema.Track(name="A1", kind=otio.schema.TrackKind.Audio)
     timeline = otio.schema.Timeline(name=f"Project {safe_project_id}")
     timeline.tracks.append(video_track)
-    timeline.tracks.append(audio_track)
+    timeline.tracks.append(source_audio_track)
 
     normalized_clips: list[dict] = []
     timeline_cursor = 0.0
@@ -384,17 +394,24 @@ def build_multi_source_timeline(
             )
             start = float(item["source_start_seconds"])
             duration = float(item["duration_seconds"])
+            gain_db = float(item.get("audio_gain_db", 0))
+            fade_in = float(item.get("audio_fade_in_seconds", 0))
+            fade_out = float(item.get("audio_fade_out_seconds", 0))
+            muted = bool(item.get("audio_muted", False))
         except (KeyError, TypeError, ValueError, AttributeError) as exc:
             raise ValueError(
-                "Each timeline clip requires a valid asset_id, source start and duration."
+                "Each timeline clip requires a valid asset ID, source range and audio settings."
             ) from exc
 
         if asset_id not in normalized_sources:
             raise ValueError("Every clip must reference a video asset in the same project.")
-        if not math.isfinite(start) or not math.isfinite(duration) or start < 0 or duration <= 0:
-            raise ValueError(
-                "Clip source range must be finite, non-negative and have positive duration."
-            )
+        numeric_values = (start, duration, gain_db, fade_in, fade_out)
+        if not all(math.isfinite(value) for value in numeric_values):
+            raise ValueError("Clip timing and audio settings must be finite numbers.")
+        if start < 0 or duration <= 0 or not -60 <= gain_db <= 12:
+            raise ValueError("Clip source range or audio gain is outside the supported range.")
+        if fade_in < 0 or fade_out < 0 or fade_in + fade_out > duration:
+            raise ValueError("Clip audio fades must fit within the clip duration.")
 
         source = normalized_sources[asset_id]
         if not source.is_file():
@@ -436,9 +453,9 @@ def build_multi_source_timeline(
                 start_time=otio.opentime.RationalTime(start * fps, fps),
                 duration=otio.opentime.RationalTime(duration * fps, fps),
             )
-            audio_track.append(audio_clip)
+            source_audio_track.append(audio_clip)
         else:
-            audio_track.append(
+            source_audio_track.append(
                 otio.schema.Gap(
                     source_range=otio.opentime.TimeRange(
                         start_time=otio.opentime.RationalTime(0, fps),
@@ -454,12 +471,108 @@ def build_multi_source_timeline(
                 "source_start_seconds": round(start, 6),
                 "duration_seconds": round(duration, 6),
                 "timeline_start_seconds": round(timeline_cursor, 6),
+                "audio_gain_db": gain_db,
+                "audio_muted": muted,
+                "audio_fade_in_seconds": round(fade_in, 6),
+                "audio_fade_out_seconds": round(fade_out, 6),
             }
         )
         timeline_cursor += duration
         total_duration += duration
         if total_duration > 3600:
             raise ValueError("Multi-source timeline duration cannot exceed one hour.")
+
+    normalized_audio_tracks: list[dict] = []
+    for index, item in enumerate(audio_tracks, start=2):
+        try:
+            track_id = str(UUID(str(item.get("track_id") or uuid4())))
+            asset_id = str(UUID(str(item["asset_id"])))
+            source_start = float(item.get("source_start_seconds", 0))
+            timeline_start = float(item.get("timeline_start_seconds", 0))
+            duration = float(item["duration_seconds"])
+            gain_db = float(item.get("gain_db", -16))
+            fade_in = float(item.get("fade_in_seconds", 0))
+            fade_out = float(item.get("fade_out_seconds", 0))
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            raise ValueError("Each background audio track requires a valid asset and timing.") from exc
+        if asset_id not in normalized_audio_sources:
+            raise ValueError("Every background track must reference an audio asset in the same project.")
+        values = (source_start, timeline_start, duration, gain_db, fade_in, fade_out)
+        if not all(math.isfinite(value) for value in values):
+            raise ValueError("Background audio timing and gain must be finite numbers.")
+        if (
+            source_start < 0
+            or timeline_start < 0
+            or duration <= 0
+            or not -60 <= gain_db <= 12
+            or fade_in < 0
+            or fade_out < 0
+            or fade_in + fade_out > duration
+            or timeline_start + duration > total_duration + 0.001
+        ):
+            raise ValueError("Background audio track timing, fades or gain are outside supported limits.")
+
+        source = normalized_audio_sources[asset_id]
+        if not source.is_file():
+            raise ValueError("A background audio source file is missing.")
+        metadata = audio_metadata.get(asset_id)
+        if metadata is None:
+            metadata = probe_media(source)
+            streams = metadata.get("streams", [])
+            if not any(stream.get("codec_type") == "audio" for stream in streams):
+                raise ValueError("Background track assets must contain an audio stream.")
+            audio_metadata[asset_id] = metadata
+        duration_value = metadata.get("format", {}).get("duration")
+        try:
+            source_duration = float(duration_value) if duration_value is not None else None
+        except (TypeError, ValueError):
+            source_duration = None
+        if source_duration is not None and source_start + duration > source_duration + 0.001:
+            raise ValueError("Background audio track exceeds its source audio duration.")
+
+        track = otio.schema.Track(
+            name=f"A{index}",
+            kind=otio.schema.TrackKind.Audio,
+        )
+        if timeline_start > 0:
+            track.append(
+                otio.schema.Gap(
+                    source_range=otio.opentime.TimeRange(
+                        start_time=otio.opentime.RationalTime(0, fps),
+                        duration=otio.opentime.RationalTime(timeline_start * fps, fps),
+                    )
+                )
+            )
+        audio_reference = otio.schema.ExternalReference(target_url=source.as_uri())
+        audio_clip = otio.schema.Clip(name=track_id, media_reference=audio_reference)
+        audio_clip.source_range = otio.opentime.TimeRange(
+            start_time=otio.opentime.RationalTime(source_start * fps, fps),
+            duration=otio.opentime.RationalTime(duration * fps, fps),
+        )
+        track.append(audio_clip)
+        trailing = total_duration - timeline_start - duration
+        if trailing > 0:
+            track.append(
+                otio.schema.Gap(
+                    source_range=otio.opentime.TimeRange(
+                        start_time=otio.opentime.RationalTime(0, fps),
+                        duration=otio.opentime.RationalTime(trailing * fps, fps),
+                    )
+                )
+            )
+        timeline.tracks.append(track)
+        normalized_audio_tracks.append(
+            {
+                "track_id": track_id,
+                "asset_id": asset_id,
+                "source_start_seconds": round(source_start, 6),
+                "timeline_start_seconds": round(timeline_start, 6),
+                "duration_seconds": round(duration, 6),
+                "gain_db": gain_db,
+                "fade_in_seconds": round(fade_in, 6),
+                "fade_out_seconds": round(fade_out, 6),
+            }
+        )
 
     project_path = project_dir(safe_project_id)
     timeline_dir = project_path / "timelines"
@@ -474,6 +587,7 @@ def build_multi_source_timeline(
         "fps": fps,
         "duration_seconds": round(total_duration, 6),
         "clips": normalized_clips,
+        "audio_tracks": normalized_audio_tracks,
         "otio_filename": timeline_path.name,
         "status": "draft",
     }
