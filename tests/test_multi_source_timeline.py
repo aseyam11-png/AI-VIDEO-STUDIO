@@ -212,6 +212,17 @@ def test_project_timeline_api_saves_reads_and_renders_assets(
     assert download.status_code == 200
     assert download.content == b"project-preview"
 
+    resaved = client.put(f"/v1/projects/{project['id']}/timeline", json=payload)
+    assert resaved.status_code == 200, resaved.text
+    stale_after_edit = client.get(f"/v1/projects/{project['id']}/timeline/rendered")
+    assert stale_after_edit.status_code == 404
+
+    rendered_again = client.post(
+        f"/v1/projects/{project['id']}/timeline/render",
+        json={"width": 640, "height": 360, "fps": 24},
+    )
+    assert rendered_again.status_code == 200, rendered_again.text
+
     missing_clips = client.put(f"/v1/projects/{project['id']}/timeline", json={"fps": 24})
     assert missing_clips.status_code == 422
 
