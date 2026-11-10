@@ -1,7 +1,7 @@
 # Phase 6.6 — Transitions, Titles and Motion Graphics
 
-**Status:** implementation in feature branch; not merged or production-accepted yet  
-**Branch:** feat/phase-6.6-transitions-titles-motion  
+**Status:** merged into `main` in [PR #13](https://github.com/aseyam11-png/AI-VIDEO-STUDIO/pull/13); target-host browser and visual acceptance remain open  
+**Implementation branch:** `feat/phase-6.6-transitions-titles-motion`  
 **Base:** Phase 6.5 audio-mixing merge on main
 
 ## Scope implemented in this increment
