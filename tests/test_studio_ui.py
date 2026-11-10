@@ -37,6 +37,11 @@ def test_studio_ui_and_static_assets_are_served():
     assert 'id="scene-add-selected"' in page.text
     assert "detectProjectScenes" in script.text
     assert "addSelectedScenesToTimeline" in script.text
+    assert 'id="transcription-run"' in page.text
+    assert 'id="timeline-subtitles-create"' in page.text
+    assert 'id="timeline-subtitles-download"' in page.text
+    assert "transcribeSelectedAsset" in script.text
+    assert "createTimelineSubtitles" in script.text
 
 
 def test_project_history_endpoint_lists_created_projects(tmp_path, monkeypatch):
