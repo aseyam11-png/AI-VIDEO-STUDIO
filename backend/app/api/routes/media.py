@@ -349,6 +349,12 @@ async def save_project_timeline(project_id: str, payload: ProjectTimelineRequest
             }
             atomic_write_json(timeline_dir / f"project-{timeline_id}.json", manifest)
             (timeline_dir / f"project-{timeline_id}.otio").unlink(missing_ok=True)
+            preview = (
+                project_dir(project_id)
+                / "exports"
+                / f"project-{timeline_id}-preview.mp4"
+            )
+            preview.unlink(missing_ok=True)
             return {**manifest, "timeline_path": None}
 
         sources: dict[str, Path] = {}
@@ -371,6 +377,12 @@ async def save_project_timeline(project_id: str, payload: ProjectTimelineRequest
             clips=clips,
             fps=payload.fps,
         )
+        preview = (
+            project_dir(project_id)
+            / "exports"
+            / f"project-{UUID(project_id)}-preview.mp4"
+        )
+        preview.unlink(missing_ok=True)
         return {
             **manifest,
             "timeline_path": str(timeline_path.relative_to(project_dir(project_id))),
