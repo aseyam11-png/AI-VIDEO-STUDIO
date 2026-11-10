@@ -1,3 +1,4 @@
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -20,6 +21,7 @@ from app.media.speech import transcribe_local
 from app.media.storage import (
     asset_dir,
     atomic_write_json,
+    get_asset,
     project_dir,
     register_generated_video_asset,
 )
@@ -98,6 +100,36 @@ def execute_audio_enhancement(
     }
 
 
+def _verify_product_identity_reference(
+    project_id: str,
+    asset_id: str,
+    source: Path,
+    expected_sha256: str,
+) -> dict:
+    """Verify that the image reference is an immutable, project-scoped asset."""
+    asset = get_asset(project_id, asset_id)
+    if asset.get("asset_type") != "image":
+        raise ValueError("Product identity lock requires an image reference asset.")
+    asset_directory = asset_dir(project_id, asset_id).resolve()
+    expected_source = (asset_directory / str(asset.get("stored_filename", ""))).resolve()
+    if (
+        not expected_source.is_relative_to(asset_directory)
+        or not expected_source.is_file()
+        or source.resolve() != expected_source
+    ):
+        raise ValueError("Product identity reference path does not match the selected project asset.")
+    stored_sha256 = asset.get("sha256")
+    if stored_sha256 != expected_sha256:
+        raise ValueError("Product identity reference fingerprint changed after workflow approval.")
+    digest = hashlib.sha256()
+    with expected_source.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    if digest.hexdigest() != expected_sha256:
+        raise ValueError("Product identity reference file failed SHA-256 integrity verification.")
+    return asset
+
+
 def execute_comfyui_job(
     job: dict[str, Any],
     source: Path,
@@ -114,6 +146,13 @@ def execute_comfyui_job(
         relative_source = source.resolve().relative_to(media_root).as_posix()
     except ValueError as exc:
         raise ValueError("ComfyUI input must remain inside the configured MEDIA_ROOT.") from exc
+    if job["job_type"] == "video.generate" and job["payload"].get("product_identity_lock"):
+        _verify_product_identity_reference(
+            job["project_id"],
+            job["asset_id"],
+            source,
+            job["payload"]["identity_reference_sha256"],
+        )
     inputs = {"source_path": relative_source, **job["payload"]}
     result = ComfyUIClient().run_workflow(
         workflow_id,
@@ -174,6 +213,13 @@ def execute_comfyui_job(
             "asset_type": output_asset["asset_type"],
             "relative_path": output_asset["relative_path"],
         }
+        result["download_url"] = (
+            f"/v1/projects/{job['project_id']}/jobs/{job['id']}/files/"
+            f"{generated_video_path.name}"
+        )
+        if job["payload"].get("product_identity_lock"):
+            result["product_identity_lock"] = True
+            result["identity_reference_sha256"] = job["payload"]["identity_reference_sha256"]
     result["files_directory"] = output_dir.relative_to(project_dir(job["project_id"])).as_posix()
     atomic_write_json(output_dir / "result.json", result)
     return result
@@ -390,6 +436,15 @@ def execute_video_sequence(
     except ValueError as exc:
         raise ValueError("Generation reference must remain inside MEDIA_ROOT.") from exc
 
+    identity_reference = None
+    if payload.get("product_identity_lock"):
+        identity_reference = _verify_product_identity_reference(
+            project_id,
+            str(job["asset_id"]),
+            source,
+            payload["identity_reference_sha256"],
+        )
+
     output_root = project_dir(project_id) / "ai_outputs" / str(job_id)
     output_root.mkdir(parents=True, exist_ok=True)
     client = ComfyUIClient()
@@ -507,6 +562,11 @@ def execute_video_sequence(
                 "duration_seconds": requested_duration,
                 "generated_duration_seconds": round(actual_duration, 6),
                 "prompt": shot["prompt"],
+                "identity_reference_sha256": (
+                    payload.get("identity_reference_sha256")
+                    if payload.get("product_identity_lock")
+                    else None
+                ),
             }
         )
         progress(
@@ -578,6 +638,18 @@ def execute_video_sequence(
         "duration_seconds": round(cursor, 6),
         "fps": payload["fps"],
         "interpolate_factor": payload["interpolate_factor"],
+        "product_identity_lock": bool(payload.get("product_identity_lock")),
+        "identity_reference": (
+            {
+                "asset_id": str(job["asset_id"]),
+                "sha256": payload["identity_reference_sha256"],
+                "integrity_verified": True,
+                "human_review_required": True,
+                "review_status": "pending",
+            }
+            if identity_reference
+            else None
+        ),
         "shots": shot_assets,
         "output_asset_id": output_asset["id"],
         "render": rendered,
