@@ -168,6 +168,8 @@ def execute_video_enhancement(
         raise ValueError("Video enhancement source must remain inside MEDIA_ROOT.")
 
     output_root = project_dir(project_id) / "ai_outputs" / str(job_id)
+    # Clear incomplete artifacts from a previous attempt before reusing this idempotent job path.
+    shutil.rmtree(output_root, ignore_errors=True)
     extracted_dir = output_root / "frames" / "source"
     enhanced_dir = output_root / "frames" / "enhanced"
     extracted_dir.mkdir(parents=True, exist_ok=True)
