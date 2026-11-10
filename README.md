@@ -128,7 +128,7 @@ Docker Compose local development:
 4. Import existing Phase 0.5 manifests once with `docker compose exec api python -m app.cli import-legacy-manifests`. The importer is idempotent and does not move media bytes.
 5. Check `http://127.0.0.1:8000/health` and `http://127.0.0.1:8000/ready`.
 
-PostgreSQL and Valkey have no published host ports. The API is bound to localhost only. See [Phase 1 Job Engine](docs/14-PHASE-1-JOB-ENGINE.md), [Phase 2 Model Integrations](docs/15-MODEL-INTEGRATIONS.md), [Phase 3 Workflows](docs/16-WORKFLOW-ORCHESTRATION.md), and the [Production Roadmap](docs/17-PRODUCTION-ROADMAP.md).
+PostgreSQL and Valkey have no published host ports. The API is bound to localhost only. See [Phase 1 Job Engine](docs/14-PHASE-1-JOB-ENGINE.md), [Phase 2 Model Integrations](docs/15-MODEL-INTEGRATIONS.md), [Phase 3 Workflows](docs/16-WORKFLOW-ORCHESTRATION.md), [Phase 6.5 Audio Mixing](docs/23-PHASE-6.5-AUDIO-MIXING-SYNC.md), and the [Production Roadmap](docs/17-PRODUCTION-ROADMAP.md).
 
 The API port is bound to localhost in Compose. Do not expose it publicly. On a cloud host, place access behind a private VPN and authentication before remote use.
 
