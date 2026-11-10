@@ -61,3 +61,11 @@ class WorkflowFromBriefRequest(BaseModel):
         if self.product_identity_lock and not self.generate_video:
             raise ValueError("Product identity lock requires video generation from an image.")
         return self
+
+
+
+class WorkflowIdentityReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approved: bool
+    notes: str = Field(default="", max_length=2000)
