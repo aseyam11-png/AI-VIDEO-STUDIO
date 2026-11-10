@@ -11,6 +11,7 @@ from app.integrations.comfyui import ComfyUIClient, ComfyUIError
 from app.integrations.ffmpeg import MediaToolError, probe_media
 from app.media.audio import enhance_video_audio
 from app.media.pipeline import (
+    MediaJobCancelled,
     assemble_upscaled_video,
     extract_video_frames,
     render_multi_source_timeline,
@@ -199,7 +200,7 @@ def execute_video_enhancement(
     frame_count = extraction["frame_count"]
     for index in range(1, frame_count + 1):
         if cancel_check():
-            raise RuntimeError("Video enhancement was cancelled between frame jobs.")
+            raise MediaJobCancelled("Video enhancement was cancelled between frame jobs.")
         source_frame = extracted_dir / f"frame-{index:06d}.png"
         frame_output_dir = output_root / "comfyui" / f"frame-{index:06d}"
         source_frame_relative = source_frame.resolve().relative_to(media_root).as_posix()
@@ -259,7 +260,7 @@ def execute_video_enhancement(
             )
 
     if cancel_check():
-        raise RuntimeError("Video enhancement was cancelled before MP4 assembly.")
+        raise MediaJobCancelled("Video enhancement was cancelled before MP4 assembly.")
     destination = output_root / f"{job_id}-enhanced.mp4"
     progress(90, "assembling_enhanced_video", "Reassembling enhanced frames and restoring source audio.")
     render = assemble_upscaled_video(
