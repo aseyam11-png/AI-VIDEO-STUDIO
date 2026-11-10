@@ -32,6 +32,7 @@ The feature reduces avoidable identity drift through reference integrity checks,
 - The approved fingerprint is SHA-256 over the file bytes; identity processing fails before any Wan request if the file or path changed.
 - The identity decision, reviewer notes, timestamp, reference/output IDs, fingerprint and checklist are stored with the workflow options.
 - A separate `awaiting_identity_review` workflow state is persisted through Alembic revision `0003_product_identity_review`.
+- The status constraint migration uses Alembic batch mode so it is testable on SQLite and PostgreSQL.
 - A project-scoped asset download endpoint is used to present the reference and generated result within the Studio origin.
 - Repeated identical review decisions are idempotent. A different decision after approval/rejection is rejected.
 
