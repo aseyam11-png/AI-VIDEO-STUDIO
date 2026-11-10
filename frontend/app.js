@@ -2120,6 +2120,8 @@
   }
 
   function renderWorkflow(workflow) {
+    const previousIdentityReviewStatus =
+      state.workflow?.options?.product_identity_review?.status || null;
     state.workflow = workflow;
     $("execution-panel").hidden = false;
     $("workflow-state").textContent = statusLabels[workflow.status] || workflow.status;
@@ -2134,7 +2136,16 @@
     const identityReview = workflow.options?.product_identity_review;
     reviewPanel.hidden = workflow.status !== "awaiting_identity_review";
     if (workflow.status === "awaiting_identity_review" && identityReview) {
-      $("identity-review-notes").value = identityReview.notes || "";
+      if (previousIdentityReviewStatus !== "pending") {
+        $("identity-review-notes").value = identityReview.notes || "";
+        [
+          "identity-check-silhouette",
+          "identity-check-colors",
+          "identity-check-logo",
+          "identity-check-components",
+          "identity-check-consistency"
+        ].forEach((id) => { $(id).checked = false; });
+      }
       const referenceAsset = state.assets.find((asset) => asset.id === identityReview.reference_asset_id);
       $("identity-review-reference").textContent =
         "الصورة المرجعية: " + (referenceAsset?.original_filename || identityReview.reference_asset_id) +
@@ -2144,20 +2155,18 @@
         `/v1/projects/${encodeURIComponent(workflow.project_id)}/assets/${encodeURIComponent(identityReview.reference_asset_id)}/file`,
         window.location.origin
       );
-      referenceImage.src = referenceUrl.pathname;
-      [
-        "identity-check-silhouette",
-        "identity-check-colors",
-        "identity-check-logo",
-        "identity-check-components",
-        "identity-check-consistency"
-      ].forEach((id) => { $(id).checked = false; });
+      if (!referenceImage.src || new URL(referenceImage.src, window.location.origin).pathname !== referenceUrl.pathname) {
+        referenceImage.src = referenceUrl.pathname;
+      }
       const previewUrl = identityReview.preview_url;
       const preview = $("identity-review-preview");
       if (previewUrl) {
         const safeUrl = new URL(previewUrl, window.location.origin);
         if (safeUrl.origin === window.location.origin) {
-          preview.src = safeUrl.pathname + safeUrl.search;
+          const nextPreviewUrl = safeUrl.pathname + safeUrl.search;
+          if (!preview.src || new URL(preview.src, window.location.origin).pathname + new URL(preview.src, window.location.origin).search !== nextPreviewUrl) {
+            preview.src = nextPreviewUrl;
+          }
         } else {
           preview.removeAttribute("src");
           notice("تم رفض رابط معاينة خارج نطاق الاستديو.", "error");
