@@ -423,7 +423,8 @@ def create_workflow_run(
 
             if request.product_identity_lock and asset.asset_type != "image":
                 raise WorkflowRequestError(
-                    "Product identity lock requires an uploaded image asset as the source reference."
+                    "Product identity lock requires an uploaded image asset "
+                    "as the source reference."
                 )
             if request.product_identity_lock and not (
                 isinstance(asset.sha256, str)
@@ -727,7 +728,9 @@ def advance_workflow_for_job(db: Session, job: JobRecord) -> None:
         ):
             if not output_asset_id:
                 step.status = "failed"
-                step.error_message = "Identity-locked generation did not return a reviewable video asset."
+                step.error_message = (
+                    "Identity-locked generation did not return a reviewable video asset."
+                )
                 run.status = "failed"
                 run.error_message = step.error_message
                 run.finished_at = now
@@ -807,7 +810,9 @@ def review_product_identity(
         if review_status in {"approved", "rejected"}:
             if (review_status == "approved") == approved:
                 return _workflow_to_dict(db, run)
-            raise WorkflowConflictError("A different identity-review decision was already recorded.")
+            raise WorkflowConflictError(
+                "A different identity-review decision was already recorded."
+            )
         if run.status != "awaiting_identity_review" or review_status != "pending":
             raise WorkflowConflictError("Workflow is not waiting for product identity review.")
 
@@ -830,7 +835,9 @@ def review_product_identity(
         output_asset_id = str(review.get("output_asset_id") or "")
         output_asset = db.get(AssetRecord, output_asset_id)
         if output_asset is None or output_asset.project_id != run.project_id:
-            raise WorkflowRequestError("The generated review video is missing or outside this project.")
+            raise WorkflowRequestError(
+                "The generated review video is missing or outside this project."
+            )
 
         now = _now()
         review.update(
@@ -849,7 +856,8 @@ def review_product_identity(
         if not approved:
             run.status = "failed"
             run.error_message = (
-                "Product identity review was rejected. Timeline construction and export were blocked."
+                "Product identity review was rejected. Timeline construction "
+                "and export were blocked."
             )
             run.finished_at = now
             pending_steps = db.scalars(
