@@ -35,7 +35,12 @@ async def enforce_private_api_access(request, call_next):
         if production and (not token or len(token) < 32):
             response = JSONResponse(
                 status_code=503,
-                content={"detail": "Production API access is disabled until STUDIO_API_TOKEN is configured with at least 32 characters."},
+                content={
+                    "detail": (
+                        "Production API access is disabled until STUDIO_API_TOKEN "
+                        "is configured with at least 32 characters."
+                    )
+                },
             )
         elif token and path != "/v1/auth/session":
             authorization = request.headers.get("authorization", "")
@@ -47,7 +52,12 @@ async def enforce_private_api_access(request, call_next):
             ):
                 response = JSONResponse(
                     status_code=401,
-                    content={"detail": "A valid bearer token is required to access this private Studio API."},
+                    content={
+                        "detail": (
+                            "A valid bearer token is required to access "
+                            "this private Studio API."
+                        )
+                    },
                     headers={"WWW-Authenticate": "Bearer"},
                 )
     if response is None:
@@ -64,7 +74,10 @@ async def enforce_private_api_access(request, call_next):
         "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
     )
     if request.url.scheme == "https":
-        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
     return response
 
 

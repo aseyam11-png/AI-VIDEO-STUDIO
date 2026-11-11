@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import hashlib
+from itertools import zip_longest
+from pathlib import Path
 import re
 import subprocess
 import time
-from datetime import datetime, timezone
-from itertools import zip_longest
-from pathlib import Path
 from typing import Callable
 
 from app.integrations.ffmpeg import MediaToolError, probe_media, require_binary
@@ -187,7 +187,11 @@ def analyze_video_quality(
         issue("duration_invalid", "error", "The output duration is missing or invalid.")
     elif duration > 3600:
         check("duration_limit", False, "The current production profile is limited to one hour.")
-        issue("duration_limit_exceeded", "error", "The output exceeds the one-hour validation limit.")
+        issue(
+            "duration_limit_exceeded",
+            "error",
+            "The output exceeds the one-hour validation limit.",
+        )
     else:
         check("duration", True, f"Detected duration: {duration:.3f} seconds.")
         if expected_duration_seconds is not None:
@@ -196,7 +200,10 @@ def analyze_video_quality(
             check(
                 "expected_duration",
                 matches,
-                f"Expected {expected_duration_seconds:.3f}s; detected {duration:.3f}s; tolerance {tolerance:.3f}s.",
+                (
+                    f"Expected {expected_duration_seconds:.3f}s; detected "
+                    f"{duration:.3f}s; tolerance {tolerance:.3f}s."
+                ),
             )
             if not matches:
                 issue(
@@ -254,7 +261,11 @@ def analyze_video_quality(
     has_audio = bool(audio_streams)
     if expected_audio is True and not has_audio:
         check("audio_stream", False, "The timeline requires audio, but the export has none.")
-        issue("audio_stream_missing", "error", "The final video is missing its required audio stream.")
+        issue(
+            "audio_stream_missing",
+            "error",
+            "The final video is missing its required audio stream.",
+        )
     else:
         check(
             "audio_stream",
@@ -275,12 +286,20 @@ def analyze_video_quality(
             timeout_seconds=decode_timeout,
             cancel_check=cancel_check,
         )
-        check("full_decode", True, "FFmpeg decoded the selected video/audio streams without fatal errors.")
+        check(
+            "full_decode",
+            True,
+            "FFmpeg decoded the selected video/audio streams without fatal errors.",
+        )
     except MediaJobCancelled:
         raise
     except (MediaToolError, OSError) as exc:
         check("full_decode", False, str(exc)[:500])
-        issue("media_decode_failed", "error", "FFmpeg reported a decoding error in the rendered media.")
+        issue(
+            "media_decode_failed",
+            "error",
+            "FFmpeg reported a decoding error in the rendered media.",
+        )
 
     try:
         _, visual_log = _run_diagnostic(
@@ -340,7 +359,10 @@ def analyze_video_quality(
             issue(
                 "black_frames_detected",
                 "error",
-                f"Detected {len(black_segments)} black segment(s) at or above the configured duration.",
+                (
+                    f"Detected {len(black_segments)} black segment(s) at or above "
+                    "the configured duration."
+                ),
                 segments=black_segments[:50],
             )
         else:
@@ -349,7 +371,10 @@ def analyze_video_quality(
             issue(
                 "frozen_frames_detected",
                 "error",
-                f"Detected {len(freeze_segments)} frozen segment(s) at or above the configured duration.",
+                (
+                    f"Detected {len(freeze_segments)} frozen segment(s) at or above "
+                    "the configured duration."
+                ),
                 segments=freeze_segments[:50],
             )
         else:
@@ -403,7 +428,10 @@ def analyze_video_quality(
                 issue(
                     "long_silence_detected",
                     "warning",
-                    f"Detected {len(silence_segments)} prolonged silent segment(s); human review is required.",
+                    (
+                        f"Detected {len(silence_segments)} prolonged silent segment(s); "
+                        "human review is required."
+                    ),
                     segments=silence_segments[:50],
                 )
             else:
@@ -421,7 +449,11 @@ def analyze_video_quality(
             raise
         except (MediaToolError, OSError) as exc:
             check("audio_scan", False, str(exc)[:500])
-            issue("audio_scan_failed", "error", "Audio silence/peak analysis could not be completed.")
+            issue(
+                "audio_scan_failed",
+                "error",
+                "Audio silence/peak analysis could not be completed.",
+            )
 
     errors = sum(1 for item in report["issues"] if item["severity"] == "error")
     warnings = sum(1 for item in report["issues"] if item["severity"] == "warning")

@@ -11,12 +11,6 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.integrations.ffmpeg import MediaToolError, probe_media
-from app.media.quality import (
-    analyze_video_quality,
-    persist_quality_report,
-    quality_report_matches_file,
-    quality_report_path,
-)
 from app.media.pipeline import (
     OptionalMediaDependencyError,
     build_multi_source_timeline,
@@ -25,6 +19,12 @@ from app.media.pipeline import (
     detect_scenes,
     render_multi_source_timeline,
     render_timeline,
+)
+from app.media.quality import (
+    analyze_video_quality,
+    persist_quality_report,
+    quality_report_matches_file,
+    quality_report_path,
 )
 from app.media.speech import SpeechDependencyError, transcribe_local
 from app.media.storage import (
@@ -499,7 +499,10 @@ def download_render(project_id: str, asset_id: str) -> FileResponse:
         raise HTTPException(status_code=409, detail="Video has no completed quality report.")
     report = read_json(report_path)
     if not quality_report_matches_file(report, rendered):
-        raise HTTPException(status_code=409, detail="Quality report is stale or does not authorize this output.")
+        raise HTTPException(
+            status_code=409,
+            detail="Quality report is stale or does not authorize this output.",
+        )
     return FileResponse(rendered, media_type="video/mp4", filename=rendered.name)
 
 
@@ -1383,12 +1386,20 @@ def download_project_timeline_render(project_id: str) -> FileResponse:
         )
         if not rendered.is_file():
             raise HTTPException(status_code=404, detail="Rendered project timeline not found.")
-        report_path = quality_report_path(project_id, f"project-{UUID(project_id)}")
+        report_path = quality_report_path(
+            project_id, f"project-{UUID(project_id)}"
+        )
         if not report_path.is_file():
-            raise HTTPException(status_code=409, detail="Project export has no completed quality report.")
+            raise HTTPException(
+                status_code=409,
+                detail="Project export has no completed quality report.",
+            )
         report = read_json(report_path)
         if not quality_report_matches_file(report, rendered):
-            raise HTTPException(status_code=409, detail="Quality report is stale or does not authorize this output.")
+            raise HTTPException(
+            status_code=409,
+            detail="Quality report is stale or does not authorize this output.",
+        )
         return FileResponse(rendered, media_type="video/mp4", filename=rendered.name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1410,6 +1421,12 @@ def get_project_quality_report(project_id: str, asset_id: str | None = None) -> 
             raise HTTPException(status_code=404, detail="No quality report exists for this export.")
         return read_json(report_path)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Project or asset identifier is invalid.") from exc
+        raise HTTPException(
+            status_code=400,
+            detail="Project or asset identifier is invalid.",
+        ) from exc
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Project or asset was not found.") from exc
+        raise HTTPException(
+            status_code=404,
+            detail="Project or asset was not found.",
+        ) from exc

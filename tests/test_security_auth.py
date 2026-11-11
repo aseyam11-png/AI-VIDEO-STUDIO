@@ -1,7 +1,6 @@
-from fastapi.testclient import TestClient
-
 from app.core.config import settings
 from app.main import app
+from fastapi.testclient import TestClient
 
 
 def test_local_development_allows_access_without_token(monkeypatch):

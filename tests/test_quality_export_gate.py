@@ -2,10 +2,10 @@ import shutil
 import subprocess
 from uuid import uuid4
 
-import pytest
 from app.core.config import settings
 from app.main import app
 from fastapi.testclient import TestClient
+import pytest
 
 
 pytestmark = pytest.mark.skipif(
