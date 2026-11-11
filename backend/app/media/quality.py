@@ -13,7 +13,6 @@ from app.integrations.ffmpeg import MediaToolError, probe_media, require_binary
 from app.media.pipeline import MediaJobCancelled
 from app.media.storage import atomic_write_json, project_dir
 
-
 _NUMBER = r"(?:\d+(?:\.\d*)?|\.\d+)"
 
 

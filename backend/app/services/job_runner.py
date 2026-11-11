@@ -381,7 +381,11 @@ def _execute_media_job(
                     f"{summary.get('error_count', 0)} blocking issue(s)."
                 )
             )
-        progress(98, "quality_passed", "Technical video/audio checks passed; preparing the download.")
+        progress(
+            98,
+            "quality_passed",
+            "Technical video/audio checks passed; preparing the download.",
+        )
         return {
             **result,
             "quality_report": quality_report,

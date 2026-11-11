@@ -1,8 +1,8 @@
 import shutil
 import subprocess
 
-from app.media.quality import analyze_video_quality
 import pytest
+from app.media.quality import analyze_video_quality
 
 
 pytestmark = pytest.mark.skipif(
