@@ -18,13 +18,12 @@ def _make_fixture(path, *, video_filter=None, audio_filter=None):
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=24:duration=3",
     ]
+    if audio_filter is not None:
+        command.extend(["-f", "lavfi", "-i", f"{audio_filter}:duration=3"])
     if video_filter:
         command.extend(["-vf", video_filter])
     if audio_filter is not None:
-        command.extend(
-            ["-f", "lavfi", "-i", f"{audio_filter}:duration=3", "-map", "0:v:0", "-map", "1:a:0"]
-        )
-        command.extend(["-c:a", "aac"])
+        command.extend(["-map", "0:v:0", "-map", "1:a:0", "-c:a", "aac"])
     else:
         command.extend(["-map", "0:v:0", "-an"])
     command.extend(["-t", "3", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-r", "24", str(path)])
@@ -75,8 +74,8 @@ def test_frozen_sequence_is_detected(tmp_path):
     command = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=24:duration=3",
-        "-vf", "tpad=stop_mode=clone:stop_duration=2",
         "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=5",
+        "-vf", "tpad=stop_mode=clone:stop_duration=2",
         "-map", "0:v:0", "-map", "1:a:0", "-t", "5",
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(path)
     ]
