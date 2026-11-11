@@ -161,12 +161,46 @@ def _execute_media_job(
         )
         progress(95, "audio_muxed", "Enhanced audio was muxed into a new video file.")
         generated_path = project_dir(project_id) / result["relative_path"]
+        source_metadata = probe_media(source)
+        source_video = next(
+            (
+                stream for stream in source_metadata.get("streams", [])
+                if stream.get("codec_type") == "video"
+            ),
+            {},
+        )
+        source_audio_required = any(
+            stream.get("codec_type") == "audio"
+            for stream in source_metadata.get("streams", [])
+        )
+        source_duration = source_metadata.get("format", {}).get("duration")
+        quality_report = analyze_video_quality(
+            generated_path,
+            expected_duration_seconds=(
+                float(source_duration) if source_duration is not None else None
+            ),
+            expected_width=source_video.get("width"),
+            expected_height=source_video.get("height"),
+            expected_audio=source_audio_required,
+            cancel_check=cancel_check,
+        )
+        if not quality_report["can_export"]:
+            generated_path.unlink(missing_ok=True)
+            raise ValueError(
+                "Audio-enhanced video failed the quality gate: "
+                f"{quality_report.get('summary', {}).get('error_count', 0)} "
+                "blocking issue(s)."
+            )
         output_asset = register_generated_video_asset(
             project_id,
             job["id"],
             generated_path,
             max_bytes=settings.max_model_output_bytes,
         )
+        persist_quality_report(
+            project_id, f"asset-{output_asset['id']}", quality_report
+        )
+        result["quality_report"] = quality_report
         result["output_asset_id"] = output_asset["id"]
         result["output_asset"] = {
             "id": output_asset["id"],

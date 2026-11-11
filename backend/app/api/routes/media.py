@@ -265,6 +265,19 @@ def get_asset_route(project_id: str, asset_id: str) -> dict:
 def download_asset_file(project_id: str, asset_id: str) -> FileResponse:
     """Serve only the selected asset file after project-scoped path validation."""
     asset, source = _source_path(project_id, asset_id)
+    if asset.get("source_job_id") and asset.get("asset_type") == "video":
+        report_path = quality_report_path(project_id, f"asset-{asset_id}")
+        if not report_path.is_file():
+            raise HTTPException(
+                status_code=409,
+                detail="Generated video asset has no completed quality report.",
+            )
+        report = read_json(report_path)
+        if not quality_report_matches_file(report, source):
+            raise HTTPException(
+                status_code=409,
+                detail="Generated video quality report is stale or does not authorize this asset.",
+            )
     media_type = mimetypes.guess_type(asset.get("original_filename", ""))[0]
     return FileResponse(
         source,

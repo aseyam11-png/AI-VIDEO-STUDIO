@@ -3,8 +3,11 @@ import subprocess
 from uuid import uuid4
 
 import pytest
+from app.api.routes import models as models_route
 from app.core.config import settings
 from app.main import app
+from app.media.quality import analyze_video_quality, persist_quality_report
+from app.media.storage import project_dir, register_generated_video_asset
 from fastapi.testclient import TestClient
 
 
@@ -125,3 +128,58 @@ def test_multi_source_export_returns_report_for_clean_video(tmp_path, monkeypatc
     download = client.get(f"/v1/projects/{project['id']}/timeline/rendered")
     assert download.status_code == 200
     assert download.headers["content-type"].startswith("video/mp4")
+
+
+def test_generated_video_asset_and_job_download_require_fresh_quality_reports(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
+    source = tmp_path / "generated-source.mp4"
+    _make_clip(source, black=False)
+    client = TestClient(app)
+    project = _project(client)
+
+    generated_dir = project_dir(project["id"]) / "exports"
+    generated_dir.mkdir(parents=True, exist_ok=True)
+    generated_source = generated_dir / "generated-output.mp4"
+    shutil.copyfile(source, generated_source)
+
+    job_id = str(uuid4())
+    asset = register_generated_video_asset(
+        project["id"],
+        job_id,
+        generated_source,
+        max_bytes=10 * 1024 * 1024,
+    )
+    asset_file = project_dir(project["id"]) / asset["relative_path"]
+    job = {
+        "id": job_id,
+        "project_id": project["id"],
+        "status": "succeeded",
+        "result": {
+            "output_asset_id": asset["id"],
+            "relative_path": asset["relative_path"],
+        },
+    }
+    monkeypatch.setattr(models_route, "get_job", lambda requested_id: job)
+
+    asset_url = f"/v1/projects/{project['id']}/assets/{asset['id']}/file"
+    job_url = (
+        f"/v1/projects/{project['id']}/jobs/{job_id}/files/"
+        f"{asset_file.name}"
+    )
+    assert client.get(asset_url).status_code == 409
+    assert client.get(job_url).status_code == 409
+
+    report = analyze_video_quality(asset_file, expected_audio=True)
+    assert report["can_export"] is True
+    persist_quality_report(project["id"], f"asset-{asset['id']}", report)
+
+    assert client.get(asset_url).status_code == 200
+    assert client.get(job_url).status_code == 200
+
+    with asset_file.open("ab") as stream:
+        stream.write(b"changed-after-quality-check")
+
+    assert client.get(asset_url).status_code == 409
+    assert client.get(job_url).status_code == 409

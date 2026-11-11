@@ -778,6 +778,29 @@ def execute_blender_job(
         fps=payload["fps"],
         cancel_check=cancel_check,
     )
+    expected_duration = (
+        (int(payload["frame_end"]) - int(payload["frame_start"]) + 1)
+        / float(payload["fps"])
+    )
+    quality_report = analyze_video_quality(
+        destination,
+        expected_duration_seconds=expected_duration,
+        expected_width=payload["width"],
+        expected_height=payload["height"],
+        expected_fps=float(payload["fps"]),
+        cancel_check=cancel_check,
+    )
+    if not quality_report["can_export"]:
+        destination.unlink(missing_ok=True)
+        raise ComfyUIError(
+            "Blender motion output failed the video quality gate: "
+            f"{quality_report.get('summary', {}).get('error_count', 0)} "
+            "blocking issue(s)."
+        )
+    report_key = f"job-{UUID(job['id'])}"
+    persist_quality_report(job["project_id"], report_key, quality_report)
+    result["quality_report"] = quality_report
+    result["quality_report_key"] = report_key
     result["relative_path"] = destination.relative_to(project_dir(job["project_id"])).as_posix()
     result["download_url"] = (
         f"/v1/projects/{job['project_id']}/jobs/"
