@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 from app.integrations.ffmpeg import MediaToolError, probe_media, require_binary
+from app.media.quality import analyse_video_quality
 from app.media.storage import atomic_write_json, project_dir
 
 
@@ -311,6 +312,8 @@ def render_timeline(
 
     ffmpeg = require_binary("ffmpeg")
     destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.unlink(missing_ok=True)
+    destination.with_suffix(".quality.json").unlink(missing_ok=True)
     temporary = destination.with_name(destination.stem + ".partial" + destination.suffix)
     command = [
         ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
@@ -333,11 +336,22 @@ def render_timeline(
     finally:
         temporary.unlink(missing_ok=True)
 
+    quality_report = analyse_video_quality(
+        destination,
+        expected_width=width,
+        expected_height=height,
+        expected_fps=fps,
+        expected_duration_seconds=sum(float(item["duration_seconds"]) for item in clips),
+        expected_audio=has_audio,
+        cancel_check=cancel_check,
+    )
+    atomic_write_json(destination.with_suffix(".quality.json"), quality_report)
     return {
         "filename": destination.name,
         "size_bytes": destination.stat().st_size,
         "settings": {"width": width, "height": height, "fps": fps, "crf": crf},
         "metadata": probe_media(destination),
+        "quality_report": quality_report,
     }
 
 
@@ -1346,6 +1360,9 @@ def render_multi_source_timeline(
             "alimiter=limit=0.95[a_final]"
         )
 
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.unlink(missing_ok=True)
+    destination.with_suffix(".quality.json").unlink(missing_ok=True)
     temporary = destination.with_name(destination.stem + ".partial" + destination.suffix)
     command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
     for input_index, source in enumerate(inputs):
@@ -1387,6 +1404,19 @@ def render_multi_source_timeline(
         if title_temp is not None:
             title_temp.cleanup()
 
+    expected_duration = timeline_duration - sum(
+        float(item["duration_seconds"]) for item in transitions
+    )
+    quality_report = analyse_video_quality(
+        destination,
+        expected_width=width,
+        expected_height=height,
+        expected_fps=fps,
+        expected_duration_seconds=max(0.0, expected_duration),
+        expected_audio=has_audio_output,
+        cancel_check=cancel_check,
+    )
+    atomic_write_json(destination.with_suffix(".quality.json"), quality_report)
     return {
         "filename": destination.name,
         "size_bytes": destination.stat().st_size,
@@ -1397,5 +1427,6 @@ def render_multi_source_timeline(
         "audio_clip_count": len(audio_input_metadata),
         "settings": {"width": width, "height": height, "fps": fps, "crf": crf},
         "metadata": metadata,
+        "quality_report": quality_report,
     }
 
