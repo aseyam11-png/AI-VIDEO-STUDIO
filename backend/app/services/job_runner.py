@@ -410,10 +410,8 @@ def _execute_media_job(
             destination.unlink(missing_ok=True)
             summary = quality_report.get("summary", {})
             raise ValueError(
-                "Quality gate blocked the rendered video: "
-                (
-                    f"{summary.get('error_count', 0)} blocking issue(s)."
-                )
+                f"Quality gate blocked the rendered video: "
+                f"{summary.get('error_count', 0)} blocking issue(s)."
             )
         progress(
             98,

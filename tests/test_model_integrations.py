@@ -1,4 +1,6 @@
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -13,12 +15,44 @@ from app.integrations.comfyui import (
 )
 from app.integrations.ollama import OllamaError, _parse_plan
 from app.media.pipeline import MediaJobCancelled
+from app.media.quality import analyze_video_quality, persist_quality_report
+from app.media.storage import project_dir
 from app.media.speech import transcribe_local
 from app.schemas.jobs import JobType
 from app.schemas.models import CreativePlan
 from app.services.jobs import JobRequestError, normalize_payload
 from fastapi import HTTPException
 from fastapi.responses import FileResponse
+
+
+def _write_quality_test_video(path: Path, *, duration: int = 4) -> None:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        pytest.skip("FFmpeg is required for model output download quality tests.")
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"testsrc2=size=320x240:rate=24:duration={duration}",
+        "-f",
+        "lavfi",
+        "-i",
+        f"sine=frequency=660:sample_rate=48000:duration={duration}",
+        "-shortest",
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        str(path),
+    ]
+    subprocess.run(command, check=True, capture_output=True, text=True, timeout=60)
 
 
 def _workflow():
@@ -280,21 +314,32 @@ def test_model_job_queue_routing_is_separate_from_cpu_queue():
     assert JobType.AUDIO_ENHANCE not in _MODEL_QUEUE_TYPES
 
 
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None,
+    reason="FFmpeg is required for model output download quality tests.",
+)
 def test_model_output_download_uses_only_recorded_completed_job_file(tmp_path, monkeypatch):
     project_id = "00000000-0000-4000-8000-000000000001"
     job_id = "00000000-0000-4000-8000-000000000002"
-    output_dir = tmp_path / "exports"
-    output_dir.mkdir()
+    monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
+    output_dir = project_dir(project_id) / "exports"
+    output_dir.mkdir(parents=True)
     output = output_dir / "cleaned.mp4"
-    output.write_bytes(b"synthetic-video")
+    _write_quality_test_video(output)
+    quality_report = analyze_video_quality(output, expected_audio=True)
+    assert quality_report["can_export"] is True
+    report_key = f"job-{job_id}"
+    persist_quality_report(project_id, report_key, quality_report)
     job = {
         "id": job_id,
         "project_id": project_id,
         "status": "succeeded",
-        "result": {"relative_path": "exports/cleaned.mp4"},
+        "result": {
+            "relative_path": "exports/cleaned.mp4",
+            "quality_report_key": report_key,
+        },
     }
     monkeypatch.setattr(models_route, "get_job", lambda requested_id: job)
-    monkeypatch.setattr(models_route, "project_dir", lambda requested_project: tmp_path)
 
     response = models_route.download_job_output(project_id, job_id, "cleaned.mp4")
 

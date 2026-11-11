@@ -169,7 +169,7 @@ def execute_comfyui_job(
     video_stream_found = False
     generated_video_path: Path | None = None
     safe_output_dir = output_dir.resolve()
-    for output in result["outputs"]:
+    for output_index, output in enumerate(result["outputs"], start=1):
         output_path = (output_dir / output["saved_as"]).resolve()
         if not output_path.is_relative_to(safe_output_dir):
             raise ComfyUIError("ComfyUI returned an output path outside the job directory.")
@@ -183,6 +183,10 @@ def execute_comfyui_job(
         if not streams:
             raise ComfyUIError(f"ComfyUI output {output['saved_as']} has no valid media stream.")
         output["metadata"] = metadata
+        is_video_file = (
+            output_path.suffix.lower() in {".mp4", ".webm", ".mov", ".mkv"}
+            and any(stream.get("codec_type") == "video" for stream in streams)
+        )
         if (
             output_path.suffix.lower() in {".mp4", ".webm", ".mov", ".mkv", ".gif"}
             and any(stream.get("codec_type") == "video" for stream in streams)
@@ -190,9 +194,27 @@ def execute_comfyui_job(
             video_stream_found = True
             if (
                 job["job_type"] in {"video.generate", "video.interpolate"}
-                and output_path.suffix.lower() in {".mp4", ".mov", ".mkv", ".webm"}
+                and is_video_file
             ):
                 generated_video_path = output_path
+            elif is_video_file:
+                report_key = f"job-{job['id']}-{output_index}"
+                quality_report = analyze_video_quality(
+                    output_path,
+                    cancel_check=cancel_check,
+                )
+                persist_quality_report(
+                    job["project_id"], report_key, quality_report
+                )
+                if not quality_report["can_export"]:
+                    output_path.unlink(missing_ok=True)
+                    raise ComfyUIError(
+                        "ComfyUI video output failed the quality gate: "
+                        f"{quality_report.get('summary', {}).get('error_count', 0)} "
+                        "blocking issue(s)."
+                    )
+                output["quality_report"] = quality_report
+                output["quality_report_key"] = report_key
         output["download_url"] = (
             f"/v1/projects/{job['project_id']}/jobs/{job['id']}/files/"
             f"{quote(output['saved_as'], safe='')}"

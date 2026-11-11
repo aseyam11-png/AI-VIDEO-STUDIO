@@ -12,6 +12,47 @@ from app.media.storage import create_project, ingest_file_stream
 from fastapi.testclient import TestClient
 
 
+def _write_test_video(
+    path: Path,
+    *,
+    duration: int,
+    width: int,
+    height: int,
+    audio: bool,
+) -> None:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        pytest.skip("FFmpeg is required for export quality integration tests.")
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"testsrc2=size={width}x{height}:rate=24:duration={duration}",
+    ]
+    if audio:
+        command.extend(
+            [
+                "-f",
+                "lavfi",
+                "-i",
+                f"sine=frequency=660:sample_rate=48000:duration={duration}",
+                "-shortest",
+            ]
+        )
+    else:
+        command.append("-an")
+    command.extend(["-c:v", "libx264", "-pix_fmt", "yuv420p"])
+    if audio:
+        command.extend(["-c:a", "aac"])
+    command.append(str(path))
+    subprocess.run(command, check=True, capture_output=True, text=True, timeout=60)
+
+
 def _project(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
     return create_project(
@@ -160,6 +201,10 @@ def test_render_multi_source_timeline_handles_missing_audio_and_normalizes_input
     assert destination.read_bytes() == b"rendered-video"
 
 
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None,
+    reason="FFmpeg is required for multi-source export quality integration",
+)
 def test_project_timeline_api_saves_reads_and_renders_assets(
     tmp_path, monkeypatch
 ):
@@ -168,6 +213,7 @@ def test_project_timeline_api_saves_reads_and_renders_assets(
     first, _ = _video_asset(project["id"], "first.mp4")
     second, _ = _video_asset(project["id"], "second.mp4")
     monkeypatch.setattr(pipeline, "probe_media", _probe_with_audio)
+    monkeypatch.setattr(media_route, "probe_media", _probe_with_audio)
     client = TestClient(app)
 
     payload = {
@@ -197,8 +243,17 @@ def test_project_timeline_api_saves_reads_and_renders_assets(
     def fake_render(**kwargs):
         destination = kwargs["destination"]
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(b"project-preview")
-        return {"filename": destination.name, "size_bytes": destination.stat().st_size}
+        _write_test_video(
+            destination,
+            duration=4,
+            width=640,
+            height=360,
+            audio=True,
+        )
+        return {
+            "filename": destination.name,
+            "size_bytes": destination.stat().st_size,
+        }
 
     monkeypatch.setattr(media_route, "render_multi_source_timeline", fake_render)
     rendered = client.post(
@@ -210,7 +265,7 @@ def test_project_timeline_api_saves_reads_and_renders_assets(
 
     download = client.get(f"/v1/projects/{project['id']}/timeline/rendered")
     assert download.status_code == 200
-    assert download.content == b"project-preview"
+    assert download.content[4:8] == b"ftyp"
 
     resaved = client.put(f"/v1/projects/{project['id']}/timeline", json=payload)
     assert resaved.status_code == 200, resaved.text
