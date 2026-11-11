@@ -499,6 +499,13 @@ def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
                 / str(snapshot["id"])
             )
             shutil.rmtree(output_root, ignore_errors=True)
+        elif snapshot.get("job_type") == JobType.MEDIA_RENDER.value:
+            output_path = (
+                project_dir(snapshot["project_id"])
+                / "exports"
+                / f"{snapshot['asset_id']}-preview.mp4"
+            )
+            output_path.unlink(missing_ok=True)
         _finish_job(job_id, dispatch_generation, error=exc)
     finally:
         stop_event.set()

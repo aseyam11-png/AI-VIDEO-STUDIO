@@ -72,6 +72,8 @@
     if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
     }
+    const token = sessionStorage.getItem("studioApiToken");
+    if (token) headers.set("Authorization", `Bearer ${token}`);
     const response = await fetch(path, {
       ...options,
       headers,
@@ -93,9 +95,69 @@
             : `HTTP ${response.status}`;
       const error = new Error(detail);
       error.status = response.status;
+      error.data = data;
       throw error;
     }
     return data;
+  }
+
+  const protectedObjectUrls = new WeakMap();
+
+  async function assignProtectedObjectUrl(element, sourceUrl) {
+    if (!element || !sourceUrl) return null;
+    const url = new URL(sourceUrl, window.location.origin);
+    if (url.origin !== window.location.origin) {
+      throw new Error("رفض الاستديو رابط وسائط خارج نطاقه المحلي.");
+    }
+    const cacheKey = url.pathname + url.search;
+    if (
+      element.dataset.protectedMediaSource === cacheKey &&
+      protectedObjectUrls.has(element)
+    ) {
+      return protectedObjectUrls.get(element);
+    }
+
+    const headers = new Headers();
+    const token = sessionStorage.getItem("studioApiToken");
+    if (token) headers.set("Authorization", \`Bearer \${token}\`);
+    const response = await fetch(cacheKey, {
+      method: "GET",
+      headers,
+      credentials: "same-origin"
+    });
+    if (!response.ok) {
+      let detail = "";
+      try {
+        const payload = await response.json();
+        detail = typeof payload.detail === "string"
+          ? payload.detail
+          : payload.detail?.message || "";
+      } catch {}
+      throw new Error(detail || \`تعذّر تحميل الوسائط (HTTP \${response.status}).\`);
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const previous = protectedObjectUrls.get(element);
+    if (previous) URL.revokeObjectURL(previous);
+    protectedObjectUrls.set(element, objectUrl);
+    element.dataset.protectedMediaSource = cacheKey;
+
+    if (element.tagName === "A") {
+      element.href = objectUrl;
+    } else {
+      element.src = objectUrl;
+      if (element.tagName === "VIDEO" || element.tagName === "AUDIO") element.load();
+    }
+    return objectUrl;
+  }
+
+  function clearProtectedObjectUrl(element) {
+    if (!element) return;
+    const previous = protectedObjectUrls.get(element);
+    if (previous) URL.revokeObjectURL(previous);
+    protectedObjectUrls.delete(element);
+    delete element.dataset.protectedMediaSource;
   }
 
   function uuid() {
@@ -404,17 +466,20 @@
     state.visualEffectsDirty = false;
     state.subtitleManifest = null;
     $("timeline-subtitles-download").hidden = true;
+    clearProtectedObjectUrl($("timeline-subtitles-download"));
     $("timeline-subtitles-download").removeAttribute("href");
     $("timeline-subtitles-state").textContent = "لم تُنشأ ترجمة لهذا الخط الزمني بعد.";
     const preview = $("timeline-preview");
     if (preview) {
       preview.pause();
+      clearProtectedObjectUrl(preview);
       preview.removeAttribute("src");
       preview.load();
     }
     if ($("timeline-preview-wrap")) $("timeline-preview-wrap").hidden = true;
     if ($("timeline-download")) {
       $("timeline-download").hidden = true;
+      clearProtectedObjectUrl($("timeline-download"));
       $("timeline-download").removeAttribute("href");
     }
     renderTimelineEditor();
@@ -1349,8 +1414,10 @@
         throw new Error("ملف الترجمة لا يطابق المشروع الحالي.");
       }
       state.subtitleManifest = manifest;
-      $("timeline-subtitles-download").href =
-        `/v1/projects/${encodeURIComponent(projectId)}/timeline/subtitles?download=${Date.now()}`;
+      await assignProtectedObjectUrl(
+        $("timeline-subtitles-download"),
+        `/v1/projects/${encodeURIComponent(projectId)}/timeline/subtitles?download=${Date.now()}`
+      );
       $("timeline-subtitles-download").hidden = false;
       $("timeline-subtitles-state").textContent =
         `ملف SRT جاهز · ${manifest.caption_count} جملة · ${alignmentLabel(manifest.alignment_status)}.`;
@@ -1376,8 +1443,10 @@
         body: JSON.stringify({ require_alignment: false })
       });
       state.subtitleManifest = manifest;
-      $("timeline-subtitles-download").href =
-        `${timelineEndpoint()}/subtitles?download=${Date.now()}`;
+      await assignProtectedObjectUrl(
+        $("timeline-subtitles-download"),
+        `${timelineEndpoint()}/subtitles?download=${Date.now()}`
+      );
       $("timeline-subtitles-download").hidden = false;
       $("timeline-subtitles-state").textContent =
         `اكتمل ملف SRT · ${manifest.caption_count} جملة · ${alignmentLabel(manifest.alignment_status)}.`;
@@ -1883,7 +1952,57 @@
     }
   }
 
-  async function renderProjectTimeline() {
+  
+  function renderQualityReport(report) {
+    const panel = $("quality-report");
+    const status = $("quality-status");
+    const summary = $("quality-summary");
+    const issues = $("quality-issues");
+    if (!panel || !status || !summary || !issues) return;
+    if (!report) {
+      panel.hidden = true;
+      status.textContent = "";
+      summary.textContent = "";
+      issues.replaceChildren();
+      return;
+    }
+    panel.hidden = false;
+    const labels = {
+      passed: "اجتاز الفحص التقني",
+      passed_with_warnings: "اجتاز الفحص مع تحذيرات تحتاج مراجعة",
+      failed: "فشل الفحص — التصدير محظور"
+    };
+    status.textContent = labels[report.status] || report.status || "حالة الفحص غير معروفة";
+    status.dataset.status = report.status || "failed";
+    const metrics = report.metrics || {};
+    const details = [
+      Number.isFinite(metrics.duration_seconds) ? \`المدة \${metrics.duration_seconds.toFixed(2)}ث\` : null,
+      metrics.width && metrics.height ? \`\${metrics.width}×\${metrics.height}\` : null,
+      Number.isFinite(metrics.fps) ? \`\${metrics.fps.toFixed(2)} FPS\` : null,
+      \`الفحوص \${report.summary?.check_count ?? 0}\`,
+      \`أخطاء \${report.summary?.error_count ?? 0}\`,
+      \`تحذيرات \${report.summary?.warning_count ?? 0}\`
+    ].filter(Boolean);
+    summary.textContent = details.join(" · ");
+    issues.replaceChildren();
+    (report.issues || []).forEach((issue) => {
+      const item = document.createElement("div");
+      item.className = \`quality-issue \${issue.severity === "error" ? "is-error" : "is-warning"}\`;
+      const title = document.createElement("strong");
+      title.textContent = issue.severity === "error" ? "خطأ مانع" : "تحذير";
+      const message = document.createElement("span");
+      message.textContent = issue.message || issue.code || "ملاحظة فحص";
+      item.append(title, message);
+      issues.append(item);
+    });
+    if (!issues.childElementCount) {
+      const item = document.createElement("p");
+      item.textContent = "لم تُسجل مشكلات أو تحذيرات في هذا الفحص.";
+      issues.append(item);
+    }
+  }
+
+async function renderProjectTimeline() {
     if (!state.project || !state.timelineClips.length) return;
     if (state.timelineDirty) {
       const saved = await saveProjectTimeline();
@@ -1900,6 +2019,7 @@
     const button = $("timeline-render");
     button.disabled = true;
     button.textContent = "جارٍ إنشاء المعاينة…";
+    renderQualityReport(null);
     try {
       const [width, height] = $("timeline-resolution").value.split("x").map(Number);
       const result = await api(`${timelineEndpoint()}/render`, {
@@ -1911,15 +2031,20 @@
           crf: 22
         })
       });
+      renderQualityReport(result.quality_report);
       const downloadUrl = `${timelineEndpoint()}/rendered?preview=${Date.now()}`;
-      $("timeline-preview").src = downloadUrl;
+      await assignProtectedObjectUrl($("timeline-preview"), downloadUrl);
       $("timeline-preview-wrap").hidden = false;
-      $("timeline-download").href = `${timelineEndpoint()}/rendered?download=${Date.now()}`;
+      await assignProtectedObjectUrl(
+        $("timeline-download"),
+        `${timelineEndpoint()}/rendered?download=${Date.now()}`
+      );
       $("timeline-download").hidden = false;
       state.timelineRendered = true;
       $("timeline-state").textContent = "المعاينة جاهزة";
       notice(`اكتملت معاينة MP4 · ${formatBytes(result.size_bytes)} · ${result.clip_count} مقطع.`, "success");
     } catch (error) {
+      if (error.data?.detail?.quality_report) renderQualityReport(error.data.detail.quality_report);
       notice(`تعذّر تصدير المعاينة: ${error.message}`, "error");
     } finally {
       button.disabled = false;
@@ -1957,6 +2082,8 @@
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/v1/projects/${encodeURIComponent(state.project.id)}/assets`);
     xhr.withCredentials = true;
+    const token = sessionStorage.getItem("studioApiToken");
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) {
         const value = Math.round((event.loaded / event.total) * 100);
@@ -2155,37 +2282,41 @@
         `/v1/projects/${encodeURIComponent(workflow.project_id)}/assets/${encodeURIComponent(identityReview.reference_asset_id)}/file`,
         window.location.origin
       );
-      if (!referenceImage.src || new URL(referenceImage.src, window.location.origin).pathname !== referenceUrl.pathname) {
-        referenceImage.src = referenceUrl.pathname;
-      }
+      void assignProtectedObjectUrl(referenceImage, referenceUrl.pathname)
+        .catch((error) => notice(`تعذّر تحميل صورة المنتج المرجعية: ${error.message}`, "error"));
       const previewUrl = identityReview.preview_url;
       const preview = $("identity-review-preview");
       if (previewUrl) {
         const safeUrl = new URL(previewUrl, window.location.origin);
         if (safeUrl.origin === window.location.origin) {
           const nextPreviewUrl = safeUrl.pathname + safeUrl.search;
-          if (!preview.src || new URL(preview.src, window.location.origin).pathname + new URL(preview.src, window.location.origin).search !== nextPreviewUrl) {
-            preview.src = nextPreviewUrl;
-          }
+          void assignProtectedObjectUrl(preview, nextPreviewUrl)
+            .catch((error) => notice(`تعذّر تحميل معاينة الفيديو: ${error.message}`, "error"));
         } else {
+          clearProtectedObjectUrl(preview);
           preview.removeAttribute("src");
           notice("تم رفض رابط معاينة خارج نطاق الاستديو.", "error");
         }
       } else {
+        clearProtectedObjectUrl(preview);
         preview.removeAttribute("src");
       }
       setStepper(4);
     } else {
       $("identity-review-preview").pause();
+      clearProtectedObjectUrl($("identity-review-preview"));
       $("identity-review-preview").removeAttribute("src");
       $("identity-review-preview").load();
+      clearProtectedObjectUrl($("identity-review-reference-image"));
       $("identity-review-reference-image").removeAttribute("src");
     }
 
     const terminal = ["succeeded", "failed", "cancelled"].includes(workflow.status);
     if (workflow.status === "succeeded") {
       setStepper(5);
-      renderFinalVideo(workflow);
+      void renderFinalVideo(workflow).catch((error) =>
+        notice(`تعذّر تحميل الفيديو النهائي: ${error.message}`, "error")
+      );
     } else {
       $("render-result").hidden = true;
       $("video-preview-wrap").hidden = true;
@@ -2203,7 +2334,7 @@
     return terminal;
   }
 
-  function renderFinalVideo(workflow) {
+  async function renderFinalVideo(workflow) {
     const finalStep = [...(workflow.steps || [])].reverse().find((step) => step.tool_id === "media.render");
     const downloadUrl = finalStep?.result?.download_url;
     if (!downloadUrl) {
@@ -2215,10 +2346,12 @@
       notice("رفض الاستديو رابط تنزيل خارج نطاقه المحلي.", "error");
       return;
     }
-    $("download-video").href = url.pathname + url.search;
+    await Promise.all([
+      assignProtectedObjectUrl($("download-video"), url.pathname + url.search),
+      assignProtectedObjectUrl($("video-preview"), url.pathname + url.search)
+    ]);
     $("render-meta").textContent = `تم تصدير ملف MP4 · ${formatDuration(finalStep.result.duration_seconds)}`;
     $("render-result").hidden = false;
-    $("video-preview").src = url.pathname + url.search;
     $("video-preview-wrap").hidden = false;
   }
 
@@ -2471,7 +2604,7 @@
     });
   }
 
-  async function boot() {
+  async function startWorkspace() {
     $("project-form").addEventListener("submit", createProject);
     $("director-form").addEventListener("submit", createPlan);
     $("project-select").addEventListener("change", (event) => {
@@ -2563,6 +2696,60 @@
     } catch (error) {
       notice(`تعذّر تحميل المشاريع: ${error.message}. تأكد من تشغيل الخدمات وتطبيق migrations.`, "error");
     }
+  }
+
+async function boot() {
+    const authPanel = $("auth-panel");
+    const connectButton = $("connect-api");
+    const tokenInput = $("api-token");
+    const disconnectButton = $("disconnect-api");
+    let workspaceStarted = false;
+
+    async function verifyAndStart(token) {
+      if (token) sessionStorage.setItem("studioApiToken", token);
+      try {
+        await api("/v1/auth/session");
+        authPanel.hidden = true;
+        if (!workspaceStarted) {
+          workspaceStarted = true;
+          await startWorkspace();
+        }
+        if (disconnectButton) disconnectButton.hidden = !sessionStorage.getItem("studioApiToken");
+        return true;
+      } catch (error) {
+        sessionStorage.removeItem("studioApiToken");
+        authPanel.hidden = false;
+        setApiStatus("يلزم التحقق من رمز الوصول", false);
+        notice(
+          error.status === 503
+            ? "الإنتاج متوقف للحماية: عيّن STUDIO_API_TOKEN بطول 32 محرفًا على الأقل في .env ثم أعد تشغيل الخدمات."
+            : "أدخل رمز الوصول الصحيح للاتصال بالاستديو الخاص.",
+          "error"
+        );
+        return false;
+      }
+    }
+
+    connectButton?.addEventListener("click", async () => {
+      const token = tokenInput?.value?.trim() || "";
+      if (!token) {
+        notice("أدخل رمز الوصول أولًا.", "error");
+        return;
+      }
+      connectButton.disabled = true;
+      const accepted = await verifyAndStart(token);
+      connectButton.disabled = false;
+      if (accepted && tokenInput) tokenInput.value = "";
+    });
+    tokenInput?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") connectButton?.click();
+    });
+    disconnectButton?.addEventListener("click", () => {
+      sessionStorage.removeItem("studioApiToken");
+      location.reload();
+    });
+
+    await verifyAndStart(sessionStorage.getItem("studioApiToken") || "");
   }
 
   document.addEventListener("DOMContentLoaded", () => {
