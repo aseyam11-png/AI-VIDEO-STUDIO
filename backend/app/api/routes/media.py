@@ -195,6 +195,8 @@ def _require_passed_quality_report(rendered: Path) -> dict:
         report = read_json(report_path)
     except (FileNotFoundError, StorageError) as exc:
         raise HTTPException(status_code=409, detail="The quality report is invalid.") from exc
+    if not isinstance(report, dict):
+        raise HTTPException(status_code=409, detail="The quality report is invalid.")
 
     expected_digest = (report.get("file") or {}).get("sha256")
     if not isinstance(expected_digest, str) or len(expected_digest) != 64:
