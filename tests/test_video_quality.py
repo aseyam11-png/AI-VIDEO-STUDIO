@@ -4,7 +4,6 @@ import subprocess
 import pytest
 from app.media.quality import analyze_video_quality
 
-
 pytestmark = pytest.mark.skipif(
     shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
     reason="FFmpeg and FFprobe are required for video quality checks",

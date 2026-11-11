@@ -10,7 +10,6 @@ from app.media.quality import analyze_video_quality, persist_quality_report
 from app.media.storage import project_dir, register_generated_video_asset
 from fastapi.testclient import TestClient
 
-
 pytestmark = pytest.mark.skipif(
     shutil.which("ffmpeg") is None,
     reason="FFmpeg is required for export quality gate integration tests",
