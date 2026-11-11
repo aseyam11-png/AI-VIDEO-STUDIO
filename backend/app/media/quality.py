@@ -370,7 +370,7 @@ def analyse_video_quality(
                 findings["silence_segments"] = _segments(
                     analysis_log, "silence", actual_duration or 0.0
                 )
-        except (MediaToolError, RuntimeError) as exc:
+        except MediaToolError as exc:
             _check(
                 checks,
                 "decode",
