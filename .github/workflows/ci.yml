@@ -304,7 +304,8 @@ jobs:
             "infra/scripts/windows/model-runtime-preflight.ps1",
             "infra/scripts/windows/backup-studio.ps1",
             "infra/scripts/windows/restore-studio.ps1",
-            "infra/scripts/windows/target-runtime-acceptance.ps1"
+            "infra/scripts/windows/target-runtime-acceptance.ps1",
+            "infra/scripts/windows/monitor-studio.ps1"
           )
           foreach ($scriptPath in $scriptPaths) {
             if (-not (Test-Path -LiteralPath $scriptPath)) {

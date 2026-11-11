@@ -75,11 +75,24 @@ Restore into a separate validation database and an empty media directory. This d
 
 The restore helper verifies both SHA-256 values, validates the PostgreSQL archive inside the database container, rejects unsafe archive paths, creates a new separate restore database, and extracts media only to a new/empty directory outside the repository. It does not overwrite the configured application database and does not stop the running Studio. Check the restored database tables and media file integrity before considering any cutover. A production cutover requires separate database ownership/privilege checks and an explicit environment change; this helper does not perform that switch.
 
-### Operations
+### Operations and local monitoring
 
 - /health is liveness; /ready validates database connectivity and current Alembic head.
-- Use docker compose ps, docker compose logs --tail=200 api worker-cpu worker-models worker-control scheduler, nvidia-smi, disk-space monitoring and the worker job-event API.
-- Compose healthcheck is attached to /ready.
+- The API Compose healthcheck probes /ready; the endpoint stays unauthenticated for the local container health probe.
+- Run one snapshot on Windows:
+
+~~~powershell
+.\infra\scripts\windows\monitor-studio.ps1 -Once
+~~~
+
+- Or keep a local JSONL health log updated every 30 seconds; require the model worker when GPU jobs are part of the expected workload:
+
+~~~powershell
+.\infra\scripts\windows\monitor-studio.ps1 -IntervalSeconds 30 -RequireModelWorker
+~~~
+
+- The monitor checks /health and /ready, required Compose service presence, media-volume free space, and NVIDIA GPU memory/utilization/temperature when nvidia-smi is available. It records only service names and operational metrics, not bearer tokens, usernames, serial numbers, media file names or private host addresses. By default, the JSONL log is outside the Git checkout.
+- Use docker compose logs --tail=200 api worker-cpu worker-models worker-control scheduler and the worker job-event API when a check reports degraded status.
 - External alert delivery, dashboards, automatic retention, off-site key management, and a documented RPO/RTO are still outstanding.
 
 ## Real model runtime acceptance — the target Windows/GPU is still required

@@ -13,7 +13,7 @@ Describe a video in Arabic, provide source media and product references, approve
 - **Phase 6.8 — merged:** bounded per-frame Real-ESRGAN video enhancement up to 10 seconds / 300 frames. Real model inference and visual quality still need target-host acceptance.
 - **Phase 6.9 — merged:** SHA-256 verified product reference, per-shot identity constraints and five-check human review gate before timeline/export. The gate does not guarantee exact logo or pixel-level identity.
 - **Phase 6.10 — in implementation:** server-side FFmpeg/FFprobe video and audio analysis, black/freeze/silence detection, and a SHA-256-bound export gate.
-- **Phase 7 — in implementation:** production bearer-token authentication, private access headers, Windows backup/restore helpers and target-GPU acceptance tooling. Real restore and GPU acceptance remain open.
+- **Phase 7 — in implementation:** production bearer-token authentication, private access headers, Windows backup/restore helpers, local health/GPU monitoring and target-GPU acceptance tooling. Real restore, GPU inference and external alerting remain open.
 
 See [Production Roadmap](docs/17-PRODUCTION-ROADMAP.md), [Phase 6.8](docs/26-PHASE-6.8-VIDEO-ENHANCEMENT.md), [Phase 6.9](docs/27-PHASE-6.9-PRODUCT-IDENTITY-LOCK.md), [Phase 6.10 / Phase 7](docs/28-PHASE-7-SECURITY-OPERATIONS.md), and [Target GPU Acceptance](docs/29-PHASE-7-TARGET-GPU-ACCEPTANCE.md).
 
