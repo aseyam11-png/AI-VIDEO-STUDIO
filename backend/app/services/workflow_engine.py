@@ -688,6 +688,25 @@ def advance_workflow_for_job(db: Session, job: JobRecord) -> None:
         step.result_json = job.result_json or {}
         step.error_message = None
         step.finished_at = now
+        if job.job_type == JobType.MEDIA_RENDER.value:
+            quality_report = (job.result_json or {}).get("quality_report")
+            if not isinstance(quality_report, dict) or quality_report.get("passed") is not True:
+                failed_checks = (
+                    (quality_report.get("summary") or {}).get("failed_checks", [])
+                    if isinstance(quality_report, dict)
+                    else ["quality_report_missing"]
+                )
+                reason = (
+                    "Automatic video quality gate rejected the export. Failed checks: "
+                    + ", ".join(str(item) for item in failed_checks)
+                )
+                step.status = "failed"
+                step.error_message = reason[:2000]
+                run.status = "failed"
+                run.error_message = reason[:2000]
+                run.finished_at = now
+                run.updated_at = now
+                return
         output_asset_id = (job.result_json or {}).get("output_asset_id")
         if run.status == "cancel_requested":
             run.status = "cancelled"

@@ -1911,14 +1911,28 @@
           crf: 22
         })
       });
+      const quality = result.quality_report;
+      if (!quality || quality.passed !== true) {
+        $("timeline-preview-wrap").hidden = true;
+        $("timeline-download").hidden = true;
+        state.timelineRendered = false;
+        $("timeline-state").textContent = "فشل فحص الجودة";
+        const failed = quality?.summary?.failed_checks || ["quality_report_missing"];
+        notice(`بوابة الجودة منعت التصدير: ${failed.join("، ")}.`, "error");
+        return;
+      }
       const downloadUrl = `${timelineEndpoint()}/rendered?preview=${Date.now()}`;
       $("timeline-preview").src = downloadUrl;
       $("timeline-preview-wrap").hidden = false;
       $("timeline-download").href = `${timelineEndpoint()}/rendered?download=${Date.now()}`;
       $("timeline-download").hidden = false;
       state.timelineRendered = true;
-      $("timeline-state").textContent = "المعاينة جاهزة";
-      notice(`اكتملت معاينة MP4 · ${formatBytes(result.size_bytes)} · ${result.clip_count} مقطع.`, "success");
+      $("timeline-state").textContent = "اجتاز فحص الجودة";
+      const warningCount = quality.summary?.warning_count || 0;
+      const qualityMessage = warningCount
+        ? `اجتاز فحص الجودة مع ${warningCount} تحذيرًا. `
+        : "اجتاز فحص الجودة. ";
+      notice(`${qualityMessage}معاينة MP4 · ${formatBytes(result.size_bytes)} · ${result.clip_count} مقطع.`, warningCount ? "info" : "success");
     } catch (error) {
       notice(`تعذّر تصدير المعاينة: ${error.message}`, "error");
     } finally {
