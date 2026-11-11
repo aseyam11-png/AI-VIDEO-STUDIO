@@ -7,8 +7,10 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.config import settings
+from app.integrations.ffmpeg import probe_media
 from app.db.models import JobRecord, OutboxRecord
 from app.db.session import session_scope
+from app.media.quality import analyze_video_quality, persist_quality_report
 from app.media.pipeline import (
     MediaJobCancelled,
     build_timeline,
@@ -343,6 +345,10 @@ def _execute_media_job(
         if timeline.get("project_id") != project_id or timeline.get("asset_id") != asset_id:
             raise ValueError("Timeline project or asset identity does not match the job.")
         destination = project_dir(project_id) / "exports" / f"{asset_id}-preview.mp4"
+        source_has_audio = any(
+            stream.get("codec_type") == "audio"
+            for stream in probe_media(source).get("streams", [])
+        )
         result = render_timeline(
             source=source,
             timeline_manifest=timeline,
@@ -353,9 +359,30 @@ def _execute_media_job(
             crf=payload["crf"],
             cancel_check=cancel_check,
         )
-        progress(95, "finalizing", "Rendered MP4 was created and probed.")
+        progress(94, "quality_assessment", "Checking video/audio integrity before export.")
+        quality_report = analyze_video_quality(
+            destination,
+            expected_duration_seconds=sum(
+                float(clip["duration_seconds"]) for clip in timeline.get("clips", [])
+            ),
+            expected_width=payload["width"],
+            expected_height=payload["height"],
+            expected_fps=float(payload["fps"]),
+            expected_audio=source_has_audio,
+            cancel_check=cancel_check,
+        )
+        persist_quality_report(project_id, f"asset-{asset_id}", quality_report)
+        if not quality_report["can_export"]:
+            destination.unlink(missing_ok=True)
+            summary = quality_report.get("summary", {})
+            raise ValueError(
+                "Quality gate blocked the rendered video: "
+                f"{summary.get('error_count', 0)} blocking issue(s)."
+            )
+        progress(98, "quality_passed", "Technical video/audio checks passed; preparing the download.")
         return {
             **result,
+            "quality_report": quality_report,
             "download_url": f"/v1/projects/{project_id}/assets/{asset_id}/rendered",
         }
 
