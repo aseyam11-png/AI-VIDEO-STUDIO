@@ -1404,15 +1404,14 @@ def render_multi_source_timeline(
         if title_temp is not None:
             title_temp.cleanup()
 
-    expected_duration = timeline_duration - sum(
-        float(item["duration_seconds"]) for item in transitions
-    )
+    # Current transitions are fades to/from a colour, not overlapping xfade edits;
+    # they do not shorten the assembled timeline duration.
     quality_report = analyse_video_quality(
         destination,
         expected_width=width,
         expected_height=height,
         expected_fps=fps,
-        expected_duration_seconds=max(0.0, expected_duration),
+        expected_duration_seconds=timeline_duration,
         expected_audio=has_audio_output,
         cancel_check=cancel_check,
     )
