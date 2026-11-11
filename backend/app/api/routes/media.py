@@ -1,3 +1,4 @@
+import hashlib
 import math
 import mimetypes
 from pathlib import Path
@@ -22,6 +23,7 @@ from app.media.pipeline import (
 )
 from app.media.speech import SpeechDependencyError, transcribe_local
 from app.media.storage import (
+    StorageError,
     asset_dir,
     atomic_write_json,
     delete_asset_record,
@@ -171,6 +173,50 @@ class ProjectVisualEffectsRequest(BaseModel):
     transitions: list[VisualTransitionRequest] = Field(default_factory=list, max_length=99)
     titles: list[VisualTitleRequest] = Field(default_factory=list, max_length=20)
     overlays: list[ImageOverlayRequest] = Field(default_factory=list, max_length=20)
+
+
+def _quality_report_path(rendered: Path) -> Path:
+    return rendered.with_suffix(".quality.json")
+
+
+def _invalidate_rendered_file(rendered: Path) -> None:
+    rendered.unlink(missing_ok=True)
+    _quality_report_path(rendered).unlink(missing_ok=True)
+
+
+def _require_passed_quality_report(rendered: Path) -> dict:
+    report_path = _quality_report_path(rendered)
+    if not rendered.is_file() or not report_path.is_file():
+        raise HTTPException(
+            status_code=409,
+            detail="Export is blocked until a passing automatic quality report exists.",
+        )
+    try:
+        report = read_json(report_path)
+    except (FileNotFoundError, StorageError) as exc:
+        raise HTTPException(status_code=409, detail="The quality report is invalid.") from exc
+
+    expected_digest = (report.get("file") or {}).get("sha256")
+    if not isinstance(expected_digest, str) or len(expected_digest) != 64:
+        raise HTTPException(status_code=409, detail="The quality report has no valid file fingerprint.")
+    digest = hashlib.sha256()
+    with rendered.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    if digest.hexdigest() != expected_digest:
+        raise HTTPException(
+            status_code=409,
+            detail="The rendered file changed after its quality report was created.",
+        )
+    if report.get("passed") is not True:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Export is blocked because the automatic quality gate failed.",
+                "failed_checks": (report.get("summary") or {}).get("failed_checks", []),
+            },
+        )
+    return report
 
 
 def _source_path(project_id: str, asset_id: str) -> tuple[dict, Path]:
@@ -459,6 +505,7 @@ def download_render(project_id: str, asset_id: str) -> FileResponse:
     rendered = project_dir(project_id) / "exports" / f"{asset_id}-preview.mp4"
     if not rendered.is_file():
         raise HTTPException(status_code=404, detail="Rendered video not found.")
+    _require_passed_quality_report(rendered)
     return FileResponse(rendered, media_type="video/mp4", filename=rendered.name)
 
 
@@ -504,6 +551,7 @@ async def save_project_timeline(project_id: str, payload: ProjectTimelineRequest
                 / f"project-{timeline_id}-preview.mp4"
             )
             preview.unlink(missing_ok=True)
+            _quality_report_path(preview).unlink(missing_ok=True)
             (timeline_dir / f"project-{timeline_id}.srt").unlink(missing_ok=True)
             (timeline_dir / f"project-{timeline_id}-subtitles.json").unlink(missing_ok=True)
             _audio_mix_path(project_id).unlink(missing_ok=True)
@@ -536,6 +584,7 @@ async def save_project_timeline(project_id: str, payload: ProjectTimelineRequest
             / f"project-{UUID(project_id)}-preview.mp4"
         )
         preview.unlink(missing_ok=True)
+        _quality_report_path(preview).unlink(missing_ok=True)
         timeline_dir = project_dir(project_id) / "timelines"
         timeline_id = str(UUID(project_id))
         (timeline_dir / f"project-{timeline_id}.srt").unlink(missing_ok=True)
@@ -861,6 +910,7 @@ def save_project_visual_effects(
         atomic_write_json(path, manifest)
         preview = project_dir(project_id) / "exports" / f"project-{UUID(project_id)}-preview.mp4"
         preview.unlink(missing_ok=True)
+        _quality_report_path(preview).unlink(missing_ok=True)
         return manifest
     except MediaToolError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1020,6 +1070,7 @@ def save_project_audio_mix(project_id: str, payload: ProjectAudioMixRequest) -> 
             / f"project-{UUID(project_id)}-preview.mp4"
         )
         preview.unlink(missing_ok=True)
+        _quality_report_path(preview).unlink(missing_ok=True)
         return manifest
     except MediaToolError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -1294,6 +1345,37 @@ def download_timeline_subtitles(project_id: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="Project not found.") from exc
 
 
+@router.get("/timeline/quality")
+def get_project_timeline_quality(project_id: str) -> dict:
+    try:
+        get_project(project_id)
+        rendered = (
+            project_dir(project_id)
+            / "exports"
+            / f"project-{UUID(project_id)}-preview.mp4"
+        )
+        report_path = _quality_report_path(rendered)
+        if not report_path.is_file():
+            raise HTTPException(status_code=404, detail="No quality report exists for this render.")
+        return read_json(report_path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Project not found.") from exc
+
+
+@router.get("/assets/{asset_id}/quality")
+def get_asset_quality(project_id: str, asset_id: str) -> dict:
+    asset, _ = _source_path(project_id, asset_id)
+    if asset.get("asset_type") != "video":
+        raise HTTPException(status_code=422, detail="Quality reports require a video asset.")
+    rendered = project_dir(project_id) / "exports" / f"{asset_id}-preview.mp4"
+    report_path = _quality_report_path(rendered)
+    if not report_path.is_file():
+        raise HTTPException(status_code=404, detail="No quality report exists for this render.")
+    return read_json(report_path)
+
+
 @router.get("/timeline/rendered")
 def download_project_timeline_render(project_id: str) -> FileResponse:
     try:
@@ -1305,6 +1387,7 @@ def download_project_timeline_render(project_id: str) -> FileResponse:
         )
         if not rendered.is_file():
             raise HTTPException(status_code=404, detail="Rendered project timeline not found.")
+        _require_passed_quality_report(rendered)
         return FileResponse(rendered, media_type="video/mp4", filename=rendered.name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
