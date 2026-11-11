@@ -17,6 +17,7 @@ from app.media.pipeline import (
     extract_video_frames,
     render_multi_source_timeline,
 )
+from app.media.quality import analyze_video_quality, persist_quality_report
 from app.media.speech import transcribe_local
 from app.media.storage import (
     asset_dir,
@@ -203,11 +204,37 @@ def execute_comfyui_job(
             raise ComfyUIError(
                 "Video generation/interpolation must produce a supported MP4/MOV/MKV/WEBM asset."
             )
+        if job["job_type"] == "video.generate":
+            requested_duration = job["payload"].get("duration_seconds")
+            expected_duration = (
+                float(requested_duration) if requested_duration is not None else None
+            )
+        else:
+            source_metadata = probe_media(source)
+            source_duration = source_metadata.get("format", {}).get("duration")
+            expected_duration = (
+                float(source_duration) if source_duration is not None else None
+            )
+        quality_report = analyze_video_quality(
+            generated_video_path,
+            expected_duration_seconds=expected_duration,
+            cancel_check=cancel_check,
+        )
+        if not quality_report["can_export"]:
+            generated_video_path.unlink(missing_ok=True)
+            raise ComfyUIError(
+                "Video quality gate blocked this model output: "
+                f"{quality_report.get('summary', {}).get('error_count', 0)} "
+                "blocking issue(s)."
+            )
         output_asset = register_generated_video_asset(
             job["project_id"],
             job["id"],
             generated_video_path,
             max_bytes=settings.max_model_output_bytes,
+        )
+        persist_quality_report(
+            job["project_id"], f"asset-{output_asset['id']}", quality_report
         )
         result["output_asset_id"] = output_asset["id"]
         result["output_asset"] = {
@@ -215,6 +242,7 @@ def execute_comfyui_job(
             "asset_type": output_asset["asset_type"],
             "relative_path": output_asset["relative_path"],
         }
+        result["quality_report"] = quality_report
         result["download_url"] = (
             f"/v1/projects/{job['project_id']}/jobs/{job['id']}/files/"
             f"{generated_video_path.name}"
@@ -362,11 +390,34 @@ def execute_video_enhancement(
         crf=payload["crf"],
         cancel_check=cancel_check,
     )
+    source_has_audio = any(
+        stream.get("codec_type") == "audio"
+        for stream in probe_media(source).get("streams", [])
+    )
+    quality_report = analyze_video_quality(
+        destination,
+        expected_duration_seconds=extraction["source_duration_seconds"],
+        expected_width=expected_width,
+        expected_height=expected_height,
+        expected_fps=float(extraction["fps"]),
+        expected_audio=source_has_audio,
+        cancel_check=cancel_check,
+    )
+    if not quality_report["can_export"]:
+        destination.unlink(missing_ok=True)
+        raise ComfyUIError(
+            "Real-ESRGAN output failed the video quality gate: "
+            f"{quality_report.get('summary', {}).get('error_count', 0)} "
+            "blocking issue(s)."
+        )
     output_asset = register_generated_video_asset(
         project_id,
         job_id,
         destination,
         max_bytes=settings.max_model_output_bytes,
+    )
+    persist_quality_report(
+        project_id, f"asset-{output_asset['id']}", quality_report
     )
     manifest = {
         "schema_version": 1,
@@ -383,6 +434,7 @@ def execute_video_enhancement(
         "frame_count": frame_count,
         "audio_preserved": render["has_audio"],
         "output_asset_id": output_asset["id"],
+        "quality_report": quality_report,
         "render": render,
     }
     manifest_path = output_root / "enhancement.json"
@@ -403,6 +455,7 @@ def execute_video_enhancement(
             f"/v1/projects/{project_id}/jobs/{job_id}/files/"
             f"{Path(output_asset['relative_path']).name}"
         ),
+        "quality_report": quality_report,
         "manifest_path": manifest_path.relative_to(project_dir(project_id)).as_posix(),
         "source_duration_seconds": extraction["source_duration_seconds"],
         "output_duration_seconds": render["duration_seconds"],
@@ -625,11 +678,29 @@ def execute_video_sequence(
         crf=payload["crf"],
         cancel_check=cancel_check,
     )
+    quality_report = analyze_video_quality(
+        destination,
+        expected_duration_seconds=cursor,
+        expected_width=payload["output_width"],
+        expected_height=payload["output_height"],
+        expected_fps=float(payload["fps"]),
+        cancel_check=cancel_check,
+    )
+    if not quality_report["can_export"]:
+        destination.unlink(missing_ok=True)
+        raise ComfyUIError(
+            "Wan sequence output failed the video quality gate: "
+            f"{quality_report.get('summary', {}).get('error_count', 0)} "
+            "blocking issue(s)."
+        )
     output_asset = register_generated_video_asset(
         project_id,
         job_id,
         destination,
         max_bytes=settings.max_model_output_bytes,
+    )
+    persist_quality_report(
+        project_id, f"asset-{output_asset['id']}", quality_report
     )
     sequence_manifest = {
         "schema_version": 1,
@@ -654,6 +725,7 @@ def execute_video_sequence(
         ),
         "shots": shot_assets,
         "output_asset_id": output_asset["id"],
+        "quality_report": quality_report,
         "render": rendered,
     }
     atomic_write_json(output_root / "sequence.json", sequence_manifest)
@@ -676,6 +748,7 @@ def execute_video_sequence(
             "asset_type": output_asset["asset_type"],
             "relative_path": output_asset["relative_path"],
         },
+        "quality_report": quality_report,
         "relative_path": output_asset["relative_path"],
         "download_url": (
             f"/v1/projects/{project_id}/jobs/{job_id}/files/"

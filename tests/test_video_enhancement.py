@@ -236,6 +236,7 @@ def test_single_shot_generation_registers_video_asset_for_next_workflow_step(
     )
     assert result["output_asset_id"] == result["output_asset"]["id"]
     assert result["output_asset"]["asset_type"] == "video"
+    assert result["quality_report"]["can_export"] is True
     registered_path = project_dir(project["id"]) / result["output_asset"]["relative_path"]
     assert registered_path.is_file()
 
@@ -418,6 +419,7 @@ def test_video_enhancement_runs_comfyui_for_each_frame_and_registers_output(
     assert result["output_width"] == 640
     assert result["output_height"] == 480
     assert result["audio_preserved"] is True
+    assert result["quality_report"]["can_export"] is True
     assert result["output_asset_id"]
     assert (project_dir(project["id"]) / result["relative_path"]).is_file()
     assert (project_dir(project["id"]) / result["manifest_path"]).is_file()

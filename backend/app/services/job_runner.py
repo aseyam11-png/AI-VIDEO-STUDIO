@@ -7,10 +7,9 @@ from typing import Any
 from uuid import uuid4
 
 from app.core.config import settings
-from app.integrations.ffmpeg import probe_media
 from app.db.models import JobRecord, OutboxRecord
 from app.db.session import session_scope
-from app.media.quality import analyze_video_quality, persist_quality_report
+from app.integrations.ffmpeg import probe_media
 from app.media.pipeline import (
     MediaJobCancelled,
     build_timeline,
@@ -18,6 +17,7 @@ from app.media.pipeline import (
     detect_scenes,
     render_timeline,
 )
+from app.media.quality import analyze_video_quality, persist_quality_report
 from app.media.storage import (
     asset_dir,
     atomic_write_json,
@@ -377,7 +377,9 @@ def _execute_media_job(
             summary = quality_report.get("summary", {})
             raise ValueError(
                 "Quality gate blocked the rendered video: "
-                f"{summary.get('error_count', 0)} blocking issue(s)."
+                (
+                    f"{summary.get('error_count', 0)} blocking issue(s)."
+                )
             )
         progress(98, "quality_passed", "Technical video/audio checks passed; preparing the download.")
         return {

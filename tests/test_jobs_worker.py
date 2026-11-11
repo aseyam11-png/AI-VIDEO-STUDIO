@@ -1,11 +1,12 @@
 import shutil
 import subprocess
 
+import pytest
+
 from app.core.config import settings
 from app.main import app
 from app.services.job_runner import run_job_attempt
 from fastapi.testclient import TestClient
-import pytest
 
 
 @pytest.mark.skipif(
