@@ -132,13 +132,17 @@ This is reference conditioning and a human approval gate, not a guarantee of pix
 
 See [Phase 6.9 — Product Identity Lock](27-PHASE-6.9-PRODUCT-IDENTITY-LOCK.md).
 
-### Remaining Phase 6 increments
+### Phase 6.10 — Automatic Video Quality Gate (implementation submitted for review)
 
-Deliver in independently testable increments:
+The implementation on `feat/phase-6.10-video-quality-gate` adds FFmpeg/FFprobe analysis to both final-render paths and writes a SHA-256-bound report beside each MP4. It checks full decode, duration, resolution, FPS, black frames, frozen frames, silence and peak/clipping risk. Workflow completion and both rendered-video download endpoints fail closed unless the report exists and passes.
+
+This is technical QA, not semantic or creative quality assurance. Intentional black transitions, silence and held shots require human review. See [Phase 6.10 — Automatic Video Quality Gate](28-PHASE-6.10-VIDEO-QUALITY-GATE.md).
+
+### Remaining Phase 6 acceptance
 
 - Complete Phase 6.8 target-host Real-ESRGAN inference acceptance and review quality/audio on real samples.
-- Complete Phase 6.9 CI, real Wan identity-lock samples and browser review acceptance.
-- Technical and visual QA: black/frozen frame detection, audio clipping/silence, duration/resolution/FPS checks, missing files and corrupt exports (6.10).
+- Complete Phase 6.9 real Wan identity-lock samples and browser review acceptance.
+- Complete Phase 6.10 CI, target-Windows render acceptance, and human visual/audio review of real outputs.
 
 Do not claim "professional automatic editing" until these paths are exercised on varied real videos and reviewed output samples.
 
