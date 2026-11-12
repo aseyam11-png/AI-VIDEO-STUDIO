@@ -14,6 +14,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if (-not ($RunQwenInference -or $RunWan -or $RunRIFE -or $RunRealESRGAN)) {
+    throw "Select at least one real inference test: -RunQwenInference, -RunWan, -RunRIFE, or -RunRealESRGAN."
+}
 $ApiBaseUrl = $ApiBaseUrl.TrimEnd("/")
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
 $RepoPrefix = $RepoRoot.TrimEnd('\') + '\'
