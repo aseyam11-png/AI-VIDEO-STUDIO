@@ -29,7 +29,6 @@ from app.media.storage import (
 )
 
 
-
 def _parse_frame_rate(value: Any) -> float | None:
     if value in (None, "", "0/0"):
         return None
