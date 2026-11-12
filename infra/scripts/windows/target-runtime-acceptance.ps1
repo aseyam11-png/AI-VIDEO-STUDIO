@@ -15,7 +15,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ApiBaseUrl = $ApiBaseUrl.TrimEnd("/")
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
+$RepoPrefix = $RepoRoot.TrimEnd('\') + '\'
 $ResolvedOutput = [System.IO.Path]::GetFullPath($OutputDirectory)
+if ($ResolvedOutput.StartsWith($RepoPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "GPU acceptance evidence must be stored outside the Git checkout."
+}
 New-Item -ItemType Directory -Force -Path $ResolvedOutput | Out-Null
 
 $SecureToken = Read-Host "Studio API bearer token (input is hidden)" -AsSecureString
