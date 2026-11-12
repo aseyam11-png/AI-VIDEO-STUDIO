@@ -1,6 +1,7 @@
 import hashlib
 import json
 import shutil
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -26,6 +27,18 @@ from app.media.storage import (
     project_dir,
     register_generated_video_asset,
 )
+
+def _parse_frame_rate(value: Any) -> float | None:
+    if value in (None, "", "0/0"):
+        return None
+    try:
+        parsed = Fraction(str(value))
+    except (ValueError, ZeroDivisionError, TypeError):
+        return None
+    if parsed <= 0:
+        return None
+    return float(parsed)
+
 
 WORKFLOW_BY_JOB_TYPE = {
     "vision.detect": "groundingdino_detect_v1",
@@ -256,7 +269,7 @@ def execute_comfyui_job(
             )
             expected_width = source_video.get("width")
             expected_height = source_video.get("height")
-            source_fps = _fraction(source_video.get("avg_frame_rate")) or _fraction(
+            source_fps = _parse_frame_rate(source_video.get("avg_frame_rate")) or _parse_frame_rate(
                 source_video.get("r_frame_rate")
             )
             if source_fps is not None:
