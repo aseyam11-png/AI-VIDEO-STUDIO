@@ -119,7 +119,7 @@
 
     const headers = new Headers();
     const token = sessionStorage.getItem("studioApiToken");
-    if (token) headers.set("Authorization", \`Bearer \${token}\`);
+    if (token) headers.set("Authorization", `Bearer ${token}`);
     const response = await fetch(cacheKey, {
       method: "GET",
       headers,
@@ -133,7 +133,7 @@
           ? payload.detail
           : payload.detail?.message || "";
       } catch {}
-      throw new Error(detail || \`تعذّر تحميل الوسائط (HTTP \${response.status}).\`);
+      throw new Error(detail || `تعذّر تحميل الوسائط (HTTP ${response.status}).`);
     }
 
     const blob = await response.blob();
@@ -1976,18 +1976,18 @@
     status.dataset.status = report.status || "failed";
     const metrics = report.metrics || {};
     const details = [
-      Number.isFinite(metrics.duration_seconds) ? \`المدة \${metrics.duration_seconds.toFixed(2)}ث\` : null,
-      metrics.width && metrics.height ? \`\${metrics.width}×\${metrics.height}\` : null,
-      Number.isFinite(metrics.fps) ? \`\${metrics.fps.toFixed(2)} FPS\` : null,
-      \`الفحوص \${report.summary?.check_count ?? 0}\`,
-      \`أخطاء \${report.summary?.error_count ?? 0}\`,
-      \`تحذيرات \${report.summary?.warning_count ?? 0}\`
+      Number.isFinite(metrics.duration_seconds) ? `المدة ${metrics.duration_seconds.toFixed(2)}ث` : null,
+      metrics.width && metrics.height ? `${metrics.width}×${metrics.height}` : null,
+      Number.isFinite(metrics.fps) ? `${metrics.fps.toFixed(2)} FPS` : null,
+      `الفحوص ${report.summary?.check_count ?? 0}`,
+      `أخطاء ${report.summary?.error_count ?? 0}`,
+      `تحذيرات ${report.summary?.warning_count ?? 0}`
     ].filter(Boolean);
     summary.textContent = details.join(" · ");
     issues.replaceChildren();
     (report.issues || []).forEach((issue) => {
       const item = document.createElement("div");
-      item.className = \`quality-issue \${issue.severity === "error" ? "is-error" : "is-warning"}\`;
+      item.className = `quality-issue ${issue.severity === "error" ? "is-error" : "is-warning"}`;
       const title = document.createElement("strong");
       title.textContent = issue.severity === "error" ? "خطأ مانع" : "تحذير";
       const message = document.createElement("span");
