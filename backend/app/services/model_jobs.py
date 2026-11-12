@@ -207,6 +207,9 @@ def execute_comfyui_job(
                     job["project_id"], report_key, quality_report
                 )
                 if not quality_report["can_export"]:
+                    persist_quality_report(
+                        job["project_id"], f"job-{job['id']}", quality_report
+                    )
                     output_path.unlink(missing_ok=True)
                     raise ComfyUIError(
                         "ComfyUI video output failed the quality gate: "
