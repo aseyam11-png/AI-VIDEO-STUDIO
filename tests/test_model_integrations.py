@@ -16,8 +16,8 @@ from app.integrations.comfyui import (
 from app.integrations.ollama import OllamaError, _parse_plan
 from app.media.pipeline import MediaJobCancelled
 from app.media.quality import analyze_video_quality, persist_quality_report
-from app.media.storage import project_dir
 from app.media.speech import transcribe_local
+from app.media.storage import project_dir
 from app.schemas.jobs import JobType
 from app.schemas.models import CreativePlan
 from app.services.jobs import JobRequestError, normalize_payload
