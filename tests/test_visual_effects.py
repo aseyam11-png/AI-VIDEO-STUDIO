@@ -13,6 +13,47 @@ from app.media.storage import create_project, ingest_file_stream
 from fastapi.testclient import TestClient
 
 
+def _write_test_video(
+    path: Path,
+    *,
+    duration: int,
+    width: int,
+    height: int,
+    audio: bool,
+) -> None:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        pytest.skip("FFmpeg is required for export quality integration tests.")
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"testsrc2=size={width}x{height}:rate=24:duration={duration}",
+    ]
+    if audio:
+        command.extend(
+            [
+                "-f",
+                "lavfi",
+                "-i",
+                f"sine=frequency=660:sample_rate=48000:duration={duration}",
+                "-shortest",
+            ]
+        )
+    else:
+        command.append("-an")
+    command.extend(["-c:v", "libx264", "-pix_fmt", "yuv420p"])
+    if audio:
+        command.extend(["-c:a", "aac"])
+    command.append(str(path))
+    subprocess.run(command, check=True, capture_output=True, text=True, timeout=60)
+
+
 def _project(tmp_path, monkeypatch, name="Visual effects project"):
     monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
     return create_project(
@@ -187,6 +228,10 @@ def test_visual_effects_reject_foreign_and_non_image_assets(tmp_path, monkeypatc
     assert not_image.status_code == 422
 
 
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None,
+    reason="FFmpeg is required for visual-effects export quality integration",
+)
 def test_timeline_render_passes_project_visual_effects_and_image_sources(
     tmp_path, monkeypatch
 ):
@@ -201,7 +246,13 @@ def test_timeline_render_passes_project_visual_effects_and_image_sources(
         captured.update(kwargs)
         destination = kwargs["destination"]
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_bytes(b"rendered-video")
+        _write_test_video(
+            destination,
+            duration=10,
+            width=320,
+            height=240,
+            audio=False,
+        )
         return {
             "filename": destination.name,
             "size_bytes": destination.stat().st_size,

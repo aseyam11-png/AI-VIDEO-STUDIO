@@ -20,6 +20,12 @@ from app.media.pipeline import (
     render_multi_source_timeline,
     render_timeline,
 )
+from app.media.quality import (
+    analyze_video_quality,
+    persist_quality_report,
+    quality_report_matches_file,
+    quality_report_path,
+)
 from app.media.speech import SpeechDependencyError, transcribe_local
 from app.media.storage import (
     asset_dir,
@@ -34,6 +40,7 @@ from app.media.storage import (
     read_json,
     update_asset_manifest,
 )
+from app.services.jobs import JobNotFoundError, get_job
 
 router = APIRouter(prefix="/v1/projects/{project_id}", tags=["media"])
 
@@ -259,6 +266,19 @@ def get_asset_route(project_id: str, asset_id: str) -> dict:
 def download_asset_file(project_id: str, asset_id: str) -> FileResponse:
     """Serve only the selected asset file after project-scoped path validation."""
     asset, source = _source_path(project_id, asset_id)
+    if asset.get("source_job_id") and asset.get("asset_type") == "video":
+        report_path = quality_report_path(project_id, f"asset-{asset_id}")
+        if not report_path.is_file():
+            raise HTTPException(
+                status_code=409,
+                detail="Generated video asset has no completed quality report.",
+            )
+        report = read_json(report_path)
+        if not quality_report_matches_file(report, source):
+            raise HTTPException(
+                status_code=409,
+                detail="Generated video quality report is stale or does not authorize this asset.",
+            )
     media_type = mimetypes.guess_type(asset.get("original_filename", ""))[0]
     return FileResponse(
         source,
@@ -435,6 +455,10 @@ async def render_route(
         if timeline.get("asset_id") != str(UUID(asset_id)):
             raise HTTPException(status_code=400, detail="Timeline asset mismatch.")
         destination = project_dir(project_id) / "exports" / f"{asset_id}-preview.mp4"
+        source_has_audio = any(
+            stream.get("codec_type") == "audio"
+            for stream in probe_media(source).get("streams", [])
+        )
         result = await run_in_threadpool(
             render_timeline,
             source=source,
@@ -445,8 +469,33 @@ async def render_route(
             fps=payload.fps,
             crf=payload.crf,
         )
+        expected_duration = sum(
+            float(clip["duration_seconds"]) for clip in timeline.get("clips", [])
+        )
+        quality_report = await run_in_threadpool(
+            analyze_video_quality,
+            destination,
+            expected_duration_seconds=expected_duration,
+            expected_width=payload.width,
+            expected_height=payload.height,
+            expected_fps=float(payload.fps),
+            expected_audio=source_has_audio,
+        )
+        await run_in_threadpool(
+            persist_quality_report, project_id, f"asset-{asset_id}", quality_report
+        )
+        if not quality_report["can_export"]:
+            destination.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Quality gate blocked this export. Review the quality report.",
+                    "quality_report": quality_report,
+                },
+            )
         return {
             **result,
+            "quality_report": quality_report,
             "download_url": f"/v1/projects/{project_id}/assets/{asset_id}/rendered",
         }
     except (ValueError, MediaToolError) as exc:
@@ -459,6 +508,15 @@ def download_render(project_id: str, asset_id: str) -> FileResponse:
     rendered = project_dir(project_id) / "exports" / f"{asset_id}-preview.mp4"
     if not rendered.is_file():
         raise HTTPException(status_code=404, detail="Rendered video not found.")
+    report_path = quality_report_path(project_id, f"asset-{asset_id}")
+    if not report_path.is_file():
+        raise HTTPException(status_code=409, detail="Video has no completed quality report.")
+    report = read_json(report_path)
+    if not quality_report_matches_file(report, rendered):
+        raise HTTPException(
+            status_code=409,
+            detail="Quality report is stale or does not authorize this output.",
+        )
     return FileResponse(rendered, media_type="video/mp4", filename=rendered.name)
 
 
@@ -666,8 +724,45 @@ async def render_project_timeline_route(
             visual_effects_manifest=visual_effects,
             overlay_sources=overlay_sources,
         )
+        source_audio_required = bool(audio_mix.get("clips")) or (
+            bool(audio_mix.get("source_audio_enabled", True))
+            and any(
+                any(
+                    stream.get("codec_type") == "audio"
+                    for stream in probe_media(source).get("streams", [])
+                )
+                for source in sources.values()
+            )
+        )
+        quality_report = await run_in_threadpool(
+            analyze_video_quality,
+            destination,
+            expected_duration_seconds=sum(
+                float(clip["duration_seconds"]) for clip in timeline.get("clips", [])
+            ),
+            expected_width=payload.width,
+            expected_height=payload.height,
+            expected_fps=float(payload.fps),
+            expected_audio=source_audio_required,
+        )
+        await run_in_threadpool(
+            persist_quality_report,
+            project_id,
+            f"project-{UUID(project_id)}",
+            quality_report,
+        )
+        if not quality_report["can_export"]:
+            destination.unlink(missing_ok=True)
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Quality gate blocked this export. Review the quality report.",
+                    "quality_report": quality_report,
+                },
+            )
         return {
             **result,
+            "quality_report": quality_report,
             "download_url": f"/v1/projects/{project_id}/timeline/rendered",
         }
     except OptionalMediaDependencyError as exc:
@@ -1305,8 +1400,71 @@ def download_project_timeline_render(project_id: str) -> FileResponse:
         )
         if not rendered.is_file():
             raise HTTPException(status_code=404, detail="Rendered project timeline not found.")
+        report_path = quality_report_path(
+            project_id, f"project-{UUID(project_id)}"
+        )
+        if not report_path.is_file():
+            raise HTTPException(
+                status_code=409,
+                detail="Project export has no completed quality report.",
+            )
+        report = read_json(report_path)
+        if not quality_report_matches_file(report, rendered):
+            raise HTTPException(
+            status_code=409,
+            detail="Quality report is stale or does not authorize this output.",
+        )
         return FileResponse(rendered, media_type="video/mp4", filename=rendered.name)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="Project not found.") from exc
+
+
+@router.get("/quality-report")
+def get_project_quality_report(
+    project_id: str,
+    asset_id: str | None = None,
+    job_id: str | None = None,
+) -> dict:
+    try:
+        get_project(project_id)
+        if asset_id is not None and job_id is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide either asset_id or job_id, not both.",
+            )
+        if job_id is not None:
+            normalized_job_id = str(UUID(job_id))
+            job = get_job(normalized_job_id)
+            if job.get("project_id") != project_id:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Job was not found in this project.",
+                )
+            report_key = f"job-{normalized_job_id}"
+        elif asset_id is not None:
+            normalized_asset_id = str(UUID(asset_id))
+            get_asset(project_id, normalized_asset_id)
+            report_key = f"asset-{normalized_asset_id}"
+        else:
+            report_key = f"project-{UUID(project_id)}"
+        report_path = quality_report_path(project_id, report_key)
+        if not report_path.is_file():
+            raise HTTPException(
+                status_code=404,
+                detail="No quality report exists for this export.",
+            )
+        return read_json(report_path)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Job was not found.") from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Project, asset, or job identifier is invalid.",
+        ) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Project, asset, or job was not found.",
+        ) from exc

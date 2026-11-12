@@ -87,6 +87,12 @@ def test_video_ingest_proxy_scenes_timeline_and_render(tmp_path, monkeypatch):
     )
     assert render_response.status_code == 200, render_response.text
     assert render_response.json()["size_bytes"] > 0
+    assert render_response.json()["quality_report"]["can_export"] is True
+    report_response = client.get(
+        f"/v1/projects/{project_id}/quality-report?asset_id={asset_id}"
+    )
+    assert report_response.status_code == 200, report_response.text
+    assert report_response.json()["file"]["sha256"]
 
     download_response = client.get(
         f"/v1/projects/{project_id}/assets/{asset_id}/rendered"

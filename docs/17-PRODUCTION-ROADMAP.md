@@ -1,6 +1,6 @@
 # AI Video Studio — Production Roadmap
 
-**Baseline date:** 2026-11-10  
+**Baseline date:** 2026-11-11  
 **Repository:** `aseyam11-png/AI-VIDEO-STUDIO`  
 **Target release:** private, single-user production installation first. This roadmap does not claim a public multi-user SaaS release.
 
@@ -16,6 +16,9 @@ The following implementation phases are present on `main`:
 | 3 | Durable sequential workflow runs/steps, plan approval, child-job chaining and generated-asset handoff | Merged by PR #4 |
 | 6.6 | Transitions, Arabic titles and positioned image overlays | Merged by PR #13 |
 | 6.7 | Approved multi-shot Wan generation and deterministic FFmpeg assembly | Merged by PR #14; all three CI jobs passed |
+| 6.8 | Bounded Real-ESRGAN video enhancement | Merged by PR #16; real target-host inference remains open |
+| 6.9 | Product Identity Lock and mandatory human review | Merged by PR #18; real Wan identity acceptance remains open |
+| 6.10 | Technical video/audio QA and export gate | Implemented on feature branch; CI/target-media acceptance pending |
 
 Phase 3 CI run 120 passed on commit `91c62b8` before merge. Both `python-checks` and `compose-integration` succeeded. This is automated CI evidence, not target-machine GPU or model-inference evidence.
 
@@ -30,8 +33,8 @@ The following gaps remain open:
 - The Workflow Engine v1 is sequential. It is not a general branching DAG or autonomous multi-agent editing director.
 - Wan image-to-video v1 now has a durable multi-shot path merged in PR #14: 2–8 generated shots, up to 10 seconds each, registered as project assets and assembled by FFmpeg. Real Wan/RIFE inference and target-GPU performance still require target-host acceptance.
 - The deterministic renderer now supports sequential multi-source clips, Arabic timeline SRT, synchronized audio mixing, and the Phase 6.6 transitions/titles/image-overlay slice merged in PR #13. Real-time waveform editing, arbitrary keyframes, 3D compositing and reviewed Blender/ComfyUI motion-graphics templates remain future work.
-- Product Identity Lock and automated creative/visual QA are not implemented.
-- Authentication/deployment controls, backup/restore testing, operational monitoring and a full production acceptance run remain outstanding.
+- Phase 6.9 Product Identity Lock is merged; the five-check human review is not an automated pixel-level identity guarantee. Phase 6.10 technical quality gating is being implemented on the current feature branch; semantic and aesthetic QA remain human-review duties.
+- Phase 7 authentication, security headers and backup/restore tooling are being implemented on the Phase 6.10/7 branch. Production token configuration, a separate-database restore drill, Windows browser acceptance, operational monitoring/alerts and full release acceptance remain outstanding.
 - Third-party code, model, checkpoint, custom-node and dataset licenses must be inventoried before distribution or commercial use.
 
 ## 3. Phase 4 — target-host model runtime acceptance
@@ -124,13 +127,21 @@ The job is limited to 10 seconds and 300 frames, applies a 650-million pixel-fra
 
 See [Phase 6.8 — Bounded Video Enhancement](26-PHASE-6.8-VIDEO-ENHANCEMENT.md).
 
-### Phase 6.9 — Product Identity Lock (implementation PR)
+### Phase 6.9 — Product Identity Lock (merged)
 
-The implementation is submitted on `feat/phase-6.9-product-identity-lock`. It adds a project-scoped image reference with SHA-256 integrity verification, repeated identity constraints for each Wan shot, a persisted `awaiting_identity_review` state and a five-item human checklist. The workflow stops before timeline construction and export. Only explicit approval with all five checks queues the timeline; rejection blocks the pending export steps.
+Implemented on `main` in PR #18. It adds a project-scoped image reference with SHA-256 integrity verification, repeated identity constraints for each Wan shot, a persisted `awaiting_identity_review` state and a five-item human checklist. The workflow stops before timeline construction and export. Only explicit approval with all five checks queues the timeline; rejection blocks the pending export steps.
 
 This is reference conditioning and a human approval gate, not a guarantee of pixel-perfect identity or automated logo/text recognition. CI uses synthetic media and mocked ComfyUI; real Wan inference, cross-shot logo fidelity and target-GPU acceptance remain open.
 
 See [Phase 6.9 — Product Identity Lock](27-PHASE-6.9-PRODUCT-IDENTITY-LOCK.md).
+
+### Phase 6.10 — Technical video/audio quality gate (implementation branch)
+
+Implemented on feat/phase-6.10-quality-gate-phase-7-hardening. The gate inspects FFprobe metadata, performs a full FFmpeg decode, checks expected duration/resolution/FPS/audio, detects black and frozen segments, and reports long silence/near-clipping. A project-scoped SHA-256-bound JSON report is required before either direct or multi-source MP4 download. Blocking issues delete the preview output and return the report to the Studio UI; warnings remain visible for human review.
+
+Automated fixtures cover valid media, black media, frozen media, silence, missing/corrupt files, stale report fingerprints, worker renders and the multi-source download block. These fixtures validate the implementation but do not replace inspection of real target-host media.
+
+See docs/28-PHASE-7-SECURITY-OPERATIONS.md.
 
 ### Remaining Phase 6 increments
 
@@ -154,6 +165,12 @@ For the initial single-user installation:
 - Add structured logs, health/readiness checks, disk/VRAM monitoring and actionable worker failure alerts.
 - Test PostgreSQL and media-volume backup plus restore. Verify that database records and media assets remain consistent.
 - Document upgrades, migration rollback/recovery, worker restart and stuck-job recovery.
+
+### Phase 7 — security and operations (implementation branch)
+
+Bearer-token API access, production fail-closed behavior, security headers, health checks, and Windows database/media backup/restore helpers are implemented on the Phase 6.10/7 feature branch. Before release, run the backup helper on private data, restore into an isolated empty directory/database, confirm project-to-media integrity, and complete the target-host model acceptance ledger. The scripts do not prove that the owner's live backup has been restored successfully.
+
+See docs/28-PHASE-7-SECURITY-OPERATIONS.md and docs/29-PHASE-7-TARGET-GPU-ACCEPTANCE.md.
 
 ## 7. Release acceptance matrix
 

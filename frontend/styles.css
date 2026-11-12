@@ -295,3 +295,28 @@ textarea.control{resize:vertical;min-height:78px;line-height:1.65}
 .identity-review-checklist>strong{font-size:12px;color:#dce2e5;margin-bottom:3px}
 .identity-review-checklist .check-option{align-items:flex-start;line-height:1.55}
 @media(max-width:760px){.identity-review-comparison{grid-template-columns:1fr}.identity-review-comparison img,.identity-review-comparison video{max-height:280px}}
+
+
+/* Phase 6.10 quality report and Phase 7 private access gate */
+.auth-panel{display:grid;gap:12px;max-width:680px;margin:16px 0;padding:18px;border:1px solid var(--accent);border-radius:12px;background:#171a1d}
+.auth-panel h3{margin:5px 0;font-size:18px}
+.auth-panel p{margin:0;color:var(--muted);font-size:12px;line-height:1.8}
+.auth-panel .action-row{display:flex;gap:9px;flex-wrap:wrap}
+.quality-report{margin:16px 0;padding:15px;border:1px solid var(--line);border-radius:12px;background:#15191b}
+.quality-report-heading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:9px}
+#quality-status{font-size:13px;color:#dce2e5}
+#quality-status[data-status="passed"]{color:var(--success)}
+#quality-status[data-status="passed_with_warnings"]{color:#e4b46d}
+#quality-status[data-status="failed"]{color:var(--danger)}
+#quality-summary{font-size:10px;direction:rtl}
+.quality-issues{display:grid;gap:7px;margin-top:12px}
+.quality-issue{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:8px;font-size:11px;line-height:1.6;background:#1c2023}
+.quality-issue strong{white-space:nowrap}
+.quality-issue.is-error strong{color:var(--danger)}
+.quality-issue.is-warning strong{color:#e4b46d}
+
+#workflow-quality-status{font-size:13px;color:#dce2e5}
+#workflow-quality-status[data-status="passed"]{color:var(--success)}
+#workflow-quality-status[data-status="passed_with_warnings"]{color:#e4b46d}
+#workflow-quality-status[data-status="failed"]{color:var(--danger)}
+#workflow-quality-summary{font-size:10px;direction:rtl}

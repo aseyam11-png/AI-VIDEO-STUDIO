@@ -2,7 +2,7 @@
 
 **Repository:** `aseyam11-png/AI-VIDEO-STUDIO`  
 **Branch:** `feat/phase-6.9-product-identity-lock`  
-**Status:** Implementation submitted for review; CI and target-host Wan acceptance remain open.
+**Status:** Merged in PR #18 (2026-11-10); real target-host Wan acceptance remains open.
 
 ## Goal
 

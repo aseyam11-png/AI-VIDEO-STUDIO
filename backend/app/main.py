@@ -1,9 +1,10 @@
+import hmac
 from pathlib import Path
 
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
@@ -14,12 +15,71 @@ from app.db.session import get_engine
 app = FastAPI(
     title=settings.app_name,
     version="0.4.0",
+    docs_url=None if settings.app_env.lower() == "production" else "/docs",
+    redoc_url=None if settings.app_env.lower() == "production" else "/redoc",
+    openapi_url=None if settings.app_env.lower() == "production" else "/openapi.json",
     description=(
         "Arabic-first video production API with durable sequential workflows, "
         "approved local model adapters, and deterministic media processing."
     ),
 )
 app.include_router(api_router)
+
+@app.middleware("http")
+async def enforce_private_api_access(request, call_next):
+    path = request.url.path
+    response = None
+    if path.startswith("/v1/"):
+        token = settings.studio_api_token
+        production = settings.app_env.lower() == "production"
+        if production and (not token or len(token) < 32):
+            response = JSONResponse(
+                status_code=503,
+                content={
+                    "detail": (
+                        "Production API access is disabled until STUDIO_API_TOKEN "
+                        "is configured with at least 32 characters."
+                    )
+                },
+            )
+        elif token and path != "/v1/auth/session":
+            authorization = request.headers.get("authorization", "")
+            scheme, separator, supplied = authorization.partition(" ")
+            if (
+                not separator
+                or scheme.lower() != "bearer"
+                or not hmac.compare_digest(supplied, token)
+            ):
+                response = JSONResponse(
+                    status_code=401,
+                    content={
+                        "detail": (
+                            "A valid bearer token is required to access "
+                            "this private Studio API."
+                        )
+                    },
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+    if response is None:
+        response = await call_next(request)
+
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
+        "style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; "
+        "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+    )
+    if request.url.scheme == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security",
+            "max-age=31536000; includeSubDomains",
+        )
+    return response
+
 
 STUDIO_UI_DIR = Path(__file__).resolve().parents[2] / "frontend"
 app.mount(
@@ -108,6 +168,20 @@ def capabilities() -> dict:
         "gpu_scheduling": "single_concurrency_model_queue; target_hardware_not_benchmarked",
         "video_generation_adapter": True,
         "video_generation_inference_verified": False,
+        "phase_6_10_quality_gate": {
+            "implemented": True,
+            "black_and_frozen_frame_detection": True,
+            "audio_silence_and_peak_detection": True,
+            "full_media_decode": True,
+            "sha256_bound_export_report": True,
+            "export_blocked_on_critical_errors": True,
+        },
+        "phase_7_security_operations": {
+            "bearer_token_authentication": bool(settings.studio_api_token),
+            "production_fails_closed_without_token": True,
+            "backup_restore_helpers_added": True,
+            "target_host_restore_drill_verified": False,
+        },
         "external_model_apis_enabled": False,
         "model_weights_downloaded_automatically": False,
         "note": (

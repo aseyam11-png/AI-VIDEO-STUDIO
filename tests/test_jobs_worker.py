@@ -85,3 +85,10 @@ def test_background_worker_executes_full_single_asset_pipeline(tmp_path, monkeyp
     )
     assert export.status_code == 200
     assert export.headers["content-type"].startswith("video/mp4")
+    quality = client.get(
+        f"/v1/projects/{project['id']}/quality-report?asset_id={asset_id}"
+    )
+    assert quality.status_code == 200, quality.text
+    assert quality.json()["can_export"] is True
+    assert quality.json()["file"]["sha256"]
+    assert quality.json()["metrics"]["width"] == 640
