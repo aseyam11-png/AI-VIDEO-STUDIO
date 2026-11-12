@@ -3,6 +3,7 @@ import subprocess
 from uuid import uuid4
 
 import pytest
+from app.api.routes import media as media_route
 from app.api.routes import models as models_route
 from app.core.config import settings
 from app.main import app
@@ -182,3 +183,47 @@ def test_generated_video_asset_and_job_download_require_fresh_quality_reports(
 
     assert client.get(asset_url).status_code == 409
     assert client.get(job_url).status_code == 409
+
+
+def test_quality_report_can_be_retrieved_by_project_scoped_job_id(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
+    client = TestClient(app)
+    project = _project(client)
+    job_id = str(uuid4())
+    report = {
+        "schema_version": 1,
+        "status": "failed",
+        "can_export": False,
+        "summary": {"check_count": 4, "error_count": 1, "warning_count": 0},
+        "issues": [
+            {
+                "code": "black_frames_detected",
+                "severity": "error",
+                "message": "Black frames were detected.",
+            }
+        ],
+    }
+    persist_quality_report(project["id"], f"job-{job_id}", report)
+    job = {"id": job_id, "project_id": project["id"]}
+    monkeypatch.setattr(media_route, "get_job", lambda requested_id: job)
+
+    response = client.get(
+        f"/v1/projects/{project['id']}/quality-report",
+        params={"job_id": job_id},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["issues"][0]["code"] == "black_frames_detected"
+
+    foreign = client.get(
+        f"/v1/projects/{project['id']}/quality-report",
+        params={"job_id": str(uuid4())},
+    )
+    assert foreign.status_code == 404
+
+    ambiguous = client.get(
+        f"/v1/projects/{project['id']}/quality-report",
+        params={"asset_id": str(uuid4()), "job_id": job_id},
+    )
+    assert ambiguous.status_code == 400

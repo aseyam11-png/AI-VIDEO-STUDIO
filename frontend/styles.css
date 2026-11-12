@@ -314,3 +314,9 @@ textarea.control{resize:vertical;min-height:78px;line-height:1.65}
 .quality-issue strong{white-space:nowrap}
 .quality-issue.is-error strong{color:var(--danger)}
 .quality-issue.is-warning strong{color:#e4b46d}
+
+#workflow-quality-status{font-size:13px;color:#dce2e5}
+#workflow-quality-status[data-status="passed"]{color:var(--success)}
+#workflow-quality-status[data-status="passed_with_warnings"]{color:#e4b46d}
+#workflow-quality-status[data-status="failed"]{color:var(--danger)}
+#workflow-quality-summary{font-size:10px;direction:rtl}

@@ -243,6 +243,9 @@ def execute_comfyui_job(
             cancel_check=cancel_check,
         )
         if not quality_report["can_export"]:
+            persist_quality_report(
+                job["project_id"], f"job-{job['id']}", quality_report
+            )
             generated_video_path.unlink(missing_ok=True)
             raise ComfyUIError(
                 "Video quality gate blocked this model output: "
@@ -426,6 +429,7 @@ def execute_video_enhancement(
         cancel_check=cancel_check,
     )
     if not quality_report["can_export"]:
+        persist_quality_report(project_id, f"job-{job_id}", quality_report)
         destination.unlink(missing_ok=True)
         raise ComfyUIError(
             "Real-ESRGAN output failed the video quality gate: "
@@ -709,6 +713,7 @@ def execute_video_sequence(
         cancel_check=cancel_check,
     )
     if not quality_report["can_export"]:
+        persist_quality_report(project_id, f"job-{job_id}", quality_report)
         destination.unlink(missing_ok=True)
         raise ComfyUIError(
             "Wan sequence output failed the video quality gate: "
@@ -813,6 +818,9 @@ def execute_blender_job(
         cancel_check=cancel_check,
     )
     if not quality_report["can_export"]:
+        persist_quality_report(
+            job["project_id"], f"job-{job['id']}", quality_report
+        )
         destination.unlink(missing_ok=True)
         raise ComfyUIError(
             "Blender motion output failed the video quality gate: "

@@ -40,6 +40,7 @@ from app.media.storage import (
     read_json,
     update_asset_manifest,
 )
+from app.services.jobs import JobNotFoundError, get_job
 
 router = APIRouter(prefix="/v1/projects/{project_id}", tags=["media"])
 
@@ -1421,25 +1422,49 @@ def download_project_timeline_render(project_id: str) -> FileResponse:
 
 
 @router.get("/quality-report")
-def get_project_quality_report(project_id: str, asset_id: str | None = None) -> dict:
+def get_project_quality_report(
+    project_id: str,
+    asset_id: str | None = None,
+    job_id: str | None = None,
+) -> dict:
     try:
         get_project(project_id)
-        report_key = f"project-{UUID(project_id)}"
-        if asset_id is not None:
+        if asset_id is not None and job_id is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Provide either asset_id or job_id, not both.",
+            )
+        if job_id is not None:
+            normalized_job_id = str(UUID(job_id))
+            job = get_job(normalized_job_id)
+            if job.get("project_id") != project_id:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Job was not found in this project.",
+                )
+            report_key = f"job-{normalized_job_id}"
+        elif asset_id is not None:
             normalized_asset_id = str(UUID(asset_id))
             get_asset(project_id, normalized_asset_id)
             report_key = f"asset-{normalized_asset_id}"
+        else:
+            report_key = f"project-{UUID(project_id)}"
         report_path = quality_report_path(project_id, report_key)
         if not report_path.is_file():
-            raise HTTPException(status_code=404, detail="No quality report exists for this export.")
+            raise HTTPException(
+                status_code=404,
+                detail="No quality report exists for this export.",
+            )
         return read_json(report_path)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Job was not found.") from exc
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
-            detail="Project or asset identifier is invalid.",
+            detail="Project, asset, or job identifier is invalid.",
         ) from exc
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=404,
-            detail="Project or asset was not found.",
+            detail="Project, asset, or job was not found.",
         ) from exc

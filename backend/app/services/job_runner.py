@@ -185,6 +185,9 @@ def _execute_media_job(
             cancel_check=cancel_check,
         )
         if not quality_report["can_export"]:
+            persist_quality_report(
+                project_id, f"job-{job['id']}", quality_report
+            )
             generated_path.unlink(missing_ok=True)
             raise ValueError(
                 "Audio-enhanced video failed the quality gate: "
@@ -407,6 +410,9 @@ def _execute_media_job(
         )
         persist_quality_report(project_id, f"asset-{asset_id}", quality_report)
         if not quality_report["can_export"]:
+            persist_quality_report(
+                project_id, f"job-{job['id']}", quality_report
+            )
             destination.unlink(missing_ok=True)
             summary = quality_report.get("summary", {})
             raise ValueError(

@@ -1953,11 +1953,11 @@
   }
 
   
-  function renderQualityReport(report) {
-    const panel = $("quality-report");
-    const status = $("quality-status");
-    const summary = $("quality-summary");
-    const issues = $("quality-issues");
+  function renderQualityReport(report, target = "quality") {
+    const panel = $(`${target}-report`);
+    const status = $(`${target}-status`);
+    const summary = $(`${target}-summary`);
+    const issues = $(`${target}-issues`);
     if (!panel || !status || !summary || !issues) return;
     if (!report) {
       panel.hidden = true;
@@ -2196,7 +2196,7 @@ async function renderProjectTimeline() {
     setStepper(3);
   }
 
-  function renderWorkflowSteps(steps) {
+  function renderWorkflowSteps(steps, projectId) {
     const list = $("workflow-steps");
     list.replaceChildren();
     (steps || []).forEach((step) => {
@@ -2216,6 +2216,18 @@ async function renderProjectTimeline() {
       stateLabel.className = "step-state";
       stateLabel.textContent = statusLabels[step.status] || step.status;
       item.append(number, body, stateLabel);
+      if (step.result?.quality_report) {
+        renderQualityReport(step.result.quality_report, "workflow-quality");
+      } else if (step.status === "failed" && step.job_id && projectId) {
+        const reportUrl = `/v1/projects/${encodeURIComponent(projectId)}/quality-report?job_id=${encodeURIComponent(step.job_id)}`;
+        void api(reportUrl)
+          .then((report) => renderQualityReport(report, "workflow-quality"))
+          .catch((error) => {
+            if (error.status !== 404) {
+              notice(`تعذّر تحميل تقرير جودة المهمة: ${error.message}`, "error");
+            }
+          });
+      }
       if (["failed", "cancelled"].includes(step.status) && step.job_id) {
         const retry = document.createElement("button");
         retry.className = "retry-button";
@@ -2247,15 +2259,19 @@ async function renderProjectTimeline() {
   }
 
   function renderWorkflow(workflow) {
+    const workflowChanged = state.workflow?.id !== workflow.id;
     const previousIdentityReviewStatus =
       state.workflow?.options?.product_identity_review?.status || null;
+    if (workflowChanged) {
+      renderQualityReport(null, "workflow-quality");
+    }
     state.workflow = workflow;
     $("execution-panel").hidden = false;
     $("workflow-state").textContent = statusLabels[workflow.status] || workflow.status;
     $("plan-status").textContent = statusLabels[workflow.status] || workflow.status;
     $("approval-actions").hidden = workflow.status !== "awaiting_approval";
     $("execution-actions").hidden = !["queued", "running", "cancel_requested", "awaiting_identity_review"].includes(workflow.status);
-    renderWorkflowSteps(workflow.steps || []);
+    renderWorkflowSteps(workflow.steps || [], workflow.project_id);
     $("plan-panel").hidden = !workflow.creative_plan;
     if (workflow.creative_plan) renderPlan(workflow.creative_plan);
 
