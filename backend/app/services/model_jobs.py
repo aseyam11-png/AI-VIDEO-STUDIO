@@ -240,9 +240,33 @@ def execute_comfyui_job(
             expected_duration = (
                 float(source_duration) if source_duration is not None else None
             )
+        expected_width = None
+        expected_height = None
+        expected_fps = None
+        if job["job_type"] == "video.generate":
+            expected_width = job["payload"].get("width")
+            expected_height = job["payload"].get("height")
+        else:
+            source_video = next(
+                (
+                    stream for stream in source_metadata.get("streams", [])
+                    if stream.get("codec_type") == "video"
+                ),
+                {},
+            )
+            expected_width = source_video.get("width")
+            expected_height = source_video.get("height")
+            source_fps = _fraction(source_video.get("avg_frame_rate")) or _fraction(
+                source_video.get("r_frame_rate")
+            )
+            if source_fps is not None:
+                expected_fps = source_fps * int(job["payload"]["factor"])
         quality_report = analyze_video_quality(
             generated_video_path,
             expected_duration_seconds=expected_duration,
+            expected_width=expected_width,
+            expected_height=expected_height,
+            expected_fps=expected_fps,
             cancel_check=cancel_check,
         )
         if not quality_report["can_export"]:
