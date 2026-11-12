@@ -28,6 +28,7 @@ from app.media.storage import (
     register_generated_video_asset,
 )
 
+
 def _parse_frame_rate(value: Any) -> float | None:
     if value in (None, "", "0/0"):
         return None
