@@ -2,12 +2,12 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
 
 from app.schemas.models import CreativePlan
 from app.schemas.workflows import WorkflowCreateRequest
 from app.services import workflow_engine
 from app.services.cinematic_director import compile_scene_generation_prompt
+from pydantic import ValidationError
 
 
 def _plan(*, scene_count: int = 1, duration: int = 4) -> CreativePlan:
@@ -45,7 +45,9 @@ def _plan(*, scene_count: int = 1, duration: int = 4) -> CreativePlan:
             "visual_style": "Naturalistic high-end commercial cinematography",
             "color_palette": ["charcoal", "warm amber", "neutral skin tones"],
             "audio_direction": "Restrained sound design with realistic room tone",
-            "cinematic_look": "soft highlight roll-off, controlled contrast and natural skin texture",
+            "cinematic_look": (
+                "soft highlight roll-off, controlled contrast and natural skin texture"
+            ),
             "continuity_rules": [
                 "Keep the same product silhouette, color and material in every shot.",
                 "Maintain the same key-light direction and environment geometry.",

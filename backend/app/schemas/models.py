@@ -2,7 +2,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
 CinematicDirection = Annotated[str, Field(min_length=3, max_length=300)]
 
 
