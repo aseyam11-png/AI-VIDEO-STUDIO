@@ -13,7 +13,7 @@ This phase adds an optional per-shot provider route for approved multi-shot imag
 - Single-shot workflows remain local Wan in this increment.
 - The Runway API key is injected only into the `worker-models` container. The API receives only the enablement flag and cost cap; the browser receives only the routing choice and consent boolean.
 - Reference images are uploaded with Runway's ephemeral upload flow. The Studio downloads completed outputs into the project's private media directory and never exposes the temporary signed output URL.
-- Runway output downloads accept only HTTPS CloudFront URLs and validate redirects remain on CloudFront.
+- Runway uploads and output downloads accept only Runway-published S3/Runway-owned hosts and the documented CloudFront distribution hosts; arbitrary HTTPS hosts and arbitrary CloudFront distributions are rejected.
 
 ## Cost guard
 

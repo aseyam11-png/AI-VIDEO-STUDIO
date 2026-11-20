@@ -38,12 +38,12 @@ class FakeRunwayClient(RunwayDevClient):
             self.poll_count += 1
             return {
                 "status": "SUCCEEDED",
-                "output": ["https://media.cloudfront.net/temporary/output.mp4"],
+                "output": ["https://dnf8butk8bbsy.cloudfront.net/temporary/output.mp4"],
             }
         raise AssertionError(f"Unexpected Runway request: {method} {path}")
 
     def _download_output(self, url, destination):
-        assert url.startswith("https://media.cloudfront.net/")
+        assert url.startswith("https://dnf8butk8bbsy.cloudfront.net/")
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes(b"synthetic-video-output")
 
@@ -180,7 +180,7 @@ def test_download_rejects_non_cloudfront_output_hosts(tmp_path, monkeypatch):
 
 def test_download_redirect_handler_rejects_redirects_off_cloudfront():
     handler = _CloudFrontRedirectHandler()
-    request = Request("https://media.cloudfront.net/output.mp4")
+    request = Request("https://dnf8butk8bbsy.cloudfront.net/output.mp4")
 
     with pytest.raises(RunwayError, match="left the approved"):
         handler.redirect_request(
@@ -363,7 +363,7 @@ def test_upload_fails_if_image_changes_after_fingerprint(
         def _api_request(self, method, path, payload=None):
             if method == "POST" and path == "/v1/uploads":
                 return {
-                    "uploadUrl": "https://upload.example.test/presigned",
+                    "uploadUrl": "https://runway-uploads-prod.s3.amazonaws.com/presigned",
                     "runwayUri": "runway://ephemeral/reference",
                     "fields": {"policy": "test"},
                 }
@@ -467,3 +467,68 @@ def test_concurrent_duplicate_workers_cannot_submit_two_paid_tasks(
     assert second_result["task_id"] == _TASK_ID
     assert second_result["resumed"] is True
     assert client.submit_count == 1
+
+
+
+@pytest.mark.parametrize(
+    "upload_url",
+    [
+        "https://runway-uploads-prod.s3.amazonaws.com/presigned",
+        "https://runway-datasets.s3.us-east-1.amazonaws.com/presigned",
+        "https://api.dev.runwayml.com/presigned",
+        "https://storage.runwayml.cloud/presigned",
+        "https://worker.eu.storage.runwayml.cloud/presigned",
+    ],
+)
+def test_upload_url_accepts_runway_storage_domains(upload_url):
+    import app.integrations.runway as runway_module
+
+    parsed = runway_module._safe_upload_url(upload_url)
+
+    assert parsed.scheme == "https"
+
+
+@pytest.mark.parametrize(
+    "upload_url",
+    [
+        "https://uploads.example.test/presigned",
+        "https://runway-uploads-prod.s3.amazonaws.com.attacker.test/presigned",
+        "https://attacker.cloudfront.net/presigned",
+        "https://127.0.0.1/presigned",
+        "http://runway-uploads-prod.s3.amazonaws.com/presigned",
+        "https://user@runway-uploads-prod.s3.amazonaws.com/presigned",
+        "https://runway-uploads-prod.s3.amazonaws.com:444/presigned",
+    ],
+)
+def test_upload_url_rejects_untrusted_hosts_and_authorities(upload_url):
+    import app.integrations.runway as runway_module
+
+    with pytest.raises(RunwayUploadError, match="invalid ephemeral upload URL"):
+        runway_module._safe_upload_url(upload_url)
+
+
+def test_download_rejects_arbitrary_cloudfront_distribution_host(tmp_path):
+    client = FakeRunwayClient()
+
+    with pytest.raises(RunwayError, match="approved CloudFront host"):
+        RunwayDevClient._download_output(
+            client,
+            "https://attacker.cloudfront.net/output.mp4",
+            tmp_path / "unsafe.mp4",
+        )
+
+
+def test_cloudfront_redirect_handler_accepts_documented_runway_host():
+    handler = _CloudFrontRedirectHandler()
+    request = Request("https://dnf8butk8bbsy.cloudfront.net/output.mp4")
+
+    redirected = handler.redirect_request(
+        request,
+        None,
+        302,
+        "Found",
+        {},
+        "https://d1y6zccyuj4x6c.cloudfront.net/output.mp4",
+    )
+
+    assert redirected is not None

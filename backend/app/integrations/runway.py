@@ -30,7 +30,29 @@ _RUNWAY_720P_RATIOS = (
     ("992:432", 992 / 432),
 )
 _RUNWAY_UPLOAD_MAX_BYTES = 200 * 1024 * 1024
-_RUNWAY_OUTPUT_HOST_SUFFIX = ".cloudfront.net"
+_RUNWAY_UPLOAD_HOSTS = frozenset(
+    {
+        "runway-datasets.s3.amazonaws.com",
+        "runway-datasets.s3.us-east-1.amazonaws.com",
+        "runway-uploads-prod.s3.amazonaws.com",
+        "runway-uploads-prod.s3.us-east-1.amazonaws.com",
+        "dnf8butk8bbsy.cloudfront.net",
+        "d1y6zccyuj4x6c.cloudfront.net",
+        "d1zxmob2olb5kh.cloudfront.net",
+        "dnznrvs05pmza.cloudfront.net",
+        "d2jqrm6oza8nb6.cloudfront.net",
+    }
+)
+_RUNWAY_CLOUDFRONT_HOSTS = frozenset(
+    {
+        "dnf8butk8bbsy.cloudfront.net",
+        "d1y6zccyuj4x6c.cloudfront.net",
+        "d1zxmob2olb5kh.cloudfront.net",
+        "dnznrvs05pmza.cloudfront.net",
+        "d2jqrm6oza8nb6.cloudfront.net",
+    }
+)
+_RUNWAY_UPLOAD_DOMAIN_SUFFIXES = (".runwayml.com", ".runwayml.cloud")
 
 
 class RunwayError(RuntimeError):
@@ -133,8 +155,15 @@ def _safe_upload_url(value: str):
         pass
     else:
         raise RunwayUploadError("Runway upload URLs must use a DNS hostname, not an IP address.")
-    if parsed.hostname.lower() in {"localhost", "metadata.google.internal"}:
-        raise RunwayUploadError("Runway returned a disallowed upload hostname.")
+    hostname = parsed.hostname.lower().rstrip(".")
+    if (
+        hostname in {"localhost", "metadata.google.internal"}
+        or not (
+            hostname in _RUNWAY_UPLOAD_HOSTS
+            or any(hostname.endswith(suffix) for suffix in _RUNWAY_UPLOAD_DOMAIN_SUFFIXES)
+        )
+    ):
+        raise RunwayUploadError("Runway returned an invalid ephemeral upload URL.")
     return parsed
 
 
@@ -165,7 +194,7 @@ class _CloudFrontRedirectHandler(HTTPRedirectHandler):
             or parsed.username
             or parsed.password
             or parsed.port not in (None, 443)
-            or not parsed.hostname.lower().endswith(_RUNWAY_OUTPUT_HOST_SUFFIX)
+            or parsed.hostname.lower().rstrip(".") not in _RUNWAY_CLOUDFRONT_HOSTS
         ):
             raise RunwayError(
                 "Runway output redirect left the approved HTTPS CloudFront host."
@@ -392,7 +421,7 @@ class RunwayDevClient:
             or parsed.username
             or parsed.password
             or parsed.port not in (None, 443)
-            or not parsed.hostname.lower().endswith(_RUNWAY_OUTPUT_HOST_SUFFIX)
+            or parsed.hostname.lower().rstrip(".") not in _RUNWAY_CLOUDFRONT_HOSTS
         ):
             raise RunwayError("Runway returned an output URL outside the approved CloudFront host.")
         temporary = destination.with_suffix(destination.suffix + ".partial")
