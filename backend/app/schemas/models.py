@@ -1,4 +1,9 @@
+from typing import Annotated, Literal
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+CinematicDirection = Annotated[str, Field(min_length=3, max_length=300)]
 
 
 class DirectorPlanRequest(BaseModel):
@@ -21,6 +26,15 @@ class CreativeScene(BaseModel):
     narration: str = Field(default="", max_length=1200)
     on_screen_text: str = Field(default="", max_length=500)
     sound_design: str = Field(default="", max_length=500)
+    focal_length_mm: int = Field(default=50, ge=14, le=135)
+    aperture_f_number: float = Field(default=4.0, ge=1.2, le=22.0)
+    depth_of_field: Literal["shallow", "moderate", "deep"] = "moderate"
+    lighting_design: str = Field(default="", max_length=400)
+    composition: str = Field(default="", max_length=400)
+    subject_action: str = Field(default="", max_length=400)
+    motion_intensity: Literal["static", "subtle", "controlled", "dynamic"] = "controlled"
+    continuity_anchor: str = Field(default="", max_length=400)
+    transition_intent: str = Field(default="", max_length=300)
 
 
 class CreativePlan(BaseModel):
@@ -33,6 +47,9 @@ class CreativePlan(BaseModel):
     visual_style: str = Field(min_length=3, max_length=500)
     color_palette: list[str] = Field(min_length=2, max_length=6)
     audio_direction: str = Field(min_length=3, max_length=500)
+    cinematic_look: str = Field(default="", max_length=500)
+    continuity_rules: list[CinematicDirection] = Field(default_factory=list, max_length=8)
+    realism_constraints: list[CinematicDirection] = Field(default_factory=list, max_length=8)
     scenes: list[CreativeScene] = Field(min_length=1, max_length=20)
     production_notes: list[str] = Field(default_factory=list, max_length=12)
 
