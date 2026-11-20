@@ -15,7 +15,6 @@ from app.integrations.runway import (
     _select_seedance25_ratio,
 )
 
-
 _TASK_ID = "12345678-1234-5678-1234-567812345678"
 
 

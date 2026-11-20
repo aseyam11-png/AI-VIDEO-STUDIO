@@ -109,8 +109,6 @@ jobs:
           assert fetched.json()["id"] == project_id
           print("FastAPI readiness, project create, and project read passed with runtime role.")
           PY
-      - name: Diagnose remaining Ruff import ordering
-        run: ruff check --diff backend/app/integrations/runway.py tests/test_runway_client.py || true
       - name: Verify code quality
         run: ruff check backend tests
       - name: Run test suite
