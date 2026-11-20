@@ -1,4 +1,6 @@
+import hashlib
 from pathlib import Path
+from unittest.mock import Mock
 from urllib.request import Request
 
 import pytest
@@ -9,6 +11,7 @@ from app.integrations.runway import (
     RunwayError,
     RunwaySubmissionUnknownError,
     RunwayTransportError,
+    RunwayUploadError,
     _CloudFrontRedirectHandler,
 )
 
@@ -222,3 +225,128 @@ def test_unconfirmed_remote_cancellation_blocks_new_paid_submission(
         _generate(client, source, output_directory)
 
     assert client.submit_count == 1
+
+
+def test_api_request_accepts_empty_204_delete_response(monkeypatch):
+    _configure_runway(monkeypatch)
+    import app.integrations.runway as runway_module
+
+    class Empty204Response:
+        status = 204
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self, _size):
+            return b""
+
+    opener = Mock()
+    opener.open.return_value = Empty204Response()
+    monkeypatch.setattr(runway_module, "build_opener", lambda *_: opener)
+    client = RunwayDevClient()
+
+    assert client._api_request("DELETE", f"/v1/tasks/{_TASK_ID}") == {}
+    request = opener.open.call_args.args[0]
+    assert request.get_method() == "DELETE"
+    assert request.get_header("X-runway-version") == "2024-11-06"
+
+
+def test_cancel_404_is_idempotent_and_never_submits_a_second_task(
+    tmp_path, monkeypatch
+):
+    _configure_runway(monkeypatch)
+
+    class AlreadyCancelledClient(FakeRunwayClient):
+        def _api_request(self, method, path, payload=None):
+            if method == "POST" and path == "/v1/image_to_video":
+                self.submit_count += 1
+                return {"id": _TASK_ID}
+            if method == "DELETE" and path == f"/v1/tasks/{_TASK_ID}":
+                from app.integrations.runway import RunwayHttpError
+
+                raise RunwayHttpError(404, "already cancelled")
+            raise AssertionError(f"Unexpected Runway request: {method} {path}")
+
+    source = _source(tmp_path / "reference.png")
+    output_directory = tmp_path / "job" / "shot-01"
+    client = AlreadyCancelledClient()
+    checks = iter([False, True])
+
+    with pytest.raises(RunwayError, match="Cancellation requested"):
+        client.generate_image_to_video(
+            source,
+            "A product shot",
+            "",
+            4,
+            output_directory,
+            progress=lambda *_: None,
+            cancel_check=lambda: next(checks),
+        )
+
+    with pytest.raises(RunwayError, match="already cancelled"):
+        _generate(client, source, output_directory)
+
+    assert client.submit_count == 1
+
+
+def test_upload_fails_if_image_changes_after_fingerprint(
+    tmp_path, monkeypatch
+):
+    _configure_runway(monkeypatch)
+    import app.integrations.runway as runway_module
+
+    class FakeUploadConnection:
+        def __init__(self, *_args, **_kwargs):
+            self.sent = bytearray()
+
+        def putrequest(self, *_args, **_kwargs):
+            pass
+
+        def putheader(self, *_args, **_kwargs):
+            pass
+
+        def endheaders(self):
+            pass
+
+        def send(self, data):
+            self.sent.extend(data)
+
+        def getresponse(self):
+            class Response:
+                status = 204
+
+                def read(self, _size):
+                    return b""
+
+            return Response()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        runway_module.http.client,
+        "HTTPSConnection",
+        FakeUploadConnection,
+    )
+
+    class MutatingUploadClient(RunwayDevClient):
+        def _api_request(self, method, path, payload=None):
+            if method == "POST" and path == "/v1/uploads":
+                return {
+                    "uploadUrl": "https://upload.example.test/presigned",
+                    "runwayUri": "runway://ephemeral/reference",
+                    "fields": {"policy": "test"},
+                }
+            raise AssertionError(f"Unexpected Runway request: {method} {path}")
+
+    source = _source(tmp_path / "reference.png")
+    original_digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    source.write_bytes(b"y" * 1024)
+    record = tmp_path / "source.json"
+    client = MutatingUploadClient()
+
+    with pytest.raises(RunwayUploadError, match="changed while it was being uploaded"):
+        client._upload_ephemeral(source, record, original_digest)

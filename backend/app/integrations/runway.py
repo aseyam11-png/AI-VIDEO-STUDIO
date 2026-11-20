@@ -141,6 +141,8 @@ class RunwayDevClient:
                 request, timeout=self.request_timeout
             ) as response:
                 body = response.read(1024 * 1024 + 1)
+                if not body and getattr(response, "status", None) == 204:
+                    return {}
                 if len(body) > 1024 * 1024:
                     raise RunwayError("Runway returned an unexpectedly large JSON response.")
                 try:
@@ -250,15 +252,19 @@ class RunwayDevClient:
             connection.send(body_prefix)
             with source.open("rb") as stream:
                 sent = 0
+                uploaded_digest = hashlib.sha256()
                 while chunk := stream.read(1024 * 1024):
                     sent += len(chunk)
                     if sent > size:
                         raise RunwayUploadError(
                             "Reference image changed while it was being uploaded."
                         )
+                    uploaded_digest.update(chunk)
                     connection.send(chunk)
-            if sent != size:
-                raise RunwayUploadError("Reference image changed while it was being uploaded.")
+            if sent != size or uploaded_digest.hexdigest() != source_sha256:
+                raise RunwayUploadError(
+                    "Reference image changed while it was being uploaded."
+                )
             connection.send(file_suffix)
             response = connection.getresponse()
             response.read(4096)
@@ -339,7 +345,11 @@ class RunwayDevClient:
             raise
 
     def _cancel_task(self, task_id: str) -> None:
-        self._api_request("DELETE", f"/v1/tasks/{task_id}")
+        try:
+            self._api_request("DELETE", f"/v1/tasks/{task_id}")
+        except RunwayHttpError as exc:
+            if exc.status_code != 404:
+                raise
 
     def generate_image_to_video(
         self,
