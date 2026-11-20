@@ -233,7 +233,15 @@ def test_unconfirmed_remote_cancellation_blocks_new_paid_submission(
         )
 
     with pytest.raises(RunwaySubmissionUnknownError):
-        _generate(client, source, output_directory)
+        client.generate_image_to_video(
+            source,
+            "A product shot",
+            "",
+            4,
+            output_directory,
+            progress=lambda *_: None,
+            cancel_check=lambda: False,
+        )
 
     assert client.submit_count == 1
 
@@ -298,7 +306,15 @@ def test_cancel_404_is_idempotent_and_never_submits_a_second_task(
         )
 
     with pytest.raises(RunwayError, match="already cancelled"):
-        _generate(client, source, output_directory)
+        client.generate_image_to_video(
+            source,
+            "A product shot",
+            "",
+            4,
+            output_directory,
+            progress=lambda *_: None,
+            cancel_check=lambda: False,
+        )
 
     assert client.submit_count == 1
 
