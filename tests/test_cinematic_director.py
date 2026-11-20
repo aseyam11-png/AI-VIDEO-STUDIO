@@ -22,6 +22,7 @@ def _plan(*, scene_count: int = 1, duration: int = 4) -> CreativePlan:
                 "duration_seconds": scene_duration,
                 "purpose": f"Scene {index} purpose",
                 "visual_description": f"Detailed scene {index} description",
+                "on_screen_text": "أصالة التفاصيل",
                 "shot_type": "medium close-up",
                 "camera_movement": "slow controlled dolly-in",
                 "subject_action": "the subject moves naturally and deliberately",
@@ -118,6 +119,7 @@ def test_compiler_includes_optics_lighting_composition_and_continuity():
     assert "Lighting design:" in prompt
     assert "Composition:" in prompt
     assert "Global continuity rules:" in prompt
+    assert "Requested on-screen text: أصالة التفاصيل" in prompt
     assert "Realism constraints:" in prompt
     assert "physically plausible motion" in prompt
     assert "flicker" in negative

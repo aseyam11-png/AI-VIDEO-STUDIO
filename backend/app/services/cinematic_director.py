@@ -11,8 +11,8 @@ _OPENING = (
 _CLOSING = (
     "Single continuous take. Keep anatomy and object geometry stable; preserve temporal "
     "consistency, natural materials, coherent reflections, physically plausible motion and "
-    "consistent light direction. No flicker, frame wobble, morphing, subtitles, random text "
-    "or watermarks."
+    "consistent light direction. No flicker, frame wobble or morphing. Do not invent text, "
+    "subtitles or watermarks; any requested wording must remain unchanged."
 )
 
 
@@ -31,6 +31,7 @@ def compile_scene_generation_prompt(
         f"Color palette: {', '.join(plan.color_palette)}",
         f"Scene {scene.index} purpose: {scene.purpose}",
         f"Visual description: {scene.visual_description}",
+        f"Requested on-screen text: {scene.on_screen_text}" if scene.on_screen_text else "",
         f"Subject action: {scene.subject_action}" if scene.subject_action else "",
         f"Shot type: {scene.shot_type}",
         f"Camera movement: {scene.camera_movement}",
@@ -83,7 +84,8 @@ def compile_scene_generation_prompt(
         "inconsistent subject identity",
         "unstable reflections",
         "plastic-looking skin",
-        "random text",
+        "unintended text",
+        "gibberish lettering",
         "subtitles",
         "watermarks",
     ]

@@ -320,3 +320,10 @@ textarea.control{resize:vertical;min-height:78px;line-height:1.65}
 #workflow-quality-status[data-status="passed_with_warnings"]{color:#e4b46d}
 #workflow-quality-status[data-status="failed"]{color:var(--danger)}
 #workflow-quality-summary{font-size:10px;direction:rtl}
+
+.plan-director-rules{margin:10px 0 0;padding:10px 12px;border-inline-start:2px solid var(--accent);background:#1b1e21;border-radius:7px;color:var(--muted);font-size:11px;line-height:1.8}
+.scene-cinematography{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:11px}
+.scene-cinematography-item{display:grid;gap:4px;min-width:0;padding:8px 9px;border:1px solid var(--line);border-radius:7px;background:#15181a}
+.scene-cinematography-item strong{color:#c9a77d;font-size:10px;font-weight:700}
+.scene-cinematography-item span{color:var(--text);font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+@media(max-width:620px){.scene-cinematography{grid-template-columns:minmax(0,1fr)}}
