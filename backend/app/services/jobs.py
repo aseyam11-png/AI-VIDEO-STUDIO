@@ -100,6 +100,9 @@ class _VideoShotOptions(_StrictOptions):
     prompt: str = Field(min_length=1, max_length=4000)
     negative_prompt: str = Field(default="", max_length=2000)
     duration_seconds: int = Field(ge=1, le=10)
+    provider: Literal["local_wan", "seedance2_5"] | None = None
+    estimated_cost_usd: float = Field(default=0.0, ge=0.0, le=3.0)
+    routing_reason: str = Field(default="", max_length=300)
 
 
 class _VideoSequenceOptions(_StrictOptions):
@@ -111,6 +114,8 @@ class _VideoSequenceOptions(_StrictOptions):
     fps: int = Field(default=30, ge=1, le=60)
     crf: int = Field(default=20, ge=0, le=35)
     interpolate_factor: Literal[1, 2] = 1
+    generation_provider: Literal["auto", "local_wan", "seedance2_5"] = "local_wan"
+    allow_external_processing: bool = False
     approved: bool = False
     product_identity_lock: bool = False
     identity_reference_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
@@ -218,7 +223,7 @@ def normalize_payload(job_type: JobType, payload: dict[str, Any]) -> dict[str, A
             "DEEPFILTER_MODEL_DIR to an installed script and existing checkpoint directory."
         )
     if (
-        job_type in (_MODEL_QUEUE_TYPES - {JobType.MOTION_BLENDER})
+        job_type in (_MODEL_QUEUE_TYPES - {JobType.MOTION_BLENDER, JobType.VIDEO_GENERATE_SEQUENCE})
         and not settings.comfyui_base_url
     ):
         raise JobRequestError(
@@ -233,6 +238,31 @@ def normalize_payload(job_type: JobType, payload: dict[str, Any]) -> dict[str, A
         total_duration = sum(shot["duration_seconds"] for shot in shots)
         if not 2 <= len(shots) <= 8 or total_duration > 80:
             raise JobRequestError("A generated sequence supports 2–8 shots and at most 80 seconds.")
+        from app.services.generation_router import GenerationRoutingError, route_generation_shots
+
+        try:
+            shot_routes = route_generation_shots(
+                shots,
+                strategy=normalized["generation_provider"],
+                allow_external_processing=normalized["allow_external_processing"],
+                runway_available=settings.runway_enabled,
+                max_cost_usd=settings.runway_max_usd_per_workflow,
+            )
+        except GenerationRoutingError as exc:
+            raise JobRequestError(str(exc)) from exc
+        for shot, route in zip(shots, shot_routes, strict=True):
+            shot.update(route)
+
+        has_local_shots = any(item["provider"] == "local_wan" for item in shot_routes)
+        has_remote_shots = any(item["provider"] == "seedance2_5" for item in shot_routes)
+        if (
+            has_local_shots or normalized["interpolate_factor"] == 2
+        ) and not settings.comfyui_base_url:
+            raise JobRequestError(
+                "COMFYUI_BASE_URL must be configured for local Wan shots or RIFE interpolation."
+            )
+        if has_remote_shots and not settings.runway_enabled:
+            raise JobRequestError("Runway remote generation is not enabled.")
         try:
             from app.services.job_policy import validate_generation_request
 
@@ -240,7 +270,11 @@ def normalize_payload(job_type: JobType, payload: dict[str, Any]) -> dict[str, A
                 validate_generation_request(
                     {
                         "duration_seconds": shot["duration_seconds"],
-                        "workflow_id": "wan22_ti2v_5b_v1",
+                        "workflow_id": (
+                            "runway_seedance2_5_v1"
+                            if shot.get("provider") == "seedance2_5"
+                            else "wan22_ti2v_5b_v1"
+                        ),
                     },
                     approved=normalized["approved"],
                 )

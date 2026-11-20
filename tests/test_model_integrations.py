@@ -439,6 +439,24 @@ def test_whisperx_adapter_honors_cancellation_before_loading(tmp_path, monkeypat
         )
 
 
+def test_model_capabilities_expose_runway_enablement_without_secrets(monkeypatch):
+    from app.services.model_capabilities import get_model_capabilities
+
+    monkeypatch.setattr(settings, "runway_enabled", True)
+    monkeypatch.setattr(settings, "runway_api_key", "must-never-appear-in-response")
+
+    result = get_model_capabilities()
+
+    assert result["providers"]["runway"] == {
+        "enabled": True,
+        "model": "seedance2_5",
+        "external_consent_required": True,
+    }
+    assert "must-never-appear-in-response" not in repr(result)
+    monkeypatch.setattr(settings, "runway_enabled", False)
+    assert get_model_capabilities()["providers"]["runway"]["enabled"] is False
+
+
 def test_system_capabilities_report_phase3_without_claiming_unverified_inference(monkeypatch):
     from app.main import capabilities as system_capabilities
 

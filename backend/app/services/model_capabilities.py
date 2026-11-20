@@ -102,6 +102,13 @@ def get_model_capabilities() -> dict:
             "general_branching_dag": False,
         },
         "weight_policy": "No model weights are downloaded by application startup or CI.",
+        "providers": {
+            "runway": {
+                "enabled": bool(settings.runway_enabled),
+                "model": "seedance2_5",
+                "external_consent_required": True,
+            }
+        },
         "runtimes": {"ollama": ollama, "comfyui": comfyui},
         "models": {
             "qwen3.5-9b-q4_K_M": {
