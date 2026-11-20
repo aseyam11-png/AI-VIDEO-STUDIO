@@ -2,7 +2,6 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-
 from app.schemas.models import CreativePlan
 from app.schemas.workflows import WorkflowCreateRequest
 from app.services import workflow_engine

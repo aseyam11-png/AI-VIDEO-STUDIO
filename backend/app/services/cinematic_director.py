@@ -1,4 +1,5 @@
 from app.schemas.models import CreativePlan, CreativeScene
+
 _PROMPT_LIMIT = 4000
 
 _OPENING = (
