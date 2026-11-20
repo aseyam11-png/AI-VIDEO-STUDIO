@@ -552,10 +552,24 @@ def execute_video_sequence(
     payload = job["payload"]
     shots = payload["shots"]
     if not 2 <= len(shots) <= 8:
+        raise ValueError("A generated sequence requires between two and eight shots.")
+    total_duration = sum(int(shot["duration_seconds"]) for shot in shots)
+    if total_duration > 80:
+        raise ValueError("A generated sequence cannot exceed 80 seconds.")
+
     generation_strategy = payload.get("generation_provider", "local_wan")
+    if generation_strategy not in {"auto", "local_wan", "seedance2_5"}:
+        raise ValueError("A sequence contains an unsupported generation strategy.")
     allow_external_processing = bool(payload.get("allow_external_processing", False))
+    if any(
+        (shot.get("provider") or "local_wan") not in {"local_wan", "seedance2_5"}
+        for shot in shots
+    ):
+        raise ValueError("A sequence contains an unsupported video provider.")
+
     remote_shots = [
-        shot for shot in shots
+        shot
+        for shot in shots
         if (shot.get("provider") or "local_wan") == "seedance2_5"
     ]
     if remote_shots:
@@ -568,6 +582,9 @@ def execute_video_sequence(
             raise ValueError(
                 "Remote generation is not authorized or no longer configured; refusing to spend."
             )
+        if generation_strategy == "seedance2_5" and len(remote_shots) != len(shots):
+            raise ValueError("Explicit Seedance selection must route every shot to Seedance.")
+
         from app.services.generation_router import estimate_seedance25_cost_usd
 
         remote_estimate = sum(
@@ -583,12 +600,6 @@ def execute_video_sequence(
                 f"Remote generation estimate {remote_estimate:.2f} USD exceeds the "
                 f"current workflow cap {workflow_cap:.2f} USD."
             )
-    if any(
-        (shot.get("provider") or "local_wan") not in {"local_wan", "seedance2_5"}
-        for shot in shots
-    ):
-        raise ValueError("A sequence contains an unsupported video provider.")
-        raise ValueError("A generated sequence requires between two and eight shots.")
 
     media_root = Path(settings.media_root).expanduser().resolve()
     try:
@@ -609,9 +620,6 @@ def execute_video_sequence(
     output_root.mkdir(parents=True, exist_ok=True)
     client: ComfyUIClient | None = None
     shot_assets: list[dict] = []
-    total_duration = sum(int(shot["duration_seconds"]) for shot in shots)
-    if total_duration > 80:
-        raise ValueError("A generated sequence cannot exceed 80 seconds.")
 
     def report_shot_progress(index: int, percentage: int, stage: str, message: str) -> None:
         scaled = 10 + int(((index + percentage / 100) / len(shots)) * 68)
