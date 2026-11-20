@@ -3,10 +3,12 @@ import http.client
 import ipaddress
 import json
 import math
+import os
 import re
 import ssl
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
@@ -41,6 +43,60 @@ class RunwayUploadError(RunwayError):
 
 class RunwaySubmissionUnknownError(RunwayError):
     """The POST outcome is ambiguous; resubmission could create a duplicate charge."""
+
+
+class RunwayTaskLockError(RunwayError):
+    pass
+
+
+@contextmanager
+def _exclusive_task_lock(lock_path: Path, *, timeout_seconds: int):
+    """Serialize one paid provider task across processes sharing the job media volume."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("a+b") as lock_file:
+        if os.name == "nt":
+            import msvcrt
+
+            lock_file.seek(0, os.SEEK_END)
+            if lock_file.tell() == 0:
+                lock_file.write(b"0")
+                lock_file.flush()
+            lock_file.seek(0)
+
+            def acquire():
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+
+            def release():
+                lock_file.seek(0)
+                msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+
+        else:
+            import fcntl
+
+            def acquire():
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+            def release():
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+        deadline = time.monotonic() + max(1, timeout_seconds)
+        while True:
+            try:
+                acquire()
+                break
+            except OSError as exc:
+                if time.monotonic() >= deadline:
+                    raise RunwayTaskLockError(
+                        "Another worker still owns this Runway shot task; refusing a "
+                        "concurrent paid submission."
+                    ) from exc
+                time.sleep(0.1)
+
+        try:
+            yield
+        finally:
+            release()
 
 
 class RunwayHttpError(RunwayError):
@@ -387,6 +443,36 @@ class RunwayDevClient:
                 raise
 
     def generate_image_to_video(
+        self,
+        source_image: Path,
+        prompt: str,
+        negative_prompt: str,
+        duration_seconds: int,
+        output_directory: Path,
+        *,
+        progress,
+        cancel_check,
+    ) -> dict:
+        output_directory.mkdir(parents=True, exist_ok=True)
+        lock_timeout = min(
+            300,
+            max(30, settings.runway_request_timeout_seconds * 2 + 10),
+        )
+        with _exclusive_task_lock(
+            output_directory / ".runway-task.lock",
+            timeout_seconds=lock_timeout,
+        ):
+            return self._generate_image_to_video_locked(
+                source_image,
+                prompt,
+                negative_prompt,
+                duration_seconds,
+                output_directory,
+                progress=progress,
+                cancel_check=cancel_check,
+            )
+
+    def _generate_image_to_video_locked(
         self,
         source_image: Path,
         prompt: str,

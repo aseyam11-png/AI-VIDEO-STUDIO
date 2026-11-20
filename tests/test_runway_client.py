@@ -1,4 +1,7 @@
 import hashlib
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import Mock
 from urllib.request import Request
@@ -399,3 +402,52 @@ def test_seedance_ratio_rejects_images_without_dimensions(monkeypatch, tmp_path)
 
     with pytest.raises(RunwayError, match="reference image dimensions"):
         _select_seedance25_ratio(tmp_path / "reference.png")
+
+
+def test_concurrent_duplicate_workers_cannot_submit_two_paid_tasks(
+    tmp_path, monkeypatch
+):
+    _configure_runway(monkeypatch)
+
+    class BlockingSubmitClient(FakeRunwayClient):
+        def __init__(self):
+            super().__init__()
+            self.submit_started = threading.Event()
+            self.release_submit = threading.Event()
+
+        def _api_request(self, method, path, payload=None):
+            if method == "POST" and path == "/v1/image_to_video":
+                self.submit_count += 1
+                self.submit_started.set()
+                if not self.release_submit.wait(timeout=5):
+                    raise TimeoutError("test submit release timed out")
+                return {"id": _TASK_ID}
+            return super()._api_request(method, path, payload)
+
+    source = _source(tmp_path / "reference.png")
+    output_directory = tmp_path / "job" / "shot-01"
+    client = BlockingSubmitClient()
+    second_started = threading.Event()
+
+    def first_attempt():
+        return _generate(client, source, output_directory)
+
+    def second_attempt():
+        second_started.set()
+        return _generate(client, source, output_directory)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(first_attempt)
+        assert client.submit_started.wait(timeout=2)
+        second = pool.submit(second_attempt)
+        assert second_started.wait(timeout=2)
+        time.sleep(0.1)
+        client.release_submit.set()
+
+        first_result = first.result(timeout=5)
+        second_result = second.result(timeout=5)
+
+    assert first_result["task_id"] == _TASK_ID
+    assert second_result["task_id"] == _TASK_ID
+    assert second_result["resumed"] is True
+    assert client.submit_count == 1

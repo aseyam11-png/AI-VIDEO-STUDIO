@@ -24,6 +24,7 @@ This is a **per-workflow cap**, not a monthly spending cap or cumulative billing
 ## Idempotency and recovery
 
 - Before the paid generation POST, the worker atomically writes a task record with a SHA-256 fingerprint of the source image, prompt, negative prompt, duration and model.
+- A cross-process per-shot lock serializes task-record inspection, submission, polling and output download across workers sharing the project media volume. A process crash releases the OS lock automatically.
 - After a successful POST, the provider task ID is persisted before polling.
 - If a transport failure leaves the POST outcome ambiguous, the task is marked `submission_unknown`; retries do not submit again automatically. The operator must inspect the Runway dashboard.
 - If a worker is recovered after a task ID is known, retry polls the same task and downloads its output rather than generating again.
