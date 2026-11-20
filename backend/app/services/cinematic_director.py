@@ -57,12 +57,15 @@ def compile_scene_generation_prompt(
         f"Shot duration: {scene.duration_seconds} seconds",
     ]
     if product_identity_lock:
-        details.append(
+        # Identity is a hard constraint; put it ahead of user-authored descriptive fields
+        # so prompt-budget truncation cannot silently remove the reference lock.
+        details.insert(
+            0,
             "Product identity lock: the supplied reference image is the single source of "
             "truth. Preserve its exact silhouette, proportions, geometry, colors, materials, "
             "hardware, logo, typography, labels and packaging. Do not redesign, replace, "
             "morph, omit, add or invent product details. Simplify camera motion rather than "
-            "changing the product."
+            "changing the product.",
         )
 
     detail_text = "\n".join(part.strip() for part in details if part and part.strip())

@@ -149,9 +149,16 @@ def test_prompt_budget_is_enforced_for_long_but_valid_directions():
     payload["scenes"][0]["lighting_design"] = "lighting direction " * 20
     payload["scenes"][0]["composition"] = "careful composition " * 18
     long_plan = CreativePlan.model_validate(payload)
-    prompt, _ = compile_scene_generation_prompt(long_plan, long_plan.scenes[0])
+    prompt, negative = compile_scene_generation_prompt(
+        long_plan,
+        long_plan.scenes[0],
+        product_identity_lock=True,
+    )
     assert len(prompt) <= 4000
     assert prompt.endswith("watermarks.")
+    assert "Product identity lock:" in prompt
+    assert "preserve its exact silhouette" in prompt
+    assert "altered logo" in negative
 
 
 def test_single_and_multi_shot_workflows_use_the_same_compiler(monkeypatch):
