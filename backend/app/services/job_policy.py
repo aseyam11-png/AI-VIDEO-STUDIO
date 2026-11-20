@@ -29,5 +29,5 @@ def validate_generation_request(payload: dict, *, approved: bool) -> None:
         )
 
     workflow_id = payload.get("workflow_id")
-    if workflow_id not in {"wan22_ti2v_5b_v1"}:
+    if workflow_id not in {"wan22_ti2v_5b_v1", "runway_seedance2_5_v1"}:
         raise ValueError("Unknown or unapproved workflow_id.")

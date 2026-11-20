@@ -26,11 +26,18 @@ def test_studio_ui_and_static_assets_are_served():
     assert "لم يُعتمد الاستدلال الحقيقي بعد" in script.text
     assert "void loadModelStatus();" in script.text
     assert "refresh-model-status" in script.text
+    assert 'id="generation-provider"' in page.text
+    assert 'id="allow-external-processing"' in page.text
+    assert "allow_external_processing" in script.text
+    assert "generation_provider" in script.text
     assert "scene-cinematography" in script.text
     assert "focal_length_mm" in script.text
     assert "lighting_design" in script.text
     assert "continuity_anchor" in script.text
     assert "plan.continuity_rules" in script.text
+    assert "generationRouting.providers_used" in script.text
+    assert "estimated_external_cost_usd" in script.text
+    assert "routing_reason" in script.text
     assert 'id="timeline-panel"' in page.text
     assert 'id="timeline-source"' in page.text
     assert 'id="timeline-save"' in page.text

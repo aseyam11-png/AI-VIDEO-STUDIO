@@ -2139,7 +2139,7 @@ async function renderProjectTimeline() {
     await loadAssetTranscription($("timeline-source").value);
   }
 
-  function renderPlan(plan) {
+  function renderPlan(plan, generationRouting = null) {
     const panel = $("plan-panel");
     const content = $("plan-content");
     content.replaceChildren();
@@ -2173,6 +2173,31 @@ async function renderProjectTimeline() {
       direction.className = "plan-director-rules";
       direction.textContent = directorRules.join(" · ");
       summary.append(direction);
+    }
+    if (generationRouting) {
+      const providerLabels = {
+        local_wan: "Wan 2.2 المحلي",
+        seedance2_5: "Seedance 2.5 الخارجي"
+      };
+      const providers = (generationRouting.providers_used || [])
+        .map((provider) => providerLabels[provider] || provider)
+        .join(" + ");
+      const estimatedCost = Number(generationRouting.estimated_external_cost_usd || 0);
+      const costCap = Number(generationRouting.max_external_cost_usd || 0);
+      const routeSummary = document.createElement("p");
+      routeSummary.className = "plan-director-rules";
+      routeSummary.textContent =
+        `مسار التوليد: ${providers || "محلي"} · التكلفة الخارجية التقديرية: ${estimatedCost.toFixed(2)} من سقف ${costCap.toFixed(2)} لهذه العملية.`;
+      summary.append(routeSummary);
+
+      (generationRouting.shots || []).forEach((shot) => {
+        const line = document.createElement("p");
+        line.className = "scene-meta";
+        const provider = providerLabels[shot.provider] || shot.provider;
+        line.textContent =
+          `المشهد ${shot.index}: ${provider} · ${Number(shot.estimated_cost_usd || 0).toFixed(2)} · ${shot.routing_reason || ""}`;
+        summary.append(line);
+      });
     }
     content.append(summary);
 
@@ -2310,7 +2335,9 @@ async function renderProjectTimeline() {
     $("execution-actions").hidden = !["queued", "running", "cancel_requested", "awaiting_identity_review"].includes(workflow.status);
     renderWorkflowSteps(workflow.steps || [], workflow.project_id);
     $("plan-panel").hidden = !workflow.creative_plan;
-    if (workflow.creative_plan) renderPlan(workflow.creative_plan);
+    if (workflow.creative_plan) {
+      renderPlan(workflow.creative_plan, workflow.options?.generation_routing || null);
+    }
 
     const reviewPanel = $("identity-review-panel");
     const identityReview = workflow.options?.product_identity_review;
@@ -2459,7 +2486,12 @@ async function renderProjectTimeline() {
         interpolate_generated_video: !$("interpolate-generated-video").disabled &&
           $("interpolate-generated-video").checked,
         product_identity_lock: !$("product-identity-lock").disabled &&
-          $("product-identity-lock").checked
+          $("product-identity-lock").checked,
+        generation_provider: generateVideo
+          ? $("generation-provider").value
+          : "local_wan",
+        allow_external_processing: generateVideo &&
+          $("allow-external-processing").checked
       };
       const workflow = await api("/v1/workflows/from-brief", {
         method: "POST",
