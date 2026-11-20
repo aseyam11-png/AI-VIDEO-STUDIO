@@ -27,6 +27,7 @@ def test_studio_ui_and_static_assets_are_served():
     assert "void loadModelStatus();" in script.text
     assert "refresh-model-status" in script.text
     assert 'id="generation-provider"' in page.text
+    assert "توليد فيديو من صورة المنتج باستخدام محرك التوليد المحدد" in page.text
     assert 'id="allow-external-processing"' in page.text
     assert "allow_external_processing" in script.text
     assert "generation_provider" in script.text

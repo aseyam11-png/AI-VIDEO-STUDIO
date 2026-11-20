@@ -199,7 +199,18 @@
     const imageSelected = state.selectedAsset?.asset_type === "image";
     const videoSelected = state.selectedAsset?.asset_type === "video";
     const wanReady = Boolean(state.modelStatus?.models?.["wan-2.2-ti2v-5b"]?.workflow_configured);
-    const canGenerate = imageSelected && wanReady;
+    const runwayEnabled = Boolean(state.modelStatus?.providers?.runway?.enabled);
+    const providerSelect = $("generation-provider");
+    const runwayOption = providerSelect?.querySelector('option[value="seedance2_5"]');
+    if (runwayOption) runwayOption.disabled = !runwayEnabled;
+    if (!runwayEnabled && providerSelect?.value === "seedance2_5") {
+      providerSelect.value = "auto";
+    }
+    const selectedProvider = providerSelect?.value || "auto";
+    const selectedProviderReady = selectedProvider === "seedance2_5"
+      ? runwayEnabled
+      : wanReady;
+    const canGenerate = imageSelected && selectedProviderReady;
     const generateVideo = $("generate-video");
     if (generateVideo) {
       generateVideo.disabled = !canGenerate;
@@ -213,6 +224,13 @@
       const label = identityLock.closest("label");
       if (label) label.classList.toggle("option-disabled", identityLock.disabled);
       if (identityLock.disabled) identityLock.checked = false;
+    }
+    const externalConsent = $("allow-external-processing");
+    if (externalConsent) {
+      externalConsent.disabled = (
+        !runwayEnabled || !generateVideo?.checked || selectedProvider === "local_wan"
+      );
+      if (externalConsent.disabled) externalConsent.checked = false;
     }
     const interpolation = $("interpolate-generated-video");
     if (interpolation) {
@@ -244,7 +262,7 @@
     }
     const ready = Boolean(
       state.project && state.selectedAsset && !state.uploading && qwenReady &&
-      (videoSelected || (imageSelected && generateVideo?.checked && wanReady))
+      (videoSelected || (imageSelected && generateVideo?.checked && selectedProviderReady))
     );
     $("generate-plan").disabled = !ready;
     const enhancement = $("upscale-video");
@@ -290,7 +308,15 @@
         { id: "transcribe-audio", ready: Boolean(whisper.worker_enabled), label: "WhisperX" },
         { id: "enhance-audio", ready: Boolean(deepfilter.configured), label: "DeepFilterNet" },
         { id: "upscale-video", ready: Boolean(realesrgan.workflow_configured), label: "Real-ESRGAN" },
-        { id: "generate-video", ready: Boolean(wan.workflow_configured), label: "Wan 2.2" },
+        {
+          id: "generate-video",
+          ready: Boolean(wan.workflow_configured || status.providers?.runway?.enabled),
+          label: wan.workflow_configured && status.providers?.runway?.enabled
+            ? "Wan 2.2 / Seedance 2.5"
+            : status.providers?.runway?.enabled
+              ? "Seedance 2.5"
+              : "Wan 2.2"
+        },
         { id: "interpolate-generated-video", ready: Boolean(rife.workflow_configured), label: "RIFE" },
         { id: "detection-prompt", ready: Boolean(grounding.workflow_configured), label: "Grounding DINO" },
         { id: "tracking-prompt", ready: Boolean(sam2.workflow_configured), label: "SAM 2" }
@@ -2450,13 +2476,28 @@ async function renderProjectTimeline() {
     const brief = $("creative-brief").value.trim();
     const generateVideo = state.selectedAsset.asset_type === "image" &&
       !$("generate-video").disabled && $("generate-video").checked;
+    const selectedProvider = $("generation-provider").value;
     const requestedDuration = Number($("target-duration").value);
-    if (generateVideo && (requestedDuration < 2 || requestedDuration > 80)) {
-      notice("توليد Wan متعدد اللقطات يدعم مدة إجمالية من ثانيتين إلى 80 ثانية فقط.", "error");
+    const minimumGenerationDuration = selectedProvider === "seedance2_5" ? 8 : 2;
+    if (
+      generateVideo &&
+      (requestedDuration < minimumGenerationDuration || requestedDuration > 80)
+    ) {
+      notice(
+        selectedProvider === "seedance2_5"
+          ? "Seedance 2.5 يتطلب مدة 8 ثوانٍ على الأقل: لقطتان مدة كل منهما 4 ثوانٍ."
+          : "توليد الفيديو متعدد اللقطات يدعم مدة إجمالية من ثانيتين إلى 80 ثانية.",
+        "error"
+      );
       return;
     }
     if (brief.length < 20) {
       notice("اكتب وصفًا من 20 حرفًا على الأقل حتى يستطيع المخرج فهم المطلوب.", "error");
+      return;
+    }
+    const externalConsent = $("allow-external-processing").checked;
+    if (generateVideo && selectedProvider === "seedance2_5" && !externalConsent) {
+      notice("يلزم تفعيل موافقة المعالجة الخارجية قبل اختيار Seedance 2.5.", "error");
       return;
     }
     const button = $("generate-plan");
@@ -2468,7 +2509,11 @@ async function renderProjectTimeline() {
         asset_id: state.selectedAsset.id,
         idempotency_key: `studio-${uuid()}`,
         brief: generateVideo
-          ? brief + "\n\nWan production constraints: create 2 to 8 scenes, each scene must be 1 to 10 seconds, and all scene durations must sum exactly to the requested total. Use the supplied product image as the canonical reference in every shot. Keep the product design and markings unchanged; prefer simple camera movement over changing product details."
+          ? brief + (
+            selectedProvider === "seedance2_5"
+              ? "\n\nSeedance 2.5 production constraints: create 2 to 8 scenes, each scene must be 4 to 10 seconds, and all scene durations must sum exactly to the requested total. Use the supplied product image as the canonical reference in every shot. Keep the product design and markings unchanged; prefer controlled camera movement over changing product details."
+              : "\n\nWan production constraints: create 2 to 8 scenes, each scene must be 1 to 10 seconds, and all scene durations must sum exactly to the requested total. Use the supplied product image as the canonical reference in every shot. Keep the product design and markings unchanged; prefer simple camera movement over changing product details."
+          )
           : brief,
         language: $("plan-language").value,
         target_duration_seconds: requestedDuration,
@@ -2707,6 +2752,7 @@ async function renderProjectTimeline() {
     ["generate-video", "product-identity-lock", "interpolate-generated-video"].forEach((id) => {
       $(id).addEventListener("change", setProjectControls);
     });
+    $("generation-provider").addEventListener("change", setProjectControls);
     $("identity-review-approve").addEventListener("click", () => submitIdentityReview(true));
     $("identity-review-reject").addEventListener("click", () => submitIdentityReview(false));
     $("asset-select").addEventListener("change", (event) => {
