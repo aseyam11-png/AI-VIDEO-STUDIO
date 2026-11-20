@@ -135,7 +135,7 @@ def test_product_identity_lock_is_applied_to_positive_and_negative_prompts():
         product_identity_lock=True,
     )
 
-    assert "Product identity lock:" in prompt
+    assert "Canonical product identity lock:" in prompt
     assert "preserve its exact silhouette" in prompt
     assert "altered logo" in negative
     assert "product morphing" in negative
@@ -156,8 +156,8 @@ def test_prompt_budget_is_enforced_for_long_but_valid_directions():
         product_identity_lock=True,
     )
     assert len(prompt) <= 4000
-    assert prompt.endswith("watermarks.")
-    assert "Product identity lock:" in prompt
+    assert prompt.endswith("unchanged.")
+    assert "Canonical product identity lock:" in prompt
     assert "preserve its exact silhouette" in prompt
     assert "altered logo" in negative
 

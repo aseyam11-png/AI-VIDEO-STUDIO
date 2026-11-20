@@ -60,11 +60,11 @@ def compile_scene_generation_prompt(
         # so prompt-budget truncation cannot silently remove the reference lock.
         details.insert(
             0,
-            "Product identity lock: the supplied reference image is the single source of "
-            "truth. Preserve its exact silhouette, proportions, geometry, colors, materials, "
-            "hardware, logo, typography, labels and packaging. Do not redesign, replace, "
-            "morph, omit, add or invent product details. Simplify camera motion rather than "
-            "changing the product.",
+            "Canonical product identity lock: preserve its exact silhouette, proportions, "
+            "geometry, colors, materials, hardware, logo, typography, labels and packaging "
+            "from the supplied reference image. Do not redesign, replace, morph, omit, add "
+            "or invent product details. Simplify camera motion rather than changing the "
+            "product.",
         )
 
     detail_text = "\n".join(part.strip() for part in details if part and part.strip())
