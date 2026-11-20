@@ -4,7 +4,6 @@ from unittest.mock import Mock
 from urllib.request import Request
 
 import pytest
-
 from app.core.config import settings
 from app.integrations.runway import (
     RunwayDevClient,

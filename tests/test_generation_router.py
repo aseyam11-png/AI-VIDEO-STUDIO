@@ -1,5 +1,4 @@
 import pytest
-
 from app.services.generation_router import (
     GenerationRoutingError,
     estimate_seedance25_cost_usd,
