@@ -13,6 +13,7 @@ from app.integrations.runway import (
     RunwayTransportError,
     RunwayUploadError,
     _CloudFrontRedirectHandler,
+    _select_seedance25_ratio,
 )
 
 
@@ -83,6 +84,15 @@ def _source(path: Path) -> Path:
 
 
 def _configure_runway(monkeypatch):
+    import app.integrations.runway as runway_module
+
+    monkeypatch.setattr(
+        runway_module,
+        "probe_media",
+        lambda _path: {
+            "streams": [{"codec_type": "video", "width": 1280, "height": 720}]
+        },
+    )
     monkeypatch.setattr(settings, "runway_enabled", True)
     monkeypatch.setattr(settings, "runway_api_key", "test-api-key")
     monkeypatch.setattr(settings, "runway_job_timeout_seconds", 60)
@@ -350,3 +360,44 @@ def test_upload_fails_if_image_changes_after_fingerprint(
 
     with pytest.raises(RunwayUploadError, match="changed while it was being uploaded"):
         client._upload_ephemeral(source, record, original_digest)
+
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "expected_ratio"),
+    [
+        (1200, 1600, "834:1112"),
+        (1800, 1800, "960:960"),
+        (1920, 1080, "1280:720"),
+        (720, 1280, "720:1280"),
+    ],
+)
+def test_seedance_ratio_tracks_reference_orientation(
+    monkeypatch, tmp_path, width, height, expected_ratio
+):
+    import app.integrations.runway as runway_module
+
+    monkeypatch.setattr(
+        runway_module,
+        "probe_media",
+        lambda _path: {
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "width": width,
+                    "height": height,
+                }
+            ]
+        },
+    )
+
+    assert _select_seedance25_ratio(tmp_path / "reference.png") == expected_ratio
+
+
+def test_seedance_ratio_rejects_images_without_dimensions(monkeypatch, tmp_path):
+    import app.integrations.runway as runway_module
+
+    monkeypatch.setattr(runway_module, "probe_media", lambda _path: {"streams": []})
+
+    with pytest.raises(RunwayError, match="reference image dimensions"):
+        _select_seedance25_ratio(tmp_path / "reference.png")

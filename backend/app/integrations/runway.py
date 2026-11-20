@@ -2,6 +2,7 @@ import hashlib
 import http.client
 import ipaddress
 import json
+import math
 import re
 import ssl
 import time
@@ -12,13 +13,21 @@ from urllib.parse import urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from app.core.config import settings
+from app.integrations.ffmpeg import probe_media
 from app.media.storage import atomic_write_json, read_json
 
 
 _RUNWAY_API_BASE = "https://api.dev.runwayml.com"
 _RUNWAY_API_VERSION = "2024-11-06"
 _RUNWAY_MODEL = "seedance2_5"
-_RUNWAY_RATIO_720P = "1280:720"
+_RUNWAY_720P_RATIOS = (
+    ("1280:720", 1280 / 720),
+    ("720:1280", 720 / 1280),
+    ("960:960", 1.0),
+    ("1112:834", 1112 / 834),
+    ("834:1112", 834 / 1112),
+    ("992:432", 992 / 432),
+)
 _RUNWAY_UPLOAD_MAX_BYTES = 200 * 1024 * 1024
 _RUNWAY_OUTPUT_HOST_SUFFIX = ".cloudfront.net"
 
@@ -109,6 +118,33 @@ class _CloudFrontRedirectHandler(HTTPRedirectHandler):
         return super().redirect_request(
             request, response, code, message, headers, new_url
         )
+
+
+def _select_seedance25_ratio(source_image: Path) -> str:
+    """Pick the closest supported 720p framing to avoid unwanted center-cropping."""
+    metadata = probe_media(source_image)
+    streams = metadata.get("streams", [])
+    dimensions = next(
+        (
+            (stream.get("width"), stream.get("height"))
+            for stream in streams
+            if stream.get("codec_type") == "video"
+            and isinstance(stream.get("width"), int)
+            and isinstance(stream.get("height"), int)
+            and stream["width"] > 0
+            and stream["height"] > 0
+        ),
+        None,
+    )
+    if dimensions is None:
+        raise RunwayError("Could not determine the reference image dimensions for Seedance 2.5.")
+
+    width, height = dimensions
+    aspect_ratio = width / height
+    return min(
+        _RUNWAY_720P_RATIOS,
+        key=lambda item: abs(math.log(aspect_ratio / item[1])),
+    )[0]
 
 
 class RunwayDevClient:
@@ -369,6 +405,7 @@ class RunwayDevClient:
         task_record_path = output_directory / "runway-task.json"
         source_record_path = output_directory / "runway-source.json"
         source_sha256 = _sha256(source_image)
+        ratio = _select_seedance25_ratio(source_image)
         request_material = json.dumps(
             {
                 "model": _RUNWAY_MODEL,
@@ -376,7 +413,7 @@ class RunwayDevClient:
                 "prompt": prompt,
                 "negative_prompt": negative_prompt,
                 "duration_seconds": int(duration_seconds),
-                "ratio": _RUNWAY_RATIO_720P,
+                "ratio": ratio,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -464,7 +501,7 @@ class RunwayDevClient:
                         "promptImage": source_uri,
                         "promptText": prompt_text[:15000],
                         "duration": int(duration_seconds),
-                        "ratio": _RUNWAY_RATIO_720P,
+                        "ratio": ratio,
                         "audio": True,
                         "outputFormat": "mp4",
                     },
