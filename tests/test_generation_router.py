@@ -93,7 +93,6 @@ def test_explicit_seedance_requires_consent_configuration_and_budget():
 
 def test_external_duration_is_bounded_and_price_estimate_uses_720p_rate():
     assert float(estimate_seedance25_cost_usd(4)) == pytest.approx(1.2)
-    assert float(estimate_seedance25_cost_usd(4)) == pytest.approx(1.2)
     assert float(estimate_seedance25_cost_usd(10)) == pytest.approx(3.0)
 
     with pytest.raises(GenerationRoutingError, match="4 to 10"):
@@ -111,7 +110,6 @@ def test_local_wan_strategy_ignores_external_consent_and_never_spends():
 
     assert [item["provider"] for item in routes] == ["local_wan", "local_wan"]
     assert sum(item["estimated_cost_usd"] for item in routes) == 0
-
 
 
 def test_sequence_normalization_recomputes_provider_fields_on_replay(monkeypatch):
