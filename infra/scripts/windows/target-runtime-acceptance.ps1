@@ -18,11 +18,14 @@ if (-not ($RunQwenInference -or $RunWan -or $RunRIFE -or $RunRealESRGAN)) {
     throw "Select at least one real inference test: -RunQwenInference, -RunWan, -RunRIFE, or -RunRealESRGAN."
 }
 $ApiBaseUrl = $ApiBaseUrl.TrimEnd("/")
-$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
-$RepoPrefix = $RepoRoot.TrimEnd('\') + '\'
-$ResolvedOutput = [System.IO.Path]::GetFullPath($OutputDirectory)
-if ($ResolvedOutput.StartsWith($RepoPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "GPU acceptance evidence must be stored outside the Git checkout."
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path.TrimEnd('\')
+$RepoPrefix = $RepoRoot + '\'
+$ResolvedOutput = [System.IO.Path]::GetFullPath($OutputDirectory).TrimEnd('\')
+if (
+    $ResolvedOutput.Equals($RepoRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+    $ResolvedOutput.StartsWith($RepoPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+) {
+    throw "GPU acceptance evidence must be stored outside the Git checkout, including the checkout root itself."
 }
 New-Item -ItemType Directory -Force -Path $ResolvedOutput | Out-Null
 
