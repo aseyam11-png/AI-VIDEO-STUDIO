@@ -326,6 +326,7 @@ def test_video_sequence_executes_wan_shots_registers_assets_and_assembles_mp4(
     assert result["shot_count"] == 2
     assert result["duration_seconds"] == pytest.approx(4.0)
     assert result["output_asset_id"]
+    assert result["quality_report"]["can_export"] is True
     assert len(result["shots"]) == 2
     assert Path(project_dir(project["id"]) / result["relative_path"]).is_file()
     sequence_manifest = Path(project_dir(project["id"]) / result["sequence_manifest_path"])

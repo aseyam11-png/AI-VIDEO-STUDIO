@@ -67,6 +67,7 @@ services:
     restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
+      STUDIO_API_TOKEN: ${STUDIO_API_TOKEN:-}
       APP_NAME: ${APP_NAME:-AI Video Studio}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       MEDIA_ROOT: /srv/video-studio/data
@@ -93,8 +94,14 @@ services:
       valkey:
         condition: service_healthy
     volumes:
-      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
+      - ${MEDIA_HOST_PATH:-../ai-video-studio-data}:/srv/video-studio/data
     networks: [studio]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   worker-cpu:
     build:
@@ -121,7 +128,7 @@ services:
       valkey:
         condition: service_healthy
     volumes:
-      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
+      - ${MEDIA_HOST_PATH:-../ai-video-studio-data}:/srv/video-studio/data
     networks: [studio]
 
   worker-speech:
@@ -146,7 +153,7 @@ services:
       valkey:
         condition: service_healthy
     volumes:
-      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
+      - ${MEDIA_HOST_PATH:-../ai-video-studio-data}:/srv/video-studio/data
     networks: [studio]
 
   worker-models:
@@ -177,7 +184,7 @@ services:
       valkey:
         condition: service_healthy
     volumes:
-      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
+      - ${MEDIA_HOST_PATH:-../ai-video-studio-data}:/srv/video-studio/data
     networks: [studio]
 
   worker-control:

@@ -9,6 +9,7 @@ from uuid import uuid4
 from app.core.config import settings
 from app.db.models import JobRecord, OutboxRecord
 from app.db.session import session_scope
+from app.integrations.ffmpeg import probe_media
 from app.media.pipeline import (
     MediaJobCancelled,
     build_timeline,
@@ -16,6 +17,7 @@ from app.media.pipeline import (
     detect_scenes,
     render_timeline,
 )
+from app.media.quality import analyze_video_quality, persist_quality_report
 from app.media.storage import (
     asset_dir,
     atomic_write_json,
@@ -159,12 +161,49 @@ def _execute_media_job(
         )
         progress(95, "audio_muxed", "Enhanced audio was muxed into a new video file.")
         generated_path = project_dir(project_id) / result["relative_path"]
+        source_metadata = probe_media(source)
+        source_video = next(
+            (
+                stream for stream in source_metadata.get("streams", [])
+                if stream.get("codec_type") == "video"
+            ),
+            {},
+        )
+        source_audio_required = any(
+            stream.get("codec_type") == "audio"
+            for stream in source_metadata.get("streams", [])
+        )
+        source_duration = source_metadata.get("format", {}).get("duration")
+        quality_report = analyze_video_quality(
+            generated_path,
+            expected_duration_seconds=(
+                float(source_duration) if source_duration is not None else None
+            ),
+            expected_width=source_video.get("width"),
+            expected_height=source_video.get("height"),
+            expected_audio=source_audio_required,
+            cancel_check=cancel_check,
+        )
+        if not quality_report["can_export"]:
+            persist_quality_report(
+                project_id, f"job-{job['id']}", quality_report
+            )
+            generated_path.unlink(missing_ok=True)
+            raise ValueError(
+                "Audio-enhanced video failed the quality gate: "
+                f"{quality_report.get('summary', {}).get('error_count', 0)} "
+                "blocking issue(s)."
+            )
         output_asset = register_generated_video_asset(
             project_id,
             job["id"],
             generated_path,
             max_bytes=settings.max_model_output_bytes,
         )
+        persist_quality_report(
+            project_id, f"asset-{output_asset['id']}", quality_report
+        )
+        result["quality_report"] = quality_report
         result["output_asset_id"] = output_asset["id"]
         result["output_asset"] = {
             "id": output_asset["id"],
@@ -343,6 +382,10 @@ def _execute_media_job(
         if timeline.get("project_id") != project_id or timeline.get("asset_id") != asset_id:
             raise ValueError("Timeline project or asset identity does not match the job.")
         destination = project_dir(project_id) / "exports" / f"{asset_id}-preview.mp4"
+        source_has_audio = any(
+            stream.get("codec_type") == "audio"
+            for stream in probe_media(source).get("streams", [])
+        )
         result = render_timeline(
             source=source,
             timeline_manifest=timeline,
@@ -353,9 +396,37 @@ def _execute_media_job(
             crf=payload["crf"],
             cancel_check=cancel_check,
         )
-        progress(95, "finalizing", "Rendered MP4 was created and probed.")
+        progress(94, "quality_assessment", "Checking video/audio integrity before export.")
+        quality_report = analyze_video_quality(
+            destination,
+            expected_duration_seconds=sum(
+                float(clip["duration_seconds"]) for clip in timeline.get("clips", [])
+            ),
+            expected_width=payload["width"],
+            expected_height=payload["height"],
+            expected_fps=float(payload["fps"]),
+            expected_audio=source_has_audio,
+            cancel_check=cancel_check,
+        )
+        persist_quality_report(project_id, f"asset-{asset_id}", quality_report)
+        if not quality_report["can_export"]:
+            persist_quality_report(
+                project_id, f"job-{job['id']}", quality_report
+            )
+            destination.unlink(missing_ok=True)
+            summary = quality_report.get("summary", {})
+            raise ValueError(
+                f"Quality gate blocked the rendered video: "
+                f"{summary.get('error_count', 0)} blocking issue(s)."
+            )
+        progress(
+            98,
+            "quality_passed",
+            "Technical video/audio checks passed; preparing the download.",
+        )
         return {
             **result,
+            "quality_report": quality_report,
             "download_url": f"/v1/projects/{project_id}/assets/{asset_id}/rendered",
         }
 
@@ -499,6 +570,13 @@ def run_job_attempt(job_id: str, dispatch_generation: int) -> dict[str, Any]:
                 / str(snapshot["id"])
             )
             shutil.rmtree(output_root, ignore_errors=True)
+        elif snapshot.get("job_type") == JobType.MEDIA_RENDER.value:
+            output_path = (
+                project_dir(snapshot["project_id"])
+                / "exports"
+                / f"{snapshot['asset_id']}-preview.mp4"
+            )
+            output_path.unlink(missing_ok=True)
         _finish_job(job_id, dispatch_generation, error=exc)
     finally:
         stop_event.set()

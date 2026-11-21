@@ -4,24 +4,18 @@
 
 Describe a video in Arabic, provide source media and product references, approve a creative plan, then orchestrate analysis, selected AI generation, editing, motion graphics, audio processing, quality checks, and final export.
 
-> **Current state (2026-11-10): Phases 0.5–6.8 are merged into `main`.** Phase 6.6 transitions/titles/overlays, Phase 6.7 multi-shot Wan assembly and Phase 6.8 bounded Real-ESRGAN video enhancement were merged in PRs #13, #14 and #16; each passed its required CI jobs before merge. Phase 6.9 Product Identity Lock is implemented on `feat/phase-6.9-product-identity-lock` and is being validated in a Draft PR. It adds reference SHA-256 verification, per-shot identity constraints and a human review gate before timeline/export. Real Wan/Real-ESRGAN inference and target-GPU quality acceptance remain open. The repository is still **not production-ready**: real model weights/workflows, target-host GPU inference, visual/audio review, browser acceptance, security/operations and full release acceptance remain open.
-
-## Current feature status
-
-- **Phase 6.6 — merged:** transitions, Arabic titles and image/logo overlays with deterministic FFmpeg rendering.
-- **Phase 6.7 — merged:** approved 2–8-shot Wan generation and ordered MP4 assembly. Real Wan/RIFE inference is still unverified on the target GPU.
-- **Phase 6.8 — in review:** per-frame Real-ESRGAN video enhancement, up to 10 seconds / 300 frames, with source audio streams restored and verified. The implementation uses synthetic media and a mocked ComfyUI adapter in CI; actual model inference and visual quality still need target-host acceptance.
-
-See [Production Roadmap](docs/17-PRODUCTION-ROADMAP.md) and [Phase 6.8 — Bounded Video Enhancement](docs/26-PHASE-6.8-VIDEO-ENHANCEMENT.md).
+> **Current state (2026-11-21): Phases 0.5–6.9 are merged into main**, including Phase 6.9 Product Identity Lock (PR #18). Phase 6.10 technical video/audio quality gate and Phase 7 security/operations are submitted for review in Draft PR #23. Its current head passed all three CI jobs: 115 Python tests, PowerShell parsing, and the full broker-backed Compose/FFmpeg workflow. This is synthetic/control-plane CI evidence, not real GPU inference or target-host acceptance. Real Qwen/Wan/Real-ESRGAN/RIFE inference, Windows browser acceptance, human visual/audio review and an isolated restore drill remain open. The repository is still **not production-ready**.
 
 ## Current feature status
 
 - **Phase 6.6 — merged:** transitions, Arabic titles and image/logo overlays with deterministic FFmpeg rendering.
 - **Phase 6.7 — merged:** approved 2–8-shot Wan generation and ordered MP4 assembly. Real Wan/RIFE inference is unverified on the target GPU.
 - **Phase 6.8 — merged:** bounded per-frame Real-ESRGAN video enhancement up to 10 seconds / 300 frames. Real model inference and visual quality still need target-host acceptance.
-- **Phase 6.9 — implementation under review:** SHA-256 verified product reference, per-shot identity constraints and five-check human review gate before timeline/export. The gate does not guarantee exact logo or pixel-level identity.
+- **Phase 6.9 — merged:** SHA-256 verified product reference, per-shot identity constraints and five-check human review gate before timeline/export. The gate does not guarantee exact logo or pixel-level identity.
+- **Phase 6.10 — submitted in Draft PR #23:** server-side FFmpeg/FFprobe video and audio analysis, black/freeze/silence detection, and a SHA-256-bound export gate. CI passed; target-host media acceptance remains open.
+- **Phase 7 — submitted in Draft PR #23:** fail-closed bearer-token authentication, private access headers, Windows backup/restore helpers, local health/GPU monitoring and target-GPU acceptance tooling. Live configuration, GPU inference and a real restore drill remain open.
 
-See [Production Roadmap](docs/17-PRODUCTION-ROADMAP.md), [Phase 6.8](docs/26-PHASE-6.8-VIDEO-ENHANCEMENT.md) and [Phase 6.9](docs/27-PHASE-6.9-PRODUCT-IDENTITY-LOCK.md).
+See [Production Roadmap](docs/17-PRODUCTION-ROADMAP.md), [Phase 6.8](docs/26-PHASE-6.8-VIDEO-ENHANCEMENT.md), [Phase 6.9](docs/27-PHASE-6.9-PRODUCT-IDENTITY-LOCK.md), [Phase 6.10 / Phase 7](docs/28-PHASE-7-SECURITY-OPERATIONS.md), and [Target GPU Acceptance](docs/29-PHASE-7-TARGET-GPU-ACCEPTANCE.md).
 
 ## Product scope
 
@@ -168,8 +162,8 @@ WhisperX is not installed in the base image because it brings a large ML depende
 | General branching DAG / autonomous editing and QA agents | Not implemented |
 | Target GPU scheduling and performance benchmarks | Not accepted; model queue is single-concurrency |
 | Arabic RTL Studio UI | Initial connected video workflow UI merged in PR #5; target-host/browser acceptance pending |
-| Product Identity Lock and automated creative/visual QA | Not implemented |
-| Production authentication, deployment hardening and restore drill | Not accepted |
+| Product Identity Lock | Merged in Phase 6.9; human review is required and pixel-perfect identity is not guaranteed |
+| Production authentication, deployment hardening and restore drill | Implementation on Phase 7 branch; target-host configuration and restore drill not accepted |
 | Production readiness | **Not ready** |
 
 ## Public repository notice

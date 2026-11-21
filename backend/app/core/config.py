@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     app_name: str = "AI Video Studio"
     app_env: str = "development"
+    studio_api_token: str | None = None
     log_level: str = "INFO"
     media_root: str = "/srv/video-studio/data"
     database_url: str | None = None

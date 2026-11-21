@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.db.models import OutboxRecord
 from app.db.session import session_scope
 from app.main import app
+from app.media.quality import analyze_video_quality, persist_quality_report
 from app.media.storage import (
     create_project,
     ingest_file_stream,
@@ -388,11 +389,16 @@ def _create_identity_locked_workflow_at_review(tmp_path, monkeypatch, *, idempot
         output_dir.mkdir(parents=True, exist_ok=True)
         output = output_dir / f"{job['id']}-identity-review.mp4"
         shutil.copyfile(fixture, output)
+        quality_report = analyze_video_quality(output)
+        assert quality_report["can_export"] is True
         asset = register_generated_video_asset(
             job["project_id"],
             job["id"],
             output,
             max_bytes=settings.max_model_output_bytes,
+        )
+        persist_quality_report(
+            job["project_id"], f"asset-{asset['id']}", quality_report
         )
         return {
             "output_asset_id": asset["id"],

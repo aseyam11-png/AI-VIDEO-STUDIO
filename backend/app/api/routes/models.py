@@ -7,7 +7,8 @@ from fastapi.responses import FileResponse
 
 from app.core.config import settings
 from app.integrations.ollama import OllamaError
-from app.media.storage import project_dir
+from app.media.quality import quality_report_matches_file, quality_report_path
+from app.media.storage import project_dir, read_json
 from app.orchestration.graph import build_graph
 from app.schemas.models import DirectorPlanRequest, DirectorPlanResponse
 from app.services.jobs import JobNotFoundError, get_job
@@ -93,6 +94,36 @@ def download_job_output(project_id: str, job_id: str, filename: str) -> FileResp
         raise HTTPException(status_code=400, detail="Invalid project output path.") from exc
 
     media_type = mimetypes.guess_type(output_path.name)[0] or "application/octet-stream"
+    if output_path.suffix.lower() in {".mp4", ".mov", ".mkv", ".webm", ".m4v"}:
+        report_key = result.get("quality_report_key")
+        if result.get("output_asset_id"):
+            report_key = f"asset-{result['output_asset_id']}"
+        if not report_key:
+            report_key = next(
+                (
+                    item.get("quality_report_key")
+                    for item in result.get("outputs", [])
+                    if isinstance(item, dict) and item.get("saved_as") == filename
+                ),
+                None,
+            )
+        if not report_key:
+            raise HTTPException(
+                status_code=409,
+                detail="Video output has no completed quality report.",
+            )
+        report_path = quality_report_path(project_id, str(report_key))
+        if not report_path.is_file():
+            raise HTTPException(
+                status_code=409,
+                detail="Video output quality report is missing.",
+            )
+        report = read_json(report_path)
+        if not quality_report_matches_file(report, output_path):
+            raise HTTPException(
+                status_code=409,
+                detail="Video output quality report is stale or does not authorize these bytes.",
+            )
     return FileResponse(output_path, media_type=media_type, filename=output_path.name)
 
 

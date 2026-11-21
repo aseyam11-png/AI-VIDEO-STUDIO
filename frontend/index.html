@@ -104,6 +104,20 @@
 
         <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
 
+        <section id="auth-panel" class="auth-panel" hidden>
+          <div>
+            <span class="eyebrow">PRIVATE ACCESS</span>
+            <h3>الاتصال بالاستديو الخاص</h3>
+            <p>أدخل رمز الوصول الذي أعددته في ملف البيئة الخاص على جهاز الاستديو. لا يُحفظ الرمز إلا في جلسة علامة التبويب الحالية.</p>
+          </div>
+          <label class="field-label" for="api-token">رمز الوصول</label>
+          <input id="api-token" class="control" type="password" autocomplete="current-password" maxlength="512" placeholder="Bearer token">
+          <div class="action-row">
+            <button id="connect-api" class="button button-primary" type="button">اتصال آمن</button>
+            <button id="disconnect-api" class="button button-outline" type="button" hidden>قطع الاتصال</button>
+          </div>
+        </section>
+
         <section class="panel">
           <div class="panel-header">
             <div>
@@ -548,6 +562,14 @@
             <p id="timeline-help" class="hint">التغييرات لا تُحفظ تلقائيًا. احفظ ترتيب المقاطع قبل الانتقال إلى مشروع آخر.</p>
           </div>
 
+          <section id="quality-report" class="quality-report" hidden aria-live="polite">
+            <div class="quality-report-heading">
+              <strong id="quality-status">نتيجة فحص الفيديو</strong>
+              <span id="quality-summary" class="muted"></span>
+            </div>
+            <div id="quality-issues" class="quality-issues"></div>
+          </section>
+
           <div id="timeline-preview-wrap" class="video-preview-wrap" hidden>
             <video id="timeline-preview" controls playsinline preload="metadata"></video>
           </div>
@@ -643,6 +665,13 @@
             <span id="workflow-state" class="state-pill">قيد الانتظار</span>
           </div>
           <div id="workflow-steps" class="workflow-steps"></div>
+          <section id="workflow-quality-report" class="quality-report" hidden aria-live="polite">
+            <div class="quality-report-heading">
+              <strong id="workflow-quality-status">نتيجة فحص الفيديو</strong>
+              <span id="workflow-quality-summary" class="muted"></span>
+            </div>
+            <div id="workflow-quality-issues" class="quality-issues"></div>
+          </section>
           <section id="identity-review-panel" class="identity-review-panel" hidden>
             <div class="panel-header">
               <div>

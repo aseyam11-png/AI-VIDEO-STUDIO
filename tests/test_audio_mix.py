@@ -13,6 +13,47 @@ from app.media.storage import create_project, ingest_file_stream
 from fastapi.testclient import TestClient
 
 
+def _write_test_video(
+    path: Path,
+    *,
+    duration: int,
+    width: int,
+    height: int,
+    audio: bool,
+) -> None:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        pytest.skip("FFmpeg is required for export quality integration tests.")
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"testsrc2=size={width}x{height}:rate=24:duration={duration}",
+    ]
+    if audio:
+        command.extend(
+            [
+                "-f",
+                "lavfi",
+                "-i",
+                f"sine=frequency=660:sample_rate=48000:duration={duration}",
+                "-shortest",
+            ]
+        )
+    else:
+        command.append("-an")
+    command.extend(["-c:v", "libx264", "-pix_fmt", "yuv420p"])
+    if audio:
+        command.extend(["-c:a", "aac"])
+    command.append(str(path))
+    subprocess.run(command, check=True, capture_output=True, text=True, timeout=60)
+
+
 def _project(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "media_root", str(tmp_path / "media"))
     return create_project(
@@ -325,6 +366,10 @@ def test_audio_mix_api_rejects_audio_when_timeline_is_missing(tmp_path, monkeypa
     assert response.status_code == 404
 
 
+@pytest.mark.skipif(
+    shutil.which("ffmpeg") is None,
+    reason="FFmpeg is required for audio mix export quality integration",
+)
 def test_audio_mix_api_accepts_video_audio_source_and_render_passes_manifest(
     tmp_path, monkeypatch
 ):
@@ -357,8 +402,18 @@ def test_audio_mix_api_accepts_video_audio_source_and_render_passes_manifest(
         captured.update(kwargs)
         output = kwargs["destination"]
         output.parent.mkdir(parents=True, exist_ok=True)
-        output.write_bytes(b"mixed-preview")
-        return {"filename": output.name, "size_bytes": 13, "audio_clip_count": 1}
+        _write_test_video(
+            output,
+            duration=10,
+            width=640,
+            height=360,
+            audio=True,
+        )
+        return {
+            "filename": output.name,
+            "size_bytes": output.stat().st_size,
+            "audio_clip_count": 1,
+        }
 
     monkeypatch.setattr(media_route, "render_multi_source_timeline", fake_render)
     rendered = client.post(
