@@ -4,7 +4,7 @@
 
 Describe a video in Arabic, provide source media and product references, approve a creative plan, then orchestrate analysis, selected AI generation, editing, motion graphics, audio processing, quality checks, and final export.
 
-> **Current state (2026-11-11): Phases 0.5–6.9 are merged into main**, including Phase 6.9 Product Identity Lock (PR #18). Phase 6.10 technical video/audio quality gate and Phase 7 security/operations are being implemented on the branch feat/phase-6.10-quality-gate-phase-7-hardening. Real Qwen/Wan/Real-ESRGAN/RIFE inference on the target GPU, Windows browser acceptance and a target-host restore drill remain external acceptance gates. The repository is still **not production-ready**: real model weights/workflows, target-host GPU inference, visual/audio review, browser acceptance, security/operations and full release acceptance remain open.
+> **Current state (2026-11-21): Phases 0.5–6.9 are merged into main**, including Phase 6.9 Product Identity Lock (PR #18). Phase 6.10 technical video/audio quality gate and Phase 7 security/operations are submitted for review in Draft PR #23. Its current head passed all three CI jobs: 115 Python tests, PowerShell parsing, and the full broker-backed Compose/FFmpeg workflow. This is synthetic/control-plane CI evidence, not real GPU inference or target-host acceptance. Real Qwen/Wan/Real-ESRGAN/RIFE inference, Windows browser acceptance, human visual/audio review and an isolated restore drill remain open. The repository is still **not production-ready**.
 
 ## Current feature status
 
@@ -12,8 +12,8 @@ Describe a video in Arabic, provide source media and product references, approve
 - **Phase 6.7 — merged:** approved 2–8-shot Wan generation and ordered MP4 assembly. Real Wan/RIFE inference is unverified on the target GPU.
 - **Phase 6.8 — merged:** bounded per-frame Real-ESRGAN video enhancement up to 10 seconds / 300 frames. Real model inference and visual quality still need target-host acceptance.
 - **Phase 6.9 — merged:** SHA-256 verified product reference, per-shot identity constraints and five-check human review gate before timeline/export. The gate does not guarantee exact logo or pixel-level identity.
-- **Phase 6.10 — in implementation:** server-side FFmpeg/FFprobe video and audio analysis, black/freeze/silence detection, and a SHA-256-bound export gate.
-- **Phase 7 — in implementation:** production bearer-token authentication, private access headers, Windows backup/restore helpers, local health/GPU monitoring and target-GPU acceptance tooling. Real restore, GPU inference and external alerting remain open.
+- **Phase 6.10 — submitted in Draft PR #23:** server-side FFmpeg/FFprobe video and audio analysis, black/freeze/silence detection, and a SHA-256-bound export gate. CI passed; target-host media acceptance remains open.
+- **Phase 7 — submitted in Draft PR #23:** fail-closed bearer-token authentication, private access headers, Windows backup/restore helpers, local health/GPU monitoring and target-GPU acceptance tooling. Live configuration, GPU inference and a real restore drill remain open.
 
 See [Production Roadmap](docs/17-PRODUCTION-ROADMAP.md), [Phase 6.8](docs/26-PHASE-6.8-VIDEO-ENHANCEMENT.md), [Phase 6.9](docs/27-PHASE-6.9-PRODUCT-IDENTITY-LOCK.md), [Phase 6.10 / Phase 7](docs/28-PHASE-7-SECURITY-OPERATIONS.md), and [Target GPU Acceptance](docs/29-PHASE-7-TARGET-GPU-ACCEPTANCE.md).
 
