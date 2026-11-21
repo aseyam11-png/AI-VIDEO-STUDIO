@@ -39,6 +39,25 @@ $DatabaseDump = (Resolve-Path -LiteralPath $DatabaseDump).Path
 $MediaArchive = (Resolve-Path -LiteralPath $MediaArchive).Path
 $Sha256Manifest = (Resolve-Path -LiteralPath $Sha256Manifest).Path
 $RestoreMediaDirectory = [System.IO.Path]::GetFullPath($RestoreMediaDirectory)
+$RestoreMediaNormalized = $RestoreMediaDirectory.TrimEnd('\')
+$mediaLine = Get-Content -LiteralPath $EnvFile |
+    Where-Object { $_ -match '^\s*MEDIA_HOST_PATH\s*=' } |
+    Select-Object -First 1
+if (-not $mediaLine) { throw "MEDIA_HOST_PATH is not configured in .env." }
+$mediaValue = ($mediaLine -split "=", 2)[1].Trim().Trim('"').Trim("'")
+if (-not [System.IO.Path]::IsPathRooted($mediaValue)) {
+    $mediaValue = Join-Path $RepoRoot $mediaValue
+}
+$LiveMediaPath = [System.IO.Path]::GetFullPath($mediaValue).TrimEnd('\')
+$LiveMediaPrefix = $LiveMediaPath + '\'
+$RestoreMediaPrefix = $RestoreMediaNormalized + '\'
+if (
+    $RestoreMediaNormalized.Equals($LiveMediaPath, [System.StringComparison]::OrdinalIgnoreCase) -or
+    $RestoreMediaNormalized.StartsWith($LiveMediaPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+    $LiveMediaPath.StartsWith($RestoreMediaPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+) {
+    throw "RestoreMediaDirectory must be separate from the configured live MEDIA_HOST_PATH."
+}
 
 if (
     $RestoreMediaDirectory.TrimEnd('\').Equals($RepoRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
