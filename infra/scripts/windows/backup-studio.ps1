@@ -19,6 +19,12 @@ $mediaValue = ($mediaLine -split "=", 2)[1].Trim().Trim('"').Trim("'")
 if (-not [System.IO.Path]::IsPathRooted($mediaValue)) { $mediaValue = Join-Path $RepoRoot $mediaValue }
 if (-not (Test-Path -LiteralPath $mediaValue -PathType Container)) { throw "The configured private media directory was not found." }
 $MediaPath = (Resolve-Path -LiteralPath $mediaValue).Path.TrimEnd('\')
+if (
+    $MediaPath.Equals($RepoRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+    $MediaPath.StartsWith($RepoPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+) {
+    throw "MEDIA_HOST_PATH must be outside the Git checkout; private media must not be stored in the repository."
+}
 $MediaPrefix = $MediaPath + '\'
 if (
     $resolvedOutput.Equals($MediaPath, [System.StringComparison]::OrdinalIgnoreCase) -or
