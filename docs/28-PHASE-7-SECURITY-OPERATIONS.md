@@ -41,7 +41,7 @@ A failed report is returned to the Arabic Studio UI for diagnosis. Warnings rema
 - The Studio browser stores the token in per-tab sessionStorage, never in a JavaScript bundle or localStorage.
 - Protected video, image and subtitle downloads are fetched with the bearer header and exposed through temporary browser object URLs; long-lived API tokens are not placed in URLs.
 - /health and /ready remain unauthenticated for local probes. Keep the API bound to 127.0.0.1 or behind a private authenticated VPN/reverse proxy.
-- FastAPI docs/OpenAPI are disabled in production.
+- FastAPI docs/OpenAPI are disabled in all protected environments (anything other than development/test).
 - Response headers include nosniff, frame denial, referrer policy, permissions policy and a same-origin CSP; HSTS is added when the app is accessed over HTTPS.
 - No cookie-based session is introduced. Keep API access same-origin; do not add permissive CORS.
 - Compose exposes PostgreSQL and Valkey only inside the private Compose network. Ollama stays on loopback; ComfyUI remains private.
