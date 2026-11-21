@@ -20,8 +20,8 @@ if ($RestoreDatabaseName -notmatch '^[a-z][a-z0-9_]{0,62}$') {
     throw "RestoreDatabaseName must be a safe PostgreSQL identifier (lowercase letters, digits, underscores)."
 }
 
-$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
-$RepoPrefix = $RepoRoot.TrimEnd('\') + '\'
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path.TrimEnd('\')
+$RepoPrefix = $RepoRoot + '\'
 $ComposeFile = Join-Path $RepoRoot "compose.yaml"
 $EnvFile = Join-Path $RepoRoot ".env"
 
@@ -40,8 +40,11 @@ $MediaArchive = (Resolve-Path -LiteralPath $MediaArchive).Path
 $Sha256Manifest = (Resolve-Path -LiteralPath $Sha256Manifest).Path
 $RestoreMediaDirectory = [System.IO.Path]::GetFullPath($RestoreMediaDirectory)
 
-if ($RestoreMediaDirectory.StartsWith($RepoPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "Choose a private restore directory outside the Git checkout."
+if (
+    $RestoreMediaDirectory.TrimEnd('\').Equals($RepoRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+    $RestoreMediaDirectory.StartsWith($RepoPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+) {
+    throw "Choose a private restore directory outside the Git checkout, including the checkout root itself."
 }
 if (Test-Path -LiteralPath $RestoreMediaDirectory) {
     if (@(Get-ChildItem -Force -LiteralPath $RestoreMediaDirectory).Count -gt 0) {
