@@ -1,8 +1,9 @@
 # Phase 6.10 and Phase 7 — quality gate and production operations
 
 Repository: aseyam11-png/AI-VIDEO-STUDIO  
-Implementation branch: feat/phase-6.10-quality-gate-phase-7-hardening  
-Status: implementation under CI and review; not a production acceptance certificate.
+Candidate pull request: #23 (Draft)  
+Implementation branch: fix/phase-7-production-guards  
+Status: all three CI jobs passed on head fdeb304c; not a production acceptance certificate.
 
 ## Phase 6.10 — technical video/audio quality gate
 
