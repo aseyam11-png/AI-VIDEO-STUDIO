@@ -10,15 +10,18 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
-$RepoPrefix = $RepoRoot.TrimEnd('\') + '\'
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path.TrimEnd('\')
+$RepoPrefix = $RepoRoot + '\'
 $ComposeFile = Join-Path $RepoRoot "compose.yaml"
 $EnvFile = Join-Path $RepoRoot ".env"
 $ApiBaseUrl = $ApiBaseUrl.TrimEnd("/")
-$ResolvedOutput = [System.IO.Path]::GetFullPath($OutputDirectory)
+$ResolvedOutput = [System.IO.Path]::GetFullPath($OutputDirectory).TrimEnd('\')
 
-if ($ResolvedOutput.StartsWith($RepoPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "Monitoring output must be outside the Git checkout."
+if (
+    $ResolvedOutput.Equals($RepoRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+    $ResolvedOutput.StartsWith($RepoPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+) {
+    throw "Monitoring output must be outside the Git checkout, including the checkout root itself."
 }
 New-Item -ItemType Directory -Force -Path $ResolvedOutput | Out-Null
 $LogFile = Join-Path $ResolvedOutput "studio-health.jsonl"
