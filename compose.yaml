@@ -94,7 +94,7 @@ services:
       valkey:
         condition: service_healthy
     volumes:
-      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
+      - ${MEDIA_HOST_PATH:-../ai-video-studio-data}:/srv/video-studio/data
     networks: [studio]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5)"]
@@ -128,7 +128,7 @@ services:
       valkey:
         condition: service_healthy
     volumes:
-      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
+      - ${MEDIA_HOST_PATH:-../ai-video-studio-data}:/srv/video-studio/data
     networks: [studio]
 
   worker-speech:
@@ -153,7 +153,7 @@ services:
       valkey:
         condition: service_healthy
     volumes:
-      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
+      - ${MEDIA_HOST_PATH:-../ai-video-studio-data}:/srv/video-studio/data
     networks: [studio]
 
   worker-models:
@@ -184,7 +184,7 @@ services:
       valkey:
         condition: service_healthy
     volumes:
-      - ${MEDIA_HOST_PATH:-./data}:/srv/video-studio/data
+      - ${MEDIA_HOST_PATH:-../ai-video-studio-data}:/srv/video-studio/data
     networks: [studio]
 
   worker-control:
