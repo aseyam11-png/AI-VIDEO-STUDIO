@@ -1,20 +1,32 @@
 [CmdletBinding()]
 param([string]$OutputDirectory = (Join-Path $PSScriptRoot "..\..\..\..\studio-backups"))
 $ErrorActionPreference = "Stop"
-$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path
-$RepoPrefix = $RepoRoot.TrimEnd('\') + '\'
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "../../..")).Path.TrimEnd('\')
+$RepoPrefix = $RepoRoot + '\'
 $ComposeFile = Join-Path $RepoRoot "compose.yaml"
 $EnvFile = Join-Path $RepoRoot ".env"
 if (-not (Test-Path -LiteralPath $EnvFile)) { throw "Missing .env. Configure database and media settings first." }
-$resolvedOutput = [System.IO.Path]::GetFullPath($OutputDirectory)
-if ($resolvedOutput.StartsWith($RepoPrefix, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Backup output must be outside the Git checkout." }
-New-Item -ItemType Directory -Force -Path $resolvedOutput | Out-Null
+$resolvedOutput = [System.IO.Path]::GetFullPath($OutputDirectory).TrimEnd('\')
+if (
+    $resolvedOutput.Equals($RepoRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+    $resolvedOutput.StartsWith($RepoPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+) {
+    throw "Backup output must be outside the Git checkout, including the checkout root itself."
+}
 $mediaLine = Get-Content -LiteralPath $EnvFile | Where-Object { $_ -match '^\s*MEDIA_HOST_PATH\s*=' } | Select-Object -First 1
 if (-not $mediaLine) { throw "MEDIA_HOST_PATH is not configured in .env." }
 $mediaValue = ($mediaLine -split "=", 2)[1].Trim().Trim('"').Trim("'")
 if (-not [System.IO.Path]::IsPathRooted($mediaValue)) { $mediaValue = Join-Path $RepoRoot $mediaValue }
 if (-not (Test-Path -LiteralPath $mediaValue -PathType Container)) { throw "The configured private media directory was not found." }
-$MediaPath = (Resolve-Path -LiteralPath $mediaValue).Path
+$MediaPath = (Resolve-Path -LiteralPath $mediaValue).Path.TrimEnd('\')
+$MediaPrefix = $MediaPath + '\'
+if (
+    $resolvedOutput.Equals($MediaPath, [System.StringComparison]::OrdinalIgnoreCase) -or
+    $resolvedOutput.StartsWith($MediaPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+) {
+    throw "Backup output must not be inside MEDIA_HOST_PATH; otherwise the archive can include its own output."
+}
+New-Item -ItemType Directory -Force -Path $resolvedOutput | Out-Null
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd-HHmmssZ")
 $dbDump = Join-Path $resolvedOutput "studio-$stamp.dump"
 $mediaArchive = Join-Path $resolvedOutput "studio-media-$stamp.tar.gz"
