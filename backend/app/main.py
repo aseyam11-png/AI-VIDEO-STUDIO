@@ -12,12 +12,21 @@ from app.api.router import api_router
 from app.core.config import settings
 from app.db.session import get_engine
 
+
+_NON_PRODUCTION_ENVIRONMENTS = frozenset({"development", "test"})
+
+
+def _is_protected_environment() -> bool:
+    """Fail closed unless the operator explicitly selects a local/test environment."""
+    return settings.app_env.strip().lower() not in _NON_PRODUCTION_ENVIRONMENTS
+
+
 app = FastAPI(
     title=settings.app_name,
     version="0.4.0",
-    docs_url=None if settings.app_env.lower() == "production" else "/docs",
-    redoc_url=None if settings.app_env.lower() == "production" else "/redoc",
-    openapi_url=None if settings.app_env.lower() == "production" else "/openapi.json",
+    docs_url=None if _is_protected_environment() else "/docs",
+    redoc_url=None if _is_protected_environment() else "/redoc",
+    openapi_url=None if _is_protected_environment() else "/openapi.json",
     description=(
         "Arabic-first video production API with durable sequential workflows, "
         "approved local model adapters, and deterministic media processing."
@@ -31,13 +40,13 @@ async def enforce_private_api_access(request, call_next):
     response = None
     if path.startswith("/v1/"):
         token = settings.studio_api_token
-        production = settings.app_env.lower() == "production"
-        if production and (not token or len(token) < 32):
+        protected_environment = _is_protected_environment()
+        if protected_environment and (not token or len(token) < 32):
             response = JSONResponse(
                 status_code=503,
                 content={
                     "detail": (
-                        "Production API access is disabled until STUDIO_API_TOKEN "
+                        "Protected API access is disabled until STUDIO_API_TOKEN "
                         "is configured with at least 32 characters."
                     )
                 },
