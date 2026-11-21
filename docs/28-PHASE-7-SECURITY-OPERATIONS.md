@@ -37,7 +37,7 @@ A failed report is returned to the Arabic Studio UI for diagnosis. Warnings rema
 ### API authentication
 
 - Set a unique random STUDIO_API_TOKEN of at least 32 characters in the private .env file for a production installation.
-- Production /v1/* API requests fail closed with HTTP 503 if the token is absent or too short; requests otherwise require Authorization: Bearer token.
+- Only explicit `APP_ENV=development` and `APP_ENV=test` are treated as non-production. Every other value (including `prod`, `staging`, empty, or misspelled values) requires a `STUDIO_API_TOKEN` of at least 32 characters; protected API requests fail closed with HTTP 503 when it is missing/too short and otherwise require `Authorization: Bearer`. FastAPI docs/OpenAPI are disabled in these protected environments.
 - The Studio browser stores the token in per-tab sessionStorage, never in a JavaScript bundle or localStorage.
 - Protected video, image and subtitle downloads are fetched with the bearer header and exposed through temporary browser object URLs; long-lived API tokens are not placed in URLs.
 - /health and /ready remain unauthenticated for local probes. Keep the API bound to 127.0.0.1 or behind a private authenticated VPN/reverse proxy.
@@ -61,7 +61,7 @@ Run on the Windows host:
 .\infra\scripts\windows\backup-studio.ps1 -OutputDirectory "E:\Studio-Backups"
 ~~~
 
-The helper stops active API and worker writers, creates a PostgreSQL custom-format dump, archives the private media directory, and writes SHA-256 hashes for both artifacts. The services that were running are restarted in the finally block. Store the dump, media archive and manifest together on encrypted storage outside the repository.
+The helper stops active API and worker writers, creates a PostgreSQL custom-format dump, archives the private media directory, and writes SHA-256 hashes for both artifacts. The services that were running are restarted in the finally block. Store the dump, media archive and manifest together on encrypted storage outside the repository and outside `MEDIA_HOST_PATH`; the backup helper rejects the repository root and any destination inside the media tree to avoid archiving its own output.
 
 A successful backup command is not a restore test. Keep at least one independently stored copy.
 
