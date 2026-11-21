@@ -64,3 +64,27 @@ def test_production_requires_valid_bearer_token(monkeypatch):
     )
     assert response.status_code == 200
     assert response.headers["x-frame-options"] == "DENY"
+
+
+def test_non_development_environments_fail_closed_without_token(monkeypatch):
+    monkeypatch.setattr(settings, "studio_api_token", None)
+    client = TestClient(app)
+
+    for environment in ("prod", "staging", "production ", "qa"):
+        monkeypatch.setattr(settings, "app_env", environment)
+        assert client.get("/v1/auth/session").status_code == 503
+        assert client.get("/v1/system/capabilities").status_code == 503
+
+
+def test_non_development_environment_requires_token_even_with_nonstandard_name(monkeypatch):
+    token = "protected-environment-token-" + ("p" * 40)
+    monkeypatch.setattr(settings, "app_env", "staging")
+    monkeypatch.setattr(settings, "studio_api_token", token)
+    client = TestClient(app)
+
+    assert client.get("/v1/system/capabilities").status_code == 401
+    response = client.get(
+        "/v1/system/capabilities",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
