@@ -13,13 +13,9 @@ from app.core.config import settings
 from app.db.session import get_engine
 
 
-
-_NON_PRODUCTION_ENVIRONMENTS = frozenset({"development", "test"})
-
-
 def _is_protected_environment() -> bool:
     """Fail closed unless the operator explicitly selects a local/test environment."""
-    return settings.app_env.strip().lower() not in _NON_PRODUCTION_ENVIRONMENTS
+    return settings.app_env.strip().lower() not in {"development", "test"}
 
 
 app = FastAPI(
