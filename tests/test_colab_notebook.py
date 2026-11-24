@@ -58,3 +58,4 @@ def test_colab_ollama_api_is_loopback_only_and_not_a_worker():
     assert 'ngrok' not in lowered
     assert 'distributed worker' in lowered
     assert 'celery worker' in lowered
+    assert 'systemctl' not in lowered
