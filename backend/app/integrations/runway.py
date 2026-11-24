@@ -154,7 +154,7 @@ def _safe_upload_url(value: str):
     except ValueError:
         pass
     else:
-        raise RunwayUploadError("Runway upload URLs must use a DNS hostname, not an IP address.")
+        raise RunwayUploadError("Runway returned an invalid ephemeral upload URL.")
     hostname = parsed.hostname.lower().rstrip(".")
     if (
         hostname in {"localhost", "metadata.google.internal"}
