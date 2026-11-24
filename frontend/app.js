@@ -2163,6 +2163,17 @@ async function renderProjectTimeline() {
       facts.append(fact);
     });
     summary.append(title, logline, facts);
+    const directorRules = [
+      plan.cinematic_look,
+      ...(plan.continuity_rules || []),
+      ...(plan.realism_constraints || [])
+    ].filter(Boolean);
+    if (directorRules.length) {
+      const direction = document.createElement("p");
+      direction.className = "plan-director-rules";
+      direction.textContent = directorRules.join(" · ");
+      summary.append(direction);
+    }
     content.append(summary);
 
     const scenes = document.createElement("div");
@@ -2186,6 +2197,32 @@ async function renderProjectTimeline() {
         meta.append(item);
       });
       body.append(heading, description, meta);
+
+      const cinematography = document.createElement("div");
+      cinematography.className = "scene-cinematography";
+      const cameraSettings = [
+        ["العدسة", scene.focal_length_mm ? `${scene.focal_length_mm}mm · f/${scene.aperture_f_number ?? 4}` : ""],
+        ["عمق المجال", scene.depth_of_field || ""],
+        ["الإضاءة", scene.lighting_design || ""],
+        ["التكوين", scene.composition || ""],
+        ["حركة العنصر", scene.subject_action || ""],
+        ["شدة الحركة", scene.motion_intensity || ""],
+        ["مرتكز الاستمرارية", scene.continuity_anchor || ""],
+        ["الانتقال", scene.transition_intent || ""],
+        ["النص المطلوب", scene.on_screen_text || ""]
+      ];
+      cameraSettings.filter(([, value]) => value).forEach(([label, value]) => {
+        const item = document.createElement("div");
+        item.className = "scene-cinematography-item";
+        const name = document.createElement("strong");
+        name.textContent = label;
+        const detail = document.createElement("span");
+        detail.textContent = value;
+        item.append(name, detail);
+        cinematography.append(item);
+      });
+      if (cinematography.childElementCount) body.append(cinematography);
+
       card.append(index, body);
       scenes.append(card);
     });

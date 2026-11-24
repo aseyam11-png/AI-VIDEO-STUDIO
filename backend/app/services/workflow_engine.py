@@ -16,6 +16,7 @@ from app.integrations.ollama import generate_creative_plan
 from app.schemas.jobs import JobType
 from app.schemas.models import CreativePlan
 from app.schemas.workflows import WorkflowCreateRequest, WorkflowFromBriefRequest
+from app.services.cinematic_director import compile_scene_generation_prompt
 from app.services.jobs import (
     JobRequestError,
     _create_outbox,
@@ -154,35 +155,17 @@ def _step_specs(
             scene = plan.scenes[0]
             if scene.duration_seconds > 10:
                 raise WorkflowRequestError("A generated shot cannot exceed 10 seconds.")
-            prompt = (
-                f"{plan.logline}. Style: {plan.visual_style}. "
-                f"Scene: {scene.visual_description}. "
-                f"Camera: {scene.camera_movement}. Audience: {plan.audience}."
-            )[:4000]
-            if request.product_identity_lock:
-                prompt = (
-                    f"{prompt[:2500]} Canonical product identity lock: reproduce the exact product "
-                    "shown in the supplied reference image. Preserve its silhouette, "
-                    "proportions, materials, colors, components, logo, label, packaging and "
-                    "all visible markings. Do not redesign, replace, morph, omit or invent "
-                    "product details. Keep camera motion and lighting subordinate to "
-                    "product fidelity."
-                )[:4000]
+            prompt, negative_prompt = compile_scene_generation_prompt(
+                plan,
+                scene,
+                product_identity_lock=request.product_identity_lock,
+            )
             steps.append(
                 (
                     JobType.VIDEO_GENERATE,
                     {
                         "prompt": prompt,
-                        "negative_prompt": (
-                            "low quality, flicker, distorted geometry, unreadable text"
-                            + (
-                                ", changed product identity, altered logo, misspelled label, "
-                                "different product color, wrong material, missing components, "
-                                "product morphing"
-                                if request.product_identity_lock
-                                else ""
-                            )
-                        ),
+                        "negative_prompt": negative_prompt,
                         "duration_seconds": scene.duration_seconds,
                         "width": 832,
                         "height": 480,
@@ -209,38 +192,15 @@ def _step_specs(
                     raise WorkflowRequestError(
                         "Each generated scene must be 10 seconds or shorter."
                     )
-                prompt = (
-                    f"{plan.logline}. Style: {plan.visual_style}. "
-                    f"Scene purpose: {scene.purpose}. "
-                    f"Visual: {scene.visual_description}. "
-                    f"Shot type: {scene.shot_type}. Camera: {scene.camera_movement}. "
-                    f"Audience: {plan.audience}. "
-                    f"On-screen direction: {scene.on_screen_text}."
-                )[:4000]
-                if request.product_identity_lock:
-                    prompt = (
-                        f"{prompt[:2400]} Canonical product identity lock: the supplied reference "
-                        "image is the single source of truth for the product. Preserve the "
-                        "exact silhouette, proportions, geometry, colors, materials, hardware, "
-                        "logo, typography, labels and packaging in every shot. Do not redesign, "
-                        "replace, morph, omit, add or invent product details. Keep the whole "
-                        "product visually consistent across shots; simplify camera movement "
-                        "rather than changing the product."
-                    )[:4000]
+                prompt, negative_prompt = compile_scene_generation_prompt(
+                    plan,
+                    scene,
+                    product_identity_lock=request.product_identity_lock,
+                )
                 shots.append(
                     {
                         "prompt": prompt,
-                        "negative_prompt": (
-                            "low quality, flicker, temporal inconsistency, "
-                            "distorted geometry, unreadable text, product deformation"
-                            + (
-                                ", changed product identity, altered logo, misspelled label, "
-                                "different product, changed materials, missing components, "
-                                "extra product, product morphing"
-                                if request.product_identity_lock
-                                else ""
-                            )
-                        ),
+                        "negative_prompt": negative_prompt,
                         "duration_seconds": scene.duration_seconds,
                     }
                 )
