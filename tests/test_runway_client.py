@@ -507,7 +507,8 @@ def test_upload_url_rejects_untrusted_hosts_and_authorities(upload_url):
         runway_module._safe_upload_url(upload_url)
 
 
-def test_download_rejects_arbitrary_cloudfront_distribution_host(tmp_path):
+def test_download_rejects_arbitrary_cloudfront_distribution_host(tmp_path, monkeypatch):
+    _configure_runway(monkeypatch)
     client = FakeRunwayClient()
 
     with pytest.raises(RunwayError, match="approved CloudFront host"):
