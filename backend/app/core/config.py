@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     comfyui_request_timeout_seconds: int = Field(default=120, ge=5, le=1800)
     comfyui_job_timeout_seconds: int = Field(default=21600, ge=60, le=86400)
     comfyui_poll_interval_seconds: float = Field(default=2.0, ge=0.5, le=30)
+    runway_enabled: bool = False
+    runway_api_key: str | None = None
+    runway_request_timeout_seconds: int = Field(default=60, ge=5, le=1800)
+    runway_poll_interval_seconds: int = Field(default=5, ge=5, le=30)
+    runway_job_timeout_seconds: int = Field(default=3600, ge=60, le=21600)
+    runway_max_usd_per_workflow: float = Field(default=3.0, ge=0.8, le=100.0)
     max_model_output_bytes: int = Field(default=2147483648, ge=1048576, le=21474836480)
     model_workflow_registry: str | None = None
     deepfilter_script: str | None = None

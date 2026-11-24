@@ -199,7 +199,18 @@
     const imageSelected = state.selectedAsset?.asset_type === "image";
     const videoSelected = state.selectedAsset?.asset_type === "video";
     const wanReady = Boolean(state.modelStatus?.models?.["wan-2.2-ti2v-5b"]?.workflow_configured);
-    const canGenerate = imageSelected && wanReady;
+    const runwayEnabled = Boolean(state.modelStatus?.providers?.runway?.enabled);
+    const providerSelect = $("generation-provider");
+    const runwayOption = providerSelect?.querySelector('option[value="seedance2_5"]');
+    if (runwayOption) runwayOption.disabled = !runwayEnabled;
+    if (!runwayEnabled && providerSelect?.value === "seedance2_5") {
+      providerSelect.value = "auto";
+    }
+    const selectedProvider = providerSelect?.value || "auto";
+    const selectedProviderReady = selectedProvider === "seedance2_5"
+      ? runwayEnabled
+      : wanReady;
+    const canGenerate = imageSelected && selectedProviderReady;
     const generateVideo = $("generate-video");
     if (generateVideo) {
       generateVideo.disabled = !canGenerate;
@@ -213,6 +224,13 @@
       const label = identityLock.closest("label");
       if (label) label.classList.toggle("option-disabled", identityLock.disabled);
       if (identityLock.disabled) identityLock.checked = false;
+    }
+    const externalConsent = $("allow-external-processing");
+    if (externalConsent) {
+      externalConsent.disabled = (
+        !runwayEnabled || !generateVideo?.checked || selectedProvider === "local_wan"
+      );
+      if (externalConsent.disabled) externalConsent.checked = false;
     }
     const interpolation = $("interpolate-generated-video");
     if (interpolation) {
@@ -244,7 +262,7 @@
     }
     const ready = Boolean(
       state.project && state.selectedAsset && !state.uploading && qwenReady &&
-      (videoSelected || (imageSelected && generateVideo?.checked && wanReady))
+      (videoSelected || (imageSelected && generateVideo?.checked && selectedProviderReady))
     );
     $("generate-plan").disabled = !ready;
     const enhancement = $("upscale-video");
@@ -290,7 +308,15 @@
         { id: "transcribe-audio", ready: Boolean(whisper.worker_enabled), label: "WhisperX" },
         { id: "enhance-audio", ready: Boolean(deepfilter.configured), label: "DeepFilterNet" },
         { id: "upscale-video", ready: Boolean(realesrgan.workflow_configured), label: "Real-ESRGAN" },
-        { id: "generate-video", ready: Boolean(wan.workflow_configured), label: "Wan 2.2" },
+        {
+          id: "generate-video",
+          ready: Boolean(wan.workflow_configured || status.providers?.runway?.enabled),
+          label: wan.workflow_configured && status.providers?.runway?.enabled
+            ? "Wan 2.2 / Seedance 2.5"
+            : status.providers?.runway?.enabled
+              ? "Seedance 2.5"
+              : "Wan 2.2"
+        },
         { id: "interpolate-generated-video", ready: Boolean(rife.workflow_configured), label: "RIFE" },
         { id: "detection-prompt", ready: Boolean(grounding.workflow_configured), label: "Grounding DINO" },
         { id: "tracking-prompt", ready: Boolean(sam2.workflow_configured), label: "SAM 2" }
@@ -2139,7 +2165,7 @@ async function renderProjectTimeline() {
     await loadAssetTranscription($("timeline-source").value);
   }
 
-  function renderPlan(plan) {
+  function renderPlan(plan, generationRouting = null) {
     const panel = $("plan-panel");
     const content = $("plan-content");
     content.replaceChildren();
@@ -2173,6 +2199,31 @@ async function renderProjectTimeline() {
       direction.className = "plan-director-rules";
       direction.textContent = directorRules.join(" · ");
       summary.append(direction);
+    }
+    if (generationRouting) {
+      const providerLabels = {
+        local_wan: "Wan 2.2 المحلي",
+        seedance2_5: "Seedance 2.5 الخارجي"
+      };
+      const providers = (generationRouting.providers_used || [])
+        .map((provider) => providerLabels[provider] || provider)
+        .join(" + ");
+      const estimatedCost = Number(generationRouting.estimated_external_cost_usd || 0);
+      const costCap = Number(generationRouting.max_external_cost_usd || 0);
+      const routeSummary = document.createElement("p");
+      routeSummary.className = "plan-director-rules";
+      routeSummary.textContent =
+        `مسار التوليد: ${providers || "محلي"} · التكلفة الخارجية التقديرية: ${estimatedCost.toFixed(2)} من سقف ${costCap.toFixed(2)} لهذه العملية.`;
+      summary.append(routeSummary);
+
+      (generationRouting.shots || []).forEach((shot) => {
+        const line = document.createElement("p");
+        line.className = "scene-meta";
+        const provider = providerLabels[shot.provider] || shot.provider;
+        line.textContent =
+          `المشهد ${shot.index}: ${provider} · ${Number(shot.estimated_cost_usd || 0).toFixed(2)} · ${shot.routing_reason || ""}`;
+        summary.append(line);
+      });
     }
     content.append(summary);
 
@@ -2310,7 +2361,9 @@ async function renderProjectTimeline() {
     $("execution-actions").hidden = !["queued", "running", "cancel_requested", "awaiting_identity_review"].includes(workflow.status);
     renderWorkflowSteps(workflow.steps || [], workflow.project_id);
     $("plan-panel").hidden = !workflow.creative_plan;
-    if (workflow.creative_plan) renderPlan(workflow.creative_plan);
+    if (workflow.creative_plan) {
+      renderPlan(workflow.creative_plan, workflow.options?.generation_routing || null);
+    }
 
     const reviewPanel = $("identity-review-panel");
     const identityReview = workflow.options?.product_identity_review;
@@ -2423,13 +2476,28 @@ async function renderProjectTimeline() {
     const brief = $("creative-brief").value.trim();
     const generateVideo = state.selectedAsset.asset_type === "image" &&
       !$("generate-video").disabled && $("generate-video").checked;
+    const selectedProvider = $("generation-provider").value;
     const requestedDuration = Number($("target-duration").value);
-    if (generateVideo && (requestedDuration < 2 || requestedDuration > 80)) {
-      notice("توليد Wan متعدد اللقطات يدعم مدة إجمالية من ثانيتين إلى 80 ثانية فقط.", "error");
+    const minimumGenerationDuration = selectedProvider === "seedance2_5" ? 8 : 2;
+    if (
+      generateVideo &&
+      (requestedDuration < minimumGenerationDuration || requestedDuration > 80)
+    ) {
+      notice(
+        selectedProvider === "seedance2_5"
+          ? "Seedance 2.5 يتطلب مدة 8 ثوانٍ على الأقل: لقطتان مدة كل منهما 4 ثوانٍ."
+          : "توليد الفيديو متعدد اللقطات يدعم مدة إجمالية من ثانيتين إلى 80 ثانية.",
+        "error"
+      );
       return;
     }
     if (brief.length < 20) {
       notice("اكتب وصفًا من 20 حرفًا على الأقل حتى يستطيع المخرج فهم المطلوب.", "error");
+      return;
+    }
+    const externalConsent = $("allow-external-processing").checked;
+    if (generateVideo && selectedProvider === "seedance2_5" && !externalConsent) {
+      notice("يلزم تفعيل موافقة المعالجة الخارجية قبل اختيار Seedance 2.5.", "error");
       return;
     }
     const button = $("generate-plan");
@@ -2441,7 +2509,11 @@ async function renderProjectTimeline() {
         asset_id: state.selectedAsset.id,
         idempotency_key: `studio-${uuid()}`,
         brief: generateVideo
-          ? brief + "\n\nWan production constraints: create 2 to 8 scenes, each scene must be 1 to 10 seconds, and all scene durations must sum exactly to the requested total. Use the supplied product image as the canonical reference in every shot. Keep the product design and markings unchanged; prefer simple camera movement over changing product details."
+          ? brief + (
+            selectedProvider === "seedance2_5"
+              ? "\n\nSeedance 2.5 production constraints: create 2 to 8 scenes, each scene must be 4 to 10 seconds, and all scene durations must sum exactly to the requested total. Use the supplied product image as the canonical reference in every shot. Keep the product design and markings unchanged; prefer controlled camera movement over changing product details."
+              : "\n\nWan production constraints: create 2 to 8 scenes, each scene must be 1 to 10 seconds, and all scene durations must sum exactly to the requested total. Use the supplied product image as the canonical reference in every shot. Keep the product design and markings unchanged; prefer simple camera movement over changing product details."
+          )
           : brief,
         language: $("plan-language").value,
         target_duration_seconds: requestedDuration,
@@ -2459,7 +2531,12 @@ async function renderProjectTimeline() {
         interpolate_generated_video: !$("interpolate-generated-video").disabled &&
           $("interpolate-generated-video").checked,
         product_identity_lock: !$("product-identity-lock").disabled &&
-          $("product-identity-lock").checked
+          $("product-identity-lock").checked,
+        generation_provider: generateVideo
+          ? $("generation-provider").value
+          : "local_wan",
+        allow_external_processing: generateVideo &&
+          $("allow-external-processing").checked
       };
       const workflow = await api("/v1/workflows/from-brief", {
         method: "POST",
@@ -2675,6 +2752,7 @@ async function renderProjectTimeline() {
     ["generate-video", "product-identity-lock", "interpolate-generated-video"].forEach((id) => {
       $(id).addEventListener("change", setProjectControls);
     });
+    $("generation-provider").addEventListener("change", setProjectControls);
     $("identity-review-approve").addEventListener("click", () => submitIdentityReview(true));
     $("identity-review-reject").addEventListener("click", () => submitIdentityReview(false));
     $("asset-select").addEventListener("change", (event) => {

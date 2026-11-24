@@ -618,9 +618,18 @@
                 <label class="check-option"><input id="transcribe-audio" type="checkbox"><span>تفريغ الكلام باستخدام WhisperX</span></label>
                 <label class="check-option"><input id="enhance-audio" type="checkbox"><span>تحسين الصوت باستخدام DeepFilterNet</span></label>
                 <label class="check-option"><input id="upscale-video" type="checkbox"><span>تحسين وضوح الفيديو (Real-ESRGAN، حتى 10 ثوانٍ)</span></label>
-                <label class="check-option"><input id="generate-video" type="checkbox" disabled><span>توليد فيديو من صورة المنتج باستخدام Wan 2.2</span></label>
+                <label class="check-option"><input id="generate-video" type="checkbox" disabled><span>توليد فيديو من صورة المنتج باستخدام محرك التوليد المحدد</span></label>
                 <label class="check-option"><input id="product-identity-lock" type="checkbox" disabled><span>قفل هوية المنتج — استخدم الصورة نفسها لكل اللقطات</span></label>
                 <label class="check-option"><input id="interpolate-generated-video" type="checkbox" disabled><span>تحسين سلاسة اللقطات باستخدام RIFE</span></label>
+                <div>
+                  <label class="field-label" for="generation-provider">محرك توليد الفيديو</label>
+                  <select id="generation-provider" class="control">
+                    <option value="auto" selected>تلقائي — محلي أولاً</option>
+                    <option value="local_wan">Wan 2.2 محلي فقط</option>
+                    <option value="seedance2_5">Seedance 2.5 عبر Runway Dev</option>
+                  </select>
+                </div>
+                <label class="check-option"><input id="allow-external-processing" type="checkbox"><span>أوافق على إرسال صورة المرجع ومطالبات اللقطات إلى Runway Dev</span></label>
                 <div>
                   <label class="field-label" for="detection-prompt">عنصر تريد اكتشافه (اختياري)</label>
                   <input id="detection-prompt" class="control" maxlength="500" placeholder="مثال: the main product">
@@ -631,6 +640,7 @@
                 </div>
               </div>
               <p class="hint">توليد الفيديو يتطلب اختيار صورة منتج وتهيئة Wan 2.2. عند تفعيل قفل الهوية، تتوقف الخطة بعد التوليد لتراجع الفيديو وتوافق على الهوية قبل بناء الخط الزمني والتصدير. القفل يستخدم الصورة نفسها وبصمتها ومطالبات تثبيت الهوية، لكنه لا يضمن تطابقًا بصريًا كاملًا دون مراجعتك.</p><p class="hint">تحسين Real-ESRGAN متاح للفيديوهات حتى 10 ثوانٍ. الخيارات الاختصاصية لا تعمل إلا بعد تهيئة النموذج وسير العمل المرتبط به.</p>
+              <p class="hint">المعالجة الخارجية مغلقة افتراضياً. تفعيل الموافقة يرسل صورة المرجع ومطالبات اللقطات إلى Runway Dev. سعر Seedance 2.5 عند 720p هو 0.30 دولار/ثانية، وبحد أدنى 0.80 دولار لكل توليد. سقف هذه العملية 3 دولارات؛ واللقطات الخارجية في هذه المرحلة مدتها 4–10 ثوانٍ.</p>
             </details>
 
             <button id="generate-plan" class="button button-primary" type="submit" disabled>

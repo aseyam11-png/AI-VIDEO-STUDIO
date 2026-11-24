@@ -1,3 +1,4 @@
+from typing import Literal
 from uuid import UUID
 
 from app.schemas.models import CreativePlan
@@ -23,6 +24,8 @@ class WorkflowCreateRequest(BaseModel):
     generate_video: bool = False
     interpolate_generated_video: bool = False
     product_identity_lock: bool = False
+    generation_provider: Literal["auto", "local_wan", "seedance2_5"] = "auto"
+    allow_external_processing: bool = False
 
     @model_validator(mode="after")
     def validate_workflow_options(self):
@@ -30,6 +33,10 @@ class WorkflowCreateRequest(BaseModel):
             raise ValueError("Frame interpolation requires video generation in this workflow.")
         if self.product_identity_lock and not self.generate_video:
             raise ValueError("Product identity lock requires video generation from an image.")
+        if self.allow_external_processing and not self.generate_video:
+            raise ValueError("External processing consent is valid only for video generation.")
+        if self.generation_provider == "seedance2_5" and not self.allow_external_processing:
+            raise ValueError("Seedance 2.5 requires explicit external-processing consent.")
         return self
 
 
@@ -53,6 +60,8 @@ class WorkflowFromBriefRequest(BaseModel):
     generate_video: bool = False
     interpolate_generated_video: bool = False
     product_identity_lock: bool = False
+    generation_provider: Literal["auto", "local_wan", "seedance2_5"] = "auto"
+    allow_external_processing: bool = False
 
     @model_validator(mode="after")
     def validate_workflow_options(self):
@@ -60,6 +69,10 @@ class WorkflowFromBriefRequest(BaseModel):
             raise ValueError("Frame interpolation requires video generation in this workflow.")
         if self.product_identity_lock and not self.generate_video:
             raise ValueError("Product identity lock requires video generation from an image.")
+        if self.allow_external_processing and not self.generate_video:
+            raise ValueError("External processing consent is valid only for video generation.")
+        if self.generation_provider == "seedance2_5" and not self.allow_external_processing:
+            raise ValueError("Seedance 2.5 requires explicit external-processing consent.")
         return self
 
 

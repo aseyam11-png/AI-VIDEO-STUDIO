@@ -153,6 +153,10 @@ def _step_specs(
             )
         if len(plan.scenes) == 1:
             scene = plan.scenes[0]
+            if request.generation_provider == "seedance2_5":
+                raise WorkflowRequestError(
+                    "Seedance 2.5 routing is supported for multi-shot workflows in this phase."
+                )
             if scene.duration_seconds > 10:
                 raise WorkflowRequestError("A generated shot cannot exceed 10 seconds.")
             prompt, negative_prompt = compile_scene_generation_prompt(
@@ -216,6 +220,8 @@ def _step_specs(
                         "fps": fps,
                         "crf": 20,
                         "interpolate_factor": 2 if request.interpolate_generated_video else 1,
+                        "generation_provider": request.generation_provider,
+                        "allow_external_processing": request.allow_external_processing,
                         "approved": True,
                         "product_identity_lock": request.product_identity_lock,
                         "identity_reference_sha256": (
@@ -348,6 +354,56 @@ def _workflow_to_dict(db: Session, run: WorkflowRunRecord) -> dict:
     }
 
 
+def _generation_routing_summary(
+    request: WorkflowCreateRequest,
+    normalized_specs: list[tuple[JobType, dict]],
+) -> dict | None:
+    if not request.generate_video:
+        return None
+
+    sequence_payload = next(
+        (
+            payload
+            for job_type, payload in normalized_specs
+            if job_type == JobType.VIDEO_GENERATE_SEQUENCE
+        ),
+        None,
+    )
+    if sequence_payload is None:
+        shots = [
+            {
+                "index": 1,
+                "provider": "local_wan",
+                "estimated_cost_usd": 0.0,
+                "routing_reason": (
+                    "Single-shot generation remains on local Wan in this phase."
+                ),
+            }
+        ]
+    else:
+        shots = [
+            {
+                "index": index,
+                "provider": shot["provider"],
+                "estimated_cost_usd": float(shot["estimated_cost_usd"]),
+                "routing_reason": shot["routing_reason"],
+            }
+            for index, shot in enumerate(sequence_payload["shots"], start=1)
+        ]
+
+    return {
+        "strategy": request.generation_provider,
+        "external_processing_authorized": request.allow_external_processing,
+        "estimated_external_cost_usd": round(
+            sum(shot["estimated_cost_usd"] for shot in shots),
+            2,
+        ),
+        "max_external_cost_usd": settings.runway_max_usd_per_workflow,
+        "providers_used": sorted({shot["provider"] for shot in shots}),
+        "shots": shots,
+    }
+
+
 def create_workflow_run(
     request: WorkflowCreateRequest,
     *,
@@ -415,6 +471,9 @@ def create_workflow_run(
                     ) from exc
                 normalized_specs.append((job_type, normalized))
 
+            generation_routing = _generation_routing_summary(
+                request, normalized_specs
+            )
             now = _now()
             run = WorkflowRunRecord(
                 id=str(uuid4()),
@@ -434,6 +493,9 @@ def create_workflow_run(
                     "generate_video": request.generate_video,
                     "interpolate_generated_video": request.interpolate_generated_video,
                     "product_identity_lock": request.product_identity_lock,
+                    "generation_provider": request.generation_provider,
+                    "allow_external_processing": request.allow_external_processing,
+                    "generation_routing": generation_routing,
                     "identity_reference_sha256": (
                         asset.sha256 if request.product_identity_lock else None
                     ),
@@ -963,6 +1025,8 @@ def create_workflow_from_brief(request: WorkflowFromBriefRequest) -> dict:
         generate_video=request.generate_video,
         interpolate_generated_video=request.interpolate_generated_video,
         product_identity_lock=request.product_identity_lock,
+        generation_provider=request.generation_provider,
+        allow_external_processing=request.allow_external_processing,
     )
     result = create_workflow_run(create_request, request_hash_override=request_hash)
     result["plan_model"] = settings.ollama_model

@@ -1,6 +1,7 @@
 import hashlib
 import json
 import shutil
+from decimal import Decimal
 from fractions import Fraction
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from app.core.config import settings
 from app.integrations.blender import render_project_template
 from app.integrations.comfyui import ComfyUICancelled, ComfyUIClient, ComfyUIError
 from app.integrations.ffmpeg import MediaToolError, probe_media
+from app.integrations.runway import RunwayDevClient, RunwayUploadError
 from app.media.audio import enhance_video_audio
 from app.media.pipeline import (
     MediaJobCancelled,
@@ -551,6 +553,53 @@ def execute_video_sequence(
     shots = payload["shots"]
     if not 2 <= len(shots) <= 8:
         raise ValueError("A generated sequence requires between two and eight shots.")
+    total_duration = sum(int(shot["duration_seconds"]) for shot in shots)
+    if total_duration > 80:
+        raise ValueError("A generated sequence cannot exceed 80 seconds.")
+
+    generation_strategy = payload.get("generation_provider", "local_wan")
+    if generation_strategy not in {"auto", "local_wan", "seedance2_5"}:
+        raise ValueError("A sequence contains an unsupported generation strategy.")
+    allow_external_processing = bool(payload.get("allow_external_processing", False))
+    if any(
+        (shot.get("provider") or "local_wan") not in {"local_wan", "seedance2_5"}
+        for shot in shots
+    ):
+        raise ValueError("A sequence contains an unsupported video provider.")
+
+    remote_shots = [
+        shot
+        for shot in shots
+        if (shot.get("provider") or "local_wan") == "seedance2_5"
+    ]
+    if remote_shots:
+        if (
+            generation_strategy == "local_wan"
+            or not allow_external_processing
+            or not settings.runway_enabled
+            or not settings.runway_api_key
+        ):
+            raise ValueError(
+                "Remote generation is not authorized or no longer configured; refusing to spend."
+            )
+        if generation_strategy == "seedance2_5" and len(remote_shots) != len(shots):
+            raise ValueError("Explicit Seedance selection must route every shot to Seedance.")
+
+        from app.services.generation_router import estimate_seedance25_cost_usd
+
+        remote_estimate = sum(
+            (
+                estimate_seedance25_cost_usd(int(shot["duration_seconds"]))
+                for shot in remote_shots
+            ),
+            start=Decimal("0.00"),
+        )
+        workflow_cap = Decimal(str(settings.runway_max_usd_per_workflow))
+        if remote_estimate > workflow_cap:
+            raise ValueError(
+                f"Remote generation estimate {remote_estimate:.2f} USD exceeds the "
+                f"current workflow cap {workflow_cap:.2f} USD."
+            )
 
     media_root = Path(settings.media_root).expanduser().resolve()
     try:
@@ -569,11 +618,8 @@ def execute_video_sequence(
 
     output_root = project_dir(project_id) / "ai_outputs" / str(job_id)
     output_root.mkdir(parents=True, exist_ok=True)
-    client = ComfyUIClient()
+    client: ComfyUIClient | None = None
     shot_assets: list[dict] = []
-    total_duration = sum(int(shot["duration_seconds"]) for shot in shots)
-    if total_duration > 80:
-        raise ValueError("A generated sequence cannot exceed 80 seconds.")
 
     def report_shot_progress(index: int, percentage: int, stage: str, message: str) -> None:
         scaled = 10 + int(((index + percentage / 100) / len(shots)) * 68)
@@ -594,40 +640,75 @@ def execute_video_sequence(
         ) -> None:
             report_shot_progress(shot_index, percent, stage, message)
 
-        generated = client.run_workflow(
-            "wan22_ti2v_5b_v1",
-            {
-                "source_path": reference_path,
-                "prompt": shot["prompt"],
-                "negative_prompt": shot["negative_prompt"],
-                "duration_seconds": shot["duration_seconds"],
-                "width": payload["generation_width"],
-                "height": payload["generation_height"],
-            },
-            shot_dir,
-            progress=shot_progress,
-            cancel_check=cancel_check,
+        used_provider = shot.get("provider", "local_wan")
+        routing_reason = shot.get(
+            "routing_reason", "Local Wan compatibility default."
         )
-        video_output = None
-        for output in generated.get("outputs", []):
-            output_path = shot_dir / output["saved_as"]
-            metadata = probe_media(output_path)
-            if any(
-                stream.get("codec_type") == "video"
-                for stream in metadata.get("streams", [])
-            ):
-                video_output = (output_path, metadata)
-                break
-        if video_output is None:
-            raise ComfyUIError(
-                f"Wan 2.2 shot {index + 1} did not return a valid video stream."
-            )
+        provider_task_id = None
 
-        shot_path, shot_metadata = video_output
+        if used_provider == "seedance2_5":
+            try:
+                remote_result = RunwayDevClient().generate_image_to_video(
+                    source,
+                    shot["prompt"],
+                    shot.get("negative_prompt", ""),
+                    shot["duration_seconds"],
+                    shot_dir,
+                    progress=shot_progress,
+                    cancel_check=cancel_check,
+                )
+                shot_path = Path(remote_result["path"])
+                shot_metadata = probe_media(shot_path)
+                provider_task_id = remote_result["task_id"]
+            except RunwayUploadError as exc:
+                if payload.get("generation_provider") != "auto":
+                    raise
+                # Upload failures occur before a billable generation POST is submitted.
+                # Ambiguous task submissions are never eligible for this fallback.
+                used_provider = "local_wan"
+                routing_reason = (
+                    "Runway upload failed before task creation; local Wan fallback: "
+                    f"{exc}"
+                )
+
+        if used_provider == "local_wan":
+            if client is None:
+                client = ComfyUIClient()
+            generated = client.run_workflow(
+                "wan22_ti2v_5b_v1",
+                {
+                    "source_path": reference_path,
+                    "prompt": shot["prompt"],
+                    "negative_prompt": shot["negative_prompt"],
+                    "duration_seconds": shot["duration_seconds"],
+                    "width": payload["generation_width"],
+                    "height": payload["generation_height"],
+                },
+                shot_dir,
+                progress=shot_progress,
+                cancel_check=cancel_check,
+            )
+            video_output = None
+            for output in generated.get("outputs", []):
+                output_path = shot_dir / output["saved_as"]
+                metadata = probe_media(output_path)
+                if any(
+                    stream.get("codec_type") == "video"
+                    for stream in metadata.get("streams", [])
+                ):
+                    video_output = (output_path, metadata)
+                    break
+            if video_output is None:
+                raise ComfyUIError(
+                    f"Wan 2.2 shot {index + 1} did not return a valid video stream."
+                )
+            shot_path, shot_metadata = video_output
         if int(payload["interpolate_factor"]) == 2:
             if cancel_check():
                 raise RuntimeError("Multi-shot interpolation was cancelled.")
             interpolation_dir = shot_dir / "interpolated"
+            if client is None:
+                client = ComfyUIClient()
             interpolation = client.run_workflow(
                 "rife_interpolate_v1",
                 {
@@ -684,6 +765,17 @@ def execute_video_sequence(
                 "duration_seconds": requested_duration,
                 "generated_duration_seconds": round(actual_duration, 6),
                 "prompt": shot["prompt"],
+                "provider": used_provider,
+                "provider_model": (
+                    "seedance2_5" if used_provider == "seedance2_5" else "wan22_ti2v_5b_v1"
+                ),
+                "estimated_cost_usd": (
+                    float(shot.get("estimated_cost_usd", 0.0))
+                    if used_provider == "seedance2_5"
+                    else 0.0
+                ),
+                "routing_reason": routing_reason,
+                "provider_task_id": provider_task_id,
                 "identity_reference_sha256": (
                     payload.get("identity_reference_sha256")
                     if payload.get("product_identity_lock")
@@ -770,6 +862,20 @@ def execute_video_sequence(
     persist_quality_report(
         project_id, f"asset-{output_asset['id']}", quality_report
     )
+    provider_routing = {
+        "strategy": payload.get("generation_provider", "local_wan"),
+        "external_processing_authorized": bool(
+            payload.get("allow_external_processing", False)
+        ),
+        "estimated_external_cost_usd": round(
+            sum(float(item.get("estimated_cost_usd", 0.0)) for item in shot_assets),
+            2,
+        ),
+        "max_external_cost_usd": settings.runway_max_usd_per_workflow,
+        "providers_used": sorted(
+            {str(item["provider"]) for item in shot_assets}
+        ),
+    }
     sequence_manifest = {
         "schema_version": 1,
         "project_id": project_id,
@@ -779,6 +885,7 @@ def execute_video_sequence(
         "duration_seconds": round(cursor, 6),
         "fps": payload["fps"],
         "interpolate_factor": payload["interpolate_factor"],
+        "provider_routing": provider_routing,
         "product_identity_lock": bool(payload.get("product_identity_lock")),
         "identity_reference": (
             {
@@ -804,6 +911,7 @@ def execute_video_sequence(
     )
     return {
         "shot_count": len(shot_assets),
+        "provider_routing": provider_routing,
         "duration_seconds": round(cursor, 6),
         "interpolate_factor": payload["interpolate_factor"],
         "shots": shot_assets,
