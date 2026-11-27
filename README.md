@@ -43,6 +43,12 @@ See [Production Roadmap](docs/17-PRODUCTION-ROADMAP.md), [Phase 6.8](docs/26-PHA
 7. **Model workers** — adapters and queue routing exist for WhisperX, Ollama, ComfyUI/Wan, SAM 2, Grounding DINO, DeepFilterNet and Blender. Runtime weights, exported workflows and real target-GPU acceptance are still external setup tasks. Heavy ComfyUI jobs are serialized through the models worker.
 8. **Quality and delivery** — technical, visual, product-identity, and creative checks; versioned outputs; user approval before final export.
 
+## Interactive model testing (Google Colab)
+
+Use [AI Video Studio — Colab Qwen Model Lab](notebooks/AI-VIDEO-STUDIO-COLAB-MODEL-LAB.ipynb) for a temporary, interactive GPU smoke test of the Arabic Qwen planning path through Ollama. It records the model digest, runtime/GPU details, inference timing and CreativePlan validation in a JSON evidence report.
+
+This notebook is not a Studio deployment: it does not expose a public API, host the Studio UI, run Celery/distributed workers, or accept production media. Colab Free GPU availability and session lifetime are not guaranteed. A Qwen notebook pass does not establish Wan, ComfyUI, RIFE, Real-ESRGAN or end-to-end video acceptance.
+
 ## Phase 0.5 API
 
 Create a project:
