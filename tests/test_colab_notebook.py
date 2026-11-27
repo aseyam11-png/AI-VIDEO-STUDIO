@@ -62,7 +62,7 @@ def test_colab_ollama_api_is_loopback_only_and_not_a_worker():
 
 def _all_notebook_source() -> str:
     notebook = _load_notebook()
-    return "\\n".join(
+    return "\n".join(
         "".join(cell.get("source", []))
         if isinstance(cell.get("source", []), list)
         else str(cell.get("source", ""))
@@ -84,6 +84,8 @@ def test_colab_gpu_acceptance_is_scoped_to_the_selected_model():
     source = _all_notebook_source()
 
     assert 'line.split()[0] == MODEL_TAG' in source
+    assert "processor_match = re.search(" in source
+    assert "processor_match.group(0)" in source
     assert 'gpu_offload_observed = "GPU" in processor_line.upper()' in source
     assert '"selected_model_processor_line": processor_line' in source
 
