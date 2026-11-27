@@ -58,3 +58,32 @@ def test_colab_ollama_api_is_loopback_only_and_not_a_worker():
     assert 'distributed worker' in lowered
     assert 'celery worker' in lowered
     assert 'systemctl' not in lowered
+
+
+def _all_notebook_source() -> str:
+    notebook = _load_notebook()
+    return "\\n".join(
+        "".join(cell.get("source", []))
+        if isinstance(cell.get("source", []), list)
+        else str(cell.get("source", ""))
+        for cell in notebook["cells"]
+    )
+
+
+def test_colab_plan_validation_rejects_lossy_duration_coercion():
+    source = _all_notebook_source()
+
+    assert 'type(plan["target_duration_seconds"]) is int' in source
+    assert 'type(scene["duration_seconds"]) is int' in source
+    assert 'scene["duration_seconds"] == 5' in source
+    assert 'sum(scene["duration_seconds"] for scene in plan["scenes"])' in source
+    assert 'int(scene["duration_seconds"])' not in source
+
+
+def test_colab_gpu_acceptance_is_scoped_to_the_selected_model():
+    source = _all_notebook_source()
+
+    assert 'line.split()[0] == MODEL_TAG' in source
+    assert 'gpu_offload_observed = "GPU" in processor_line.upper()' in source
+    assert '"selected_model_processor_line": processor_line' in source
+
