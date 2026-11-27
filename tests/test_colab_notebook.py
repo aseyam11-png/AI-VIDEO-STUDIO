@@ -1,5 +1,6 @@
 import ast
 import json
+import re
 from pathlib import Path
 
 NOTEBOOK_PATH = (
@@ -85,7 +86,23 @@ def test_colab_gpu_acceptance_is_scoped_to_the_selected_model():
 
     assert 'line.split()[0] == MODEL_TAG' in source
     assert "processor_match = re.search(" in source
+    assert 'r"\\b(?:\\d+(?:\\.\\d+)?%\\s*GPU|' in source
     assert "processor_match.group(0)" in source
     assert 'gpu_offload_observed = "GPU" in processor_line.upper()' in source
     assert '"selected_model_processor_line": processor_line' in source
 
+
+ 
+
+def test_ollama_processor_pattern_accepts_gpu_and_split_offload_only():
+    processor_pattern = re.compile(
+        r"\\b(?:\\d+(?:\\.\\d+)?%\\s*GPU|"
+        r"\\d+(?:\\.\\d+)?%/\\d+(?:\\.\\d+)?%\\s*CPU/GPU|"
+        r"\\d+(?:\\.\\d+)?%\\s*CPU)\\b",
+        re.IGNORECASE,
+    )
+
+    assert processor_pattern.search("qwen3.5:0.8b abc123 1.3 GB 100% GPU 4 minutes")
+    assert processor_pattern.search("qwen3.5:0.8b abc123 1.3 GB 48%/52% CPU/GPU 4 minutes")
+    cpu_only = processor_pattern.search("qwen3.5:0.8b abc123 1.3 GB 100% CPU 4 minutes")
+    assert cpu_only and "GPU" not in cpu_only.group(0).upper()
